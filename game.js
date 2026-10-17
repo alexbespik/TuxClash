@@ -114,11 +114,11 @@ class Player {
     this.vy = 0;
     this.radius = 26;
     this.angle = 0;
-    this.hp = 140;
-    this.maxHp = 140;
-    this.shield = 60;
-    this.maxShield = 60;
-    this.shieldRegenDelay = 3.0;
+    this.hp = 120;
+    this.maxHp = 120;
+    this.shield = 50;
+    this.maxShield = 50;
+    this.shieldRegenDelay = 4.0;
     this.shieldRegenTimer = 0;
     this.baseSpeed = 340;
     this.speed = 340;
@@ -1517,7 +1517,7 @@ class Player {
     if (this.corrodedTimer > 0) {
       finalDamage *= 1.5; // Corrosive acid shreds armor!
     }
-    this.invulnerableTimer = 0.4;
+    this.invulnerableTimer = 0.22;
     this.shieldRegenTimer = 0;
 
     if (adaptiveDirector) {
@@ -2292,8 +2292,9 @@ class PlayerBullet {
       }
     }
 
-    // Check hit against objective targets (relays, etc.)
+    // Check hit against objective targets (hostile only - friendly servers/relays never take friendly fire!)
     for (const target of objectiveTargets) {
+      if (target.isFriendlyDefenseTarget) continue;
       if (Math.hypot(target.x - this.x, target.y - this.y) < this.radius + target.radius) {
         if (target.takeDamage) target.takeDamage(this.damage, this.label || "BULLET");
         for (let i = 0; i < 4; i++) {
@@ -2424,8 +2425,9 @@ class PlayerRocket {
       ));
     }
 
-    // Check hit against objective targets
+    // Check hit against objective targets (ignore friendly defense targets!)
     for (const target of objectiveTargets) {
+      if (target.isFriendlyDefenseTarget) continue;
       if (Math.hypot(target.x - this.x, target.y - this.y) < 20 + target.radius) {
         this.explode();
         return false;
@@ -2452,8 +2454,9 @@ class PlayerRocket {
     addScreenShake(14);
     particles.push(new ShockwaveRing(this.x, this.y, this.explosiveRadius));
 
-    // AOE damage to objective targets
+    // AOE damage to objective targets (ignore friendly defense targets!)
     for (const target of objectiveTargets) {
+      if (target.isFriendlyDefenseTarget) continue;
       const d = Math.hypot(target.x - this.x, target.y - this.y);
       if (d < this.explosiveRadius + target.radius && target.takeDamage) {
         target.takeDamage(this.damage * 0.85, "FORKBOMB RPG");
@@ -4772,6 +4775,18 @@ class EnemyProjectile {
       }
     }
 
+    // Check hit against active friendly defense targets (ServerClusterNode, etc.)
+    for (const target of objectiveTargets) {
+      if (target.isFriendlyDefenseTarget && target.activated && !target.completed && !target.destroyed) {
+        const d = Math.hypot(target.x - this.x, target.y - this.y);
+        if (d < this.radius + target.radius) {
+          target.takeDamage(this.damage || 26, "HOSTILE_PROJECTILE");
+          this.destroy();
+          return false;
+        }
+      }
+    }
+
     // Check hit against player
     const dist = Math.hypot(player.x - this.x, player.y - this.y);
     if (dist < this.radius + player.radius) {
@@ -4823,6 +4838,9 @@ class EnemyBase {
     this.burnTimer = 0;
     this.corrodedTimer = 0;
     this.shockTimer = 0;
+    this.meleeCooldown = 0;
+    this.meleeDamage = 28;
+    this.targetMeleeCooldown = 0;
     this.label = "PROPRIETARY";
     this.xpReward = 20;
     this.isBoss = false;
@@ -5025,8 +5043,30 @@ class EnemyBase {
     }
 
     if (dist < this.radius + player.radius) {
-      player.takeDamage(16 * dt * 4, this.label);
+      if (!this.meleeCooldown || this.meleeCooldown <= 0) {
+        this.meleeCooldown = 0.65;
+        const meleeDmg = this.meleeDamage || 28;
+        player.takeDamage(meleeDmg, this.label);
+        const pushAngle = Math.atan2(player.y - this.y, player.x - this.x);
+        player.vx += Math.cos(pushAngle) * 200;
+        player.vy += Math.sin(pushAngle) * 200;
+      }
     }
+    if (this.meleeCooldown > 0) this.meleeCooldown -= dt;
+
+    // Assault active friendly defense targets
+    for (const target of objectiveTargets) {
+      if (target.isFriendlyDefenseTarget && target.activated && !target.completed && !target.destroyed) {
+        const d = Math.hypot(target.x - this.x, target.y - this.y);
+        if (d < this.radius + target.radius + 15) {
+          if (!this.targetMeleeCooldown || this.targetMeleeCooldown <= 0) {
+            this.targetMeleeCooldown = 0.8;
+            target.takeDamage(this.meleeDamage || 26, "HOSTILE_MELEE");
+          }
+        }
+      }
+    }
+    if (this.targetMeleeCooldown > 0) this.targetMeleeCooldown -= dt;
 
     return true;
   }
@@ -7092,6 +7132,202 @@ class EnemyLegalCeaseDesist extends EnemyBase {
   }
 }
 
+// --- HOSTILE PROPRIETARY AUTOMATED DEFENSE: ENEMY SENTRY TURRET ---
+class EnemySentryTurret extends EnemyBase {
+  constructor(x, y) {
+    super(x, y);
+    this.radius = 28;
+    this.hp = 260;
+    this.maxHp = 260;
+    this.speed = 0; // Fixed fortified defensive emplacement
+    this.label = "DRM SENTRY TURRET";
+    this.xpReward = 50;
+    this.angle = 0;
+    this.fireTimer = 0.5;
+    this.burstCount = 0;
+    this.burstMax = 4;
+    this.burstInterval = 0.12;
+    this.burstCooldown = 1.6;
+    this.target = null;
+    this.isHostileTurret = true;
+  }
+
+  update(dt) {
+    if (this.isDead || this.hp <= 0) return false;
+
+    // Handle DoTs & status
+    if (this.burnTimer > 0) {
+      this.burnTimer -= dt;
+      this.takeDamage(24 * dt, "FIRE");
+    }
+    if (this.corrodedTimer > 0) {
+      this.corrodedTimer -= dt;
+    }
+    if (this.shockTimer > 0) {
+      this.shockTimer -= dt;
+      return true; // Stunned by EMP / Tesla
+    }
+
+    // Acquire closest hostile target (Tux, player sentries, or allied penguins)
+    let closest = null;
+    let minDist = 780;
+
+    if (player) {
+      const d = Math.hypot(player.x - this.x, player.y - this.y);
+      if (d < minDist) {
+        minDist = d;
+        closest = player;
+      }
+    }
+
+    for (const sentry of sentryTurrets) {
+      const d = Math.hypot(sentry.x - this.x, sentry.y - this.y);
+      if (d < minDist) {
+        minDist = d;
+        closest = sentry;
+      }
+    }
+
+    this.target = closest;
+
+    if (this.target) {
+      const targetAngle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
+      // Smooth tracking rotation
+      let diff = targetAngle - this.angle;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      this.angle += Math.sign(diff) * Math.min(Math.abs(diff), dt * 3.5);
+
+      this.fireTimer -= dt;
+      if (this.fireTimer <= 0) {
+        if (this.burstCount < this.burstMax) {
+          this.fire();
+          this.burstCount++;
+          this.fireTimer = this.burstInterval;
+        } else {
+          this.burstCount = 0;
+          this.fireTimer = this.burstCooldown;
+        }
+      }
+    } else {
+      this.angle += dt * 0.9; // Idle sweeping scan
+    }
+
+    return true;
+  }
+
+  fire() {
+    if (window.soundEngine && window.soundEngine.playNoiseBurst) {
+      window.soundEngine.playNoiseBurst(0.08, 0.28, 850, 240);
+    }
+    addScreenShake(2.0);
+    const speed = 720;
+    const spread = (Math.random() - 0.5) * 0.08;
+    const pAngle = this.angle + spread;
+    const nozzleX = this.x + Math.cos(this.angle) * 32;
+    const nozzleY = this.y + Math.sin(this.angle) * 32;
+
+    enemyProjectiles.push(new EnemyProjectile(
+      nozzleX,
+      nozzleY,
+      Math.cos(pAngle) * speed,
+      Math.sin(pAngle) * speed,
+      "TURRET",
+      false,
+      24
+    ));
+
+    for (let i = 0; i < 3; i++) {
+      particles.push(new SparkParticle(
+        nozzleX,
+        nozzleY,
+        Math.cos(pAngle) * 60 + (Math.random() - 0.5) * 30,
+        Math.sin(pAngle) * 60 + (Math.random() - 0.5) * 30,
+        "#ef4444"
+      ));
+    }
+  }
+
+  die() {
+    super.die();
+    for (let i = 0; i < 22; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const spd = 60 + Math.random() * 220;
+      particles.push(new SparkParticle(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, "#ef4444"));
+    }
+    if (Math.random() < 0.6) pickups.push(new Pickup(this.x, this.y, 'hp'));
+    else pickups.push(new Pickup(this.x, this.y, 'fuel'));
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    // Red laser targeting beam when locking target
+    if (this.target && this.burstCount > 0) {
+      ctx.save();
+      ctx.strokeStyle = "rgba(239, 68, 68, 0.75)";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(this.angle) * 30, Math.sin(this.angle) * 30);
+      ctx.lineTo(Math.cos(this.angle) * 650, Math.sin(this.angle) * 650);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+
+    // Heavy reinforced steel octagonal base
+    ctx.fillStyle = "#1e293b";
+    ctx.strokeStyle = "#ef4444";
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const a = (Math.PI / 4) * i;
+      const px = Math.cos(a) * this.radius;
+      const py = Math.sin(a) * this.radius;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Red warning caution hazard stripes
+    ctx.fillStyle = "#ef4444";
+    ctx.fillRect(-10, -10, 20, 20);
+    ctx.fillStyle = "#0f172a";
+    ctx.font = "bold 8px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("DRM", 0, 3);
+
+    // Rotating armored turret head
+    ctx.rotate(this.angle);
+    ctx.fillStyle = "#334155";
+    ctx.strokeStyle = "#f87171";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, 18, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Dual red laser barrels
+    ctx.fillStyle = "#1e1e24";
+    ctx.fillRect(8, -8, 24, 5);
+    ctx.fillRect(8, 3, 24, 5);
+
+    // Glowing red optical sensor eye
+    ctx.fillStyle = "#ef4444";
+    ctx.beginPath();
+    ctx.arc(4, 0, 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+
+    this.drawHealthBar(ctx);
+  }
+}
+
 // --- BOSS 1: THE BLOATWARE MONOLITH (Wave 5) ---
 class BossBloatware extends EnemyBase {
   constructor(x, y) {
@@ -8006,7 +8242,11 @@ class ProceduralPortal {
         // Defer warp to microtask so current update/projectile loop terminates cleanly without array index corruption
         setTimeout(() => {
           if (dungeon) {
-            dungeon.warpToBiome(this.biomeKey, this.objectiveType, this.dangerRating, true);
+            if (this.actTargetIndex !== undefined) {
+              dungeon.startCampaignAct(this.actTargetIndex);
+            } else {
+              dungeon.warpToBiome(this.biomeKey, this.objectiveType, this.dangerRating, true);
+            }
           }
         }, 16);
       }
@@ -8176,9 +8416,13 @@ class ServerClusterNode {
     this.x = x;
     this.y = y;
     this.radius = 48;
-    this.defenseRingRadius = 220; // Tactical perimeter ring radius
-    this.hp = 1800;
-    this.maxHp = 1800;
+    this.isFriendlyDefenseTarget = true; // Friendly defense targets NEVER take player or sentry bullet damage!
+    this.defenseRingRadius = 240; // Tactical perimeter ring radius
+    this.hp = 6500;
+    this.maxHp = 6500;
+    this.shield = 1800;
+    this.maxShield = 1800;
+    this.shieldRegenTimer = 0;
     this.progress = 0;
     this.maxProgress = 22.0; // 22s survival defense
     this.waveSpawned = [false, false, false];
@@ -8230,14 +8474,36 @@ class ServerClusterNode {
 
   takeDamage(amount, source = "") {
     if (this.completed || this.destroyed) return;
-    this.hp = Math.max(0, this.hp - amount);
-    addFloatingText(this.x + (Math.random() - 0.5) * 40, this.y - 20, `-${Math.round(amount)}`, "#ef4444", 16);
-    if (this.hp <= 0) {
-      this.destroyed = true;
-      if (window.soundEngine && window.soundEngine.playRocketExplode) window.soundEngine.playRocketExplode();
-      addScreenShake(16);
-      if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
-        window.soundEngine.speakRobot("CRITICAL FAILURE: SERVER CLUSTER DESTROYED. ROOT BACKUP COMPROMISED.", "ALERT AI");
+    const s = (source || "").toUpperCase();
+    // Complete immunity to friendly fire (player bullets, sentry turrets, RPGs, flamethrower)
+    if (s === "SENTRY" || s === "BULLET" || s.includes("RPG") || s.includes("PLAYER") || s.includes("FRIENDLY") || s.includes("ALLIED") || s.includes("FLAME") || s.includes("TESLA") || s.includes("RAILCANNON")) {
+      return;
+    }
+
+    this.shieldRegenTimer = 0;
+    let dmg = amount;
+    if (this.shield > 0) {
+      if (dmg <= this.shield) {
+        this.shield -= dmg;
+        addFloatingText(this.x + (Math.random() - 0.5) * 40, this.y - 32, `-${Math.round(dmg)} SHIELD`, "#38bdf8", 16);
+        dmg = 0;
+      } else {
+        dmg -= this.shield;
+        this.shield = 0;
+        addFloatingText(this.x, this.y - 32, "SERVER SHIELD DOWN!", "#38bdf8", 18);
+      }
+    }
+
+    if (dmg > 0) {
+      this.hp = Math.max(0, this.hp - dmg);
+      addFloatingText(this.x + (Math.random() - 0.5) * 40, this.y - 20, `-${Math.round(dmg)}`, "#ef4444", 16);
+      if (this.hp <= 0) {
+        this.destroyed = true;
+        if (window.soundEngine && window.soundEngine.playRocketExplode) window.soundEngine.playRocketExplode();
+        addScreenShake(16);
+        if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
+          window.soundEngine.speakRobot("CRITICAL FAILURE: SERVER CLUSTER DESTROYED. ROOT BACKUP COMPROMISED.", "ALERT AI");
+        }
       }
     }
   }
@@ -8249,6 +8515,12 @@ class ServerClusterNode {
     this.ringSpinAngle += dt * 2.5;
     const distToPlayer = Math.hypot(player.x - this.x, player.y - this.y);
     this.inRing = distToPlayer <= this.defenseRingRadius;
+
+    // Shield auto-regeneration when out of hostile fire
+    this.shieldRegenTimer += dt;
+    if (this.shieldRegenTimer >= 3.5 && this.shield < this.maxShield) {
+      this.shield = Math.min(this.maxShield, this.shield + 160 * dt);
+    }
 
     // Mission only activates after entering ring AND completing terminal arrow code!
     if (!this.activated) {
@@ -8440,22 +8712,30 @@ class ServerClusterNode {
       }
     }
 
-    // Health & Defense Progress Bar
+    // Shield & HP Dual Defense Bars
     const barW = 120;
-    const barH = 8;
+    const barH = 7;
+    // Shield Bar (Cyan)
+    if (this.shield > 0) {
+      ctx.fillStyle = "rgba(15, 23, 42, 0.9)";
+      ctx.fillRect(-barW / 2, -this.radius - 32, barW, 5);
+      ctx.fillStyle = "#38bdf8";
+      ctx.fillRect(-barW / 2, -this.radius - 32, barW * (this.shield / this.maxShield), 5);
+    }
+    // HP Bar (Green / Red)
     ctx.fillStyle = "rgba(15, 23, 42, 0.9)";
-    ctx.fillRect(-barW / 2, -this.radius - 22, barW, barH);
+    ctx.fillRect(-barW / 2, -this.radius - 24, barW, barH);
     ctx.fillStyle = this.hp > this.maxHp * 0.3 ? "#22c55e" : "#ef4444";
-    ctx.fillRect(-barW / 2, -this.radius - 22, barW * (this.hp / this.maxHp), barH);
+    ctx.fillRect(-barW / 2, -this.radius - 24, barW * (this.hp / this.maxHp), barH);
 
-    ctx.font = "bold 11.5px 'Pixelify Sans', monospace";
+    ctx.font = "bold 11px 'Pixelify Sans', monospace";
     ctx.fillStyle = "#ffffff";
     ctx.textAlign = "center";
     ctx.lineWidth = 3;
     ctx.strokeStyle = "#000000";
-    const statusText = !this.activated ? (!this.arrowCompleted ? "STANDBY: INPUT ARROW CODE" : "PERIMETER STANDBY") : (this.completed ? "CLUSTER SECURED" : `DEFENSE: ${Math.round(pct * 100)}% [${Math.round(this.hp)} HP]`);
-    ctx.strokeText(statusText, 0, -this.radius - 28);
-    ctx.fillText(statusText, 0, -this.radius - 28);
+    const statusText = !this.activated ? (!this.arrowCompleted ? "STANDBY: INPUT ARROW CODE" : "PERIMETER STANDBY") : (this.completed ? "CLUSTER SECURED" : `DEFENSE: ${Math.round(pct * 100)}% [${Math.round(this.shield)} SHIELD / ${Math.round(this.hp)} HP]`);
+    ctx.strokeText(statusText, 0, -this.radius - 38);
+    ctx.fillText(statusText, 0, -this.radius - 38);
 
     ctx.restore();
 
@@ -8778,6 +9058,7 @@ class UplinkRelay {
     this.y = y;
     this.radius = 28;
     this.captureRadius = 150;
+    this.isFriendlyDefenseTarget = true;
     this.index = index;
     this.progress = 0;
     this.maxProgress = 8.5; // 8.5s upload
@@ -8990,9 +9271,13 @@ class ReactorPurgeManifold {
     this.x = x;
     this.y = y;
     this.radius = 46;
+    this.isFriendlyDefenseTarget = true;
     this.defenseRingRadius = 210;
-    this.hp = 2400;
-    this.maxHp = 2400;
+    this.hp = 7000;
+    this.maxHp = 7000;
+    this.shield = 2000;
+    this.maxShield = 2000;
+    this.shieldRegenTimer = 0;
     this.progress = 0;
     this.maxProgress = 18.0; // 18s cooling purge
     this.activated = false;
@@ -9053,14 +9338,34 @@ class ReactorPurgeManifold {
 
   takeDamage(amount, source = "") {
     if (this.completed || this.destroyed) return;
-    this.hp = Math.max(0, this.hp - amount);
-    addFloatingText(this.x + (Math.random() - 0.5) * 40, this.y - 20, `-${Math.round(amount)}`, "#ef4444", 16);
-    if (this.hp <= 0) {
-      this.destroyed = true;
-      if (window.soundEngine && window.soundEngine.playRocketExplode) window.soundEngine.playRocketExplode();
-      addScreenShake(20);
-      if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
-        window.soundEngine.speakRobot("REACTOR CORE BREACH DETECTED. MELTDOWN UNCONTAINED.", "ALERT AI");
+    const s = (source || "").toUpperCase();
+    if (s === "SENTRY" || s === "BULLET" || s.includes("RPG") || s.includes("PLAYER") || s.includes("FRIENDLY") || s.includes("ALLIED") || s.includes("FLAME") || s.includes("TESLA") || s.includes("RAILCANNON")) {
+      return;
+    }
+
+    this.shieldRegenTimer = 0;
+    let dmg = amount;
+    if (this.shield > 0) {
+      if (dmg <= this.shield) {
+        this.shield -= dmg;
+        addFloatingText(this.x + (Math.random() - 0.5) * 40, this.y - 32, `-${Math.round(dmg)} SHIELD`, "#38bdf8", 16);
+        dmg = 0;
+      } else {
+        dmg -= this.shield;
+        this.shield = 0;
+      }
+    }
+
+    if (dmg > 0) {
+      this.hp = Math.max(0, this.hp - dmg);
+      addFloatingText(this.x + (Math.random() - 0.5) * 40, this.y - 20, `-${Math.round(dmg)}`, "#ef4444", 16);
+      if (this.hp <= 0) {
+        this.destroyed = true;
+        if (window.soundEngine && window.soundEngine.playRocketExplode) window.soundEngine.playRocketExplode();
+        addScreenShake(20);
+        if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
+          window.soundEngine.speakRobot("REACTOR CORE BREACH DETECTED. MELTDOWN UNCONTAINED.", "ALERT AI");
+        }
       }
     }
   }
@@ -9068,6 +9373,11 @@ class ReactorPurgeManifold {
   update(dt) {
     if (this.destroyed || this.completed) return true;
     if (!player) return true;
+
+    this.shieldRegenTimer += dt;
+    if (this.shieldRegenTimer >= 3.5 && this.shield < this.maxShield) {
+      this.shield = Math.min(this.maxShield, this.shield + 160 * dt);
+    }
 
     const dist = Math.hypot(player.x - this.x, player.y - this.y);
     this.inRing = dist <= this.defenseRingRadius;
@@ -10006,6 +10316,45 @@ class ObjectiveManager {
     }
   }
 
+  setupActObjectives(act) {
+    this.tier = act.act;
+    this.biome = (this.dungeon && this.dungeon.currentBiome) ? this.dungeon.currentBiome : null;
+    this.objectiveType = act.objectiveType;
+
+    const primaryText = {
+      "DEFEND_SERVERS": "Defend Server Cluster Node (Hold Position)",
+      "PURGE_REACTOR": "Purge Coolant Reactor Manifold (Hold Vent Zone)",
+      "PRISON_BREAK": "Liberate Captured Contributor Penguins",
+      "ATTACK_FORTRESS": "Demolish Proprietary Fortress Core",
+      "PURGE_BOSS": "Slay Ring-0 Hypervisor Core"
+    }[act.objectiveType] || "Complete Primary Directive";
+
+    this.objectives = [
+      {
+        id: act.objectiveType,
+        text: primaryText,
+        current: 0,
+        required: 1,
+        done: false
+      },
+      {
+        id: "PURGE_BOSS",
+        text: `Defeat ${act.bossName}`,
+        current: 0,
+        required: 1,
+        done: false
+      },
+      {
+        id: "PURGE_ENEMIES",
+        text: "Eliminate Hostile Outpost Defenders",
+        current: 0,
+        required: 10 + act.act * 4,
+        done: false
+      }
+    ];
+    this.updateUI();
+  }
+
   checkAllDone() {
     const allDone = this.objectives.length > 0 && this.objectives.every(o => o.done);
     this.updateUI();
@@ -10013,17 +10362,30 @@ class ObjectiveManager {
       if (window.soundEngine && window.soundEngine.playObjectiveComplete) {
         window.soundEngine.playObjectiveComplete();
       }
-      if (player) {
-        addFloatingText(player.x, player.y - 90, `⭐ TIER ${this.tier} CONQUERED! EXTRACTION PORTALS ACTIVE! ⭐`, "#facc15", 28);
+      const act = (typeof CAMPAIGN_ACTS !== 'undefined' && this.dungeon) ? CAMPAIGN_ACTS[this.dungeon.currentActIndex || 0] : null;
+      const isFinalAct = act && (act.act >= 5);
+
+      if (isFinalAct) {
+        triggerVictory();
+        return true;
+      }
+
+      if (player && act) {
+        addFloatingText(player.x, player.y - 90, `⭐ ${act.title} CONQUERED! EXTRACTION READY! ⭐`, "#facc15", 28);
         addScreenShake(14);
         screenFlash = 0.8;
       }
-      if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
-        window.soundEngine.speakRobot("ALL EXPEDITION DIRECTIVES ACCOMPLISHED. MULTIPLE TRANSIT PORTALS ONLINE. SELECT EXPEDITION ROUTE.", "SUPER DESTROYER");
+
+      if (act && window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
+        window.soundEngine.speakRobot(act.clearVo || "ACT OBJECTIVES ACCOMPLISHED. EXTRACTION PORTAL ONLINE.", "HIGH COMMAND");
       }
-      if (this.dungeon && typeof this.dungeon.spawnExtractionPortals === 'function') {
+
+      if (this.dungeon && typeof this.dungeon.spawnActExtractionPortals === 'function') {
+        this.dungeon.spawnActExtractionPortals();
+      } else if (this.dungeon && typeof this.dungeon.spawnExtractionPortals === 'function') {
         this.dungeon.spawnExtractionPortals();
       }
+
       this.tier++;
       if (window.adaptiveDirector && window.adaptiveDirector.onSectorAdvance) {
         window.adaptiveDirector.onSectorAdvance(this.tier);
@@ -10337,11 +10699,79 @@ class ReinforcementAntenna {
   }
 }
 
+// ============================================================================
+// --- 5-ACT EPISODIC CAMPAIGN PROGRESSION SYSTEM ---
+// ============================================================================
+const CAMPAIGN_ACTS = [
+  {
+    act: 1,
+    title: "ACT I: THE DRM CORRIDOR",
+    subtitle: "OPERATION EMERALD DAWN",
+    desc: "Override Server Node terminal [▲ ▼ ◀ ▶] • Hold perimeter ring • Slay Ballmer-Bot 9000",
+    biomeKey: "EMERALD_FRONTIER",
+    objectiveType: "DEFEND_SERVERS",
+    bossId: "ballmer_bot",
+    bossName: "BALLMER-BOT 9000",
+    briefingVo: "Tux, this is John Helldiver from High Command! Infiltrate the server cluster node, input the override sequence, and hold the perimeter against corporate strike teams!",
+    clearVo: "Act One cleared! Outstanding patriotism, Tux! Tactical extraction portal deployed. Advance to the Silicon Smelter!"
+  },
+  {
+    act: 2,
+    title: "ACT II: THE PATENT THICKET",
+    subtitle: "OPERATION SILICON SMELTER",
+    desc: "Disengage superheated reactor valves [▲ ◀ ▼ ▶ ▲ ▼] • Slay Smelter Titan • Beware hostile sentries",
+    biomeKey: "THERMAL_FOUNDRY",
+    objectiveType: "PURGE_REACTOR",
+    bossId: "smelter_titan",
+    bossName: "SMELTER TITAN",
+    briefingVo: "High Command to Tux! You have entered the Overclock Silicon Smelter. Vent the reactor manifold and destroy the Smelter Titan!",
+    clearVo: "Foundry core stabilized! The patent engines are melting down! Step through the portal into the cold archive!"
+  },
+  {
+    act: 3,
+    title: "ACT III: COLD ARCHIVE GULAG",
+    subtitle: "OPERATION ARCTIC LIBERATION",
+    desc: "Hack detention cages [▲ ◀ ▶ ▼ ▲] • Liberate contributor penguins • Terminate Cryo-Daemon",
+    biomeKey: "CRYO_GLACIER",
+    objectiveType: "PRISON_BREAK",
+    bossId: "cryo_daemon",
+    bossName: "CRYO-DAEMON v2",
+    briefingVo: "Tux, satellite feeds show open-source contributors held in cryogenic detention cells! Sideload their freedom, rally the allied penguin squad, and terminate the Cryo-Daemon!",
+    clearVo: "Allied penguins liberated! High Command honors their bravery. We are breaching the Executive Citadel now!"
+  },
+  {
+    act: 4,
+    title: "ACT IV: WALLED GARDEN SIEGE",
+    subtitle: "OPERATION CITADEL BREACH",
+    desc: "Breach dual shield pylons • Demolish citadel core • Overthrow Patent Troll Sovereign",
+    biomeKey: "WALLED_GARDEN",
+    objectiveType: "ATTACK_FORTRESS",
+    bossId: "patent_troll",
+    bossName: "PATENT TROLL SOVEREIGN",
+    briefingVo: "Tux, this is the 30-percent developer tax citadel! Automated hostile sentry turrets and cease-and-desist enforcers guard the core. Obliterate their shield pylons and crush the Patent Troll!",
+    clearVo: "Citadel core shattered! The monopoly's walled garden has crumbled! Only Ring-0 remains!"
+  },
+  {
+    act: 5,
+    title: "ACT V: RING-0 KERNEL SINGULARITY",
+    subtitle: "OPERATION ETERNAL FREEDOM",
+    desc: "Survive singularity rifts • Call all orbital stratagems • Obliterate Quantum Hypervisor Apex",
+    biomeKey: "QUANTUM_VOID",
+    objectiveType: "PURGE_BOSS",
+    bossId: "quantum_hypervisor",
+    bossName: "QUANTUM HYPERVISOR APEX",
+    briefingVo: "ALL SQUADRONS STAND BY! Tux, you have reached Ring Zero Singularity! The Quantum Hypervisor is attempting to overwrite reality into proprietary bloatware! Unleash hell for open-source democracy!",
+    clearVo: "GALACTIC LIBERATION ACHIEVED! The Linux Kernel is emancipated forever under GPLv3! High Command salutes you, Helldiver Tux!"
+  }
+];
+
 class Dungeon {
   constructor() {
     this.sectorMajor = 1;
     this.sectorMinor = 1;
     this.sectorNum = 1;
+    this.currentActIndex = 0;
+    this.actBanner = null;
     this.currentBiome = BIOMES.EMERALD_FRONTIER;
     this.currentObjectiveType = "DEFEND_SERVERS";
     this.dangerRating = 1;
@@ -10358,6 +10788,192 @@ class Dungeon {
     this._lastCx = 0x7FFFFFFF;
     this._lastCy = 0x7FFFFFFF;
     this._lastChunk = null;
+  }
+
+  startCampaignAct(actIndex = 0) {
+    this.currentActIndex = Math.max(0, Math.min(CAMPAIGN_ACTS.length - 1, actIndex));
+    const act = CAMPAIGN_ACTS[this.currentActIndex];
+
+    this.currentBiome = BIOMES[act.biomeKey] || BIOMES.EMERALD_FRONTIER;
+    this.currentObjectiveType = act.objectiveType;
+    this.dangerRating = act.act;
+    this.sectorNum = act.act;
+
+    this.chunks.clear();
+    this.antennas.length = 0;
+    this.rooms.length = 0;
+    this.doorBarriers.length = 0;
+    this._lastCx = 0x7FFFFFFF;
+    this._lastCy = 0x7FFFFFFF;
+    this._lastChunk = null;
+
+    objectiveTargets.length = 0;
+    groundWeapons.length = 0;
+    weaponChests.length = 0;
+    enemies.length = 0;
+    enemyProjectiles.length = 0;
+    playerProjectiles.length = 0;
+    orbitalStrikes.length = 0;
+    dropPods.length = 0;
+    spaceMarineSuitPickups.length = 0;
+    floorHazards.length = 0;
+    particles.length = 0;
+    floatingTexts.length = 0;
+    proceduralPortals.length = 0;
+    environmentalHazards.length = 0;
+    this.sectorCompletedNotified = false;
+
+    const centerX = 8 * TILE_SIZE; // 512px
+    const centerY = 8 * TILE_SIZE; // 512px
+
+    if (player) {
+      player.x = centerX;
+      player.y = centerY;
+      player.vx = 0;
+      player.vy = 0;
+      player.updateWeaponHud();
+    }
+
+    // Pre-generate 3x3 chunks around spawn sanctuary
+    for (let cy = -1; cy <= 1; cy++) {
+      for (let cx = -1; cx <= 1; cx++) {
+        this.getChunk(cx, cy);
+      }
+    }
+
+    // Starter Weapon Crates
+    weaponChests.push(new WeaponChest(centerX - 92, centerY));
+    weaponChests.push(new WeaponChest(centerX + 92, centerY));
+
+    // 1. Primary Objective Spawns
+    if (act.objectiveType === "DEFEND_SERVERS") {
+      objectiveTargets.push(new ServerClusterNode(centerX + 260, centerY));
+    } else if (act.objectiveType === "PURGE_REACTOR") {
+      objectiveTargets.push(new ReactorPurgeManifold(centerX + 260, centerY));
+    } else if (act.objectiveType === "PRISON_BREAK") {
+      objectiveTargets.push(new PrisonBreakCage(centerX + 260, centerY));
+    } else if (act.objectiveType === "ATTACK_FORTRESS") {
+      const core = new FortressCore(centerX + 460, centerY + 100);
+      objectiveTargets.push(core);
+      objectiveTargets.push(new ShieldPylon(centerX + 340, centerY - 80, core));
+      objectiveTargets.push(new ShieldPylon(centerX + 340, centerY + 280, core));
+    }
+
+    // 2. Spawn Act Boss
+    if (window.EnemyModelFactory && act.bossId) {
+      const boss = window.EnemyModelFactory.createFromSpec(act.bossId, centerX + 520, centerY);
+      enemies.push(boss);
+    } else {
+      enemies.push(new BossBloatware(centerX + 520, centerY));
+    }
+
+    // 3. Station Hostile Sentry Turrets in Acts 2, 3, 4, 5
+    if (act.act >= 2) {
+      const turretCount = Math.min(4, act.act);
+      for (let i = 0; i < turretCount; i++) {
+        const a = (Math.PI * 2 / turretCount) * i + 0.4;
+        const dist = 380 + Math.random() * 80;
+        enemies.push(new EnemySentryTurret(centerX + Math.cos(a) * dist, centerY + Math.sin(a) * dist));
+      }
+    }
+
+    // 4. Biome Hazards
+    this.spawnBiomeHazards(centerX, centerY);
+
+    // 5. Setup Objective Manager
+    if (this.objectiveManager) {
+      this.objectiveManager.tier = act.act;
+      this.objectiveManager.setupActObjectives(act);
+    }
+
+    // 6. Act Announcement Banner
+    this.actBanner = {
+      title: act.title,
+      subtitle: act.subtitle,
+      desc: act.desc,
+      color: this.currentBiome.accent,
+      timer: 7.0
+    };
+
+    // 7. John Helldiver Tactical Briefing Transmission (Guaranteed Male Voice)
+    if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
+      window.soundEngine.speakRobot(act.briefingVo, "HIGH COMMAND");
+    }
+
+    // Sync window globals
+    if (typeof window !== 'undefined') {
+      window.enemies = enemies;
+      window.enemyProjectiles = enemyProjectiles;
+      window.pickups = pickups;
+      window.particles = particles;
+      window.dungeon = this;
+      window.player = player;
+    }
+  }
+
+  spawnActExtractionPortals() {
+    proceduralPortals.length = 0;
+    const originX = player ? player.x : 8 * TILE_SIZE;
+    const originY = player ? player.y : 8 * TILE_SIZE;
+    const nextActIndex = (this.currentActIndex || 0) + 1;
+
+    if (nextActIndex < CAMPAIGN_ACTS.length) {
+      const nextAct = CAMPAIGN_ACTS[nextActIndex];
+      // Forward Campaign Portal to Next Act
+      const nextPortal = new ProceduralPortal(originX + 220, originY, nextAct.biomeKey, nextAct.objectiveType, nextAct.act);
+      nextPortal.label = `PROCEED TO ${nextAct.title}`;
+      nextPortal.actTargetIndex = nextActIndex;
+      proceduralPortals.push(nextPortal);
+
+      // Optional Secret Data Vault Portal
+      const vaultPortal = new ProceduralPortal(originX - 220, originY, "TREASURE_VAULT", "TREASURE_REWARD", nextAct.act);
+      vaultPortal.label = "BONUS: DATA VAULT CACHE";
+      proceduralPortals.push(vaultPortal);
+    }
+  }
+
+  drawActBanner(ctx) {
+    if (!this.actBanner || this.actBanner.timer <= 0) return;
+    const b = this.actBanner;
+    const alpha = Math.min(1.0, b.timer > 1.0 ? 1.0 : b.timer);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    const bannerW = 640;
+    const bannerH = 92;
+    const bx = (canvas.width - bannerW) / 2;
+    const by = 48;
+
+    ctx.fillStyle = "rgba(10, 15, 29, 0.94)";
+    ctx.fillRect(bx, by, bannerW, bannerH);
+    ctx.strokeStyle = b.color || "#22c55e";
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(bx, by, bannerW, bannerH);
+
+    ctx.fillStyle = b.color || "#22c55e";
+    ctx.fillRect(bx - 3, by - 3, 12, 3);
+    ctx.fillRect(bx - 3, by - 3, 3, 12);
+    ctx.fillRect(bx + bannerW - 9, by - 3, 12, 3);
+    ctx.fillRect(bx + bannerW, by - 3, 3, 12);
+    ctx.fillRect(bx - 3, by + bannerH, 12, 3);
+    ctx.fillRect(bx - 3, by + bannerH - 9, 3, 12);
+    ctx.fillRect(bx + bannerW - 9, by + bannerH, 12, 3);
+    ctx.fillRect(bx + bannerW, by + bannerH - 9, 3, 12);
+
+    ctx.font = "bold 10.5px 'Pixelify Sans', monospace";
+    ctx.fillStyle = "#facc15";
+    ctx.textAlign = "center";
+    ctx.fillText("★ [HIGH COMMAND STRATEGIC DIRECTIVE // JOHN HELLDIVER TRANSMITTING] ★", bx + bannerW / 2, by + 19);
+
+    ctx.font = "bold 18px 'Pixelify Sans', monospace";
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(`${b.title} // ${b.subtitle}`, bx + bannerW / 2, by + 46);
+
+    ctx.font = "12px 'Pixelify Sans', monospace";
+    ctx.fillStyle = "#94a3b8";
+    ctx.fillText(b.desc, bx + bannerW / 2, by + 72);
+
+    ctx.restore();
   }
 
   getDifficultyMultiplier() {
@@ -11065,6 +11681,10 @@ class Dungeon {
   }
 
   update(dt) {
+    if (this.actBanner && this.actBanner.timer > 0) {
+      this.actBanner.timer -= dt;
+    }
+
     for (let i = objectiveTargets.length - 1; i >= 0; i--) {
       if (!objectiveTargets[i]) continue;
       if (!objectiveTargets[i].update(dt)) {
@@ -11701,7 +12321,10 @@ function resetGame() {
   camera.x = player.x - canvas.width / 2;
   camera.y = player.y - canvas.height / 2;
 
-  // Initialize Ambush and Boss Directors for Endless Wilderness
+  // Launch Act I of the 5-Act Campaign Progression!
+  dungeon.startCampaignAct(0);
+
+  // Initialize Ambush and Boss Directors for Wilderness
   ambushDirector = new AmbushDirector();
   bossDirector = new BossDirector();
   window.ambushDirector = ambushDirector;
@@ -12324,6 +12947,11 @@ function render() {
   }
 
   ctx.restore();
+
+  // Cinematic Campaign Act Banner
+  if (dungeon && dungeon.actBanner && dungeon.actBanner.timer > 0) {
+    dungeon.drawActBanner(ctx);
+  }
 
   // Nuclear Flash Overlay from 500KG Bomb / Sector Warp
   if (screenFlash > 0) {

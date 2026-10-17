@@ -470,7 +470,7 @@
   class GeminiDirector {
     constructor() {
       this.apiKey = "";
-      this.model = "gemini-2.0-flash";
+      this.model = "gemini-2.5-flash";
       this.persona = "JOHN_HELLDIVER";
       this.enabled = false;
       this.isRequestPending = false;
@@ -509,7 +509,7 @@
 
     saveConfig(key, model, persona, enabled) {
       this.apiKey = key || "";
-      this.model = model || "gemini-2.0-flash";
+      this.model = model || "gemini-2.5-flash";
       this.persona = persona || "JOHN_HELLDIVER";
       this.enabled = !!enabled;
 
@@ -525,7 +525,7 @@
 
     async testConnection(testKey, testModel) {
       const key = testKey || this.apiKey;
-      const model = testModel || this.model || "gemini-2.0-flash";
+      const model = testModel || this.model || "gemini-2.5-flash";
       if (!key) return { ok: false, error: "API Key is empty" };
 
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;

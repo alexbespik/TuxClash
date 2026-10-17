@@ -886,14 +886,14 @@ class SoundEngine {
         const utter = new SpeechSynthesisUtterance(text);
 
         if (isHighCommand) {
-          // John Helldiver / High Command: Deep, booming, authoritative military liberty cadence (MALE)
-          utter.pitch = customPitch !== undefined ? customPitch : 0.65;
-          utter.rate = customRate !== undefined ? customRate : 1.05;
+          // John Helldiver / High Command: Deep, booming, authoritative military liberty cadence (STRICTLY MALE)
+          utter.pitch = customPitch !== undefined ? customPitch : 0.52;
+          utter.rate = customRate !== undefined ? customRate : 1.02;
           utter.volume = 1.0;
         } else if (isTuxSide) {
-          // Tux / Allied resistance: Resolute, heroic, battle-hardened (MALE)
-          utter.pitch = customPitch !== undefined ? customPitch : 0.88;
-          utter.rate = customRate !== undefined ? customRate : 1.10;
+          // Tux / Allied resistance: Resolute, heroic, battle-hardened (STRICTLY MALE)
+          utter.pitch = customPitch !== undefined ? customPitch : 0.76;
+          utter.rate = customRate !== undefined ? customRate : 1.08;
           utter.volume = 0.95;
         } else if (isFemaleEnemy) {
           // Cold, sterile, menacing corporate female DRM voice (FEMALE)
@@ -902,51 +902,66 @@ class SoundEngine {
           utter.volume = 0.90;
         } else {
           // Corporate male tyrant (Ballmer-bot, Patent Troll Sovereign, etc.)
-          utter.pitch = customPitch !== undefined ? customPitch : 0.78;
-          utter.rate = customRate !== undefined ? customRate : 1.22;
+          utter.pitch = customPitch !== undefined ? customPitch : 0.74;
+          utter.rate = customRate !== undefined ? customRate : 1.20;
           utter.volume = 0.90;
         }
 
         if (!window._cachedVoicesList || window._cachedVoicesList.length === 0) {
           window._cachedVoicesList = window.speechSynthesis.getVoices() || [];
+          if (typeof window.speechSynthesis.onvoiceschanged !== 'function') {
+            window.speechSynthesis.onvoiceschanged = () => {
+              window._cachedVoicesList = window.speechSynthesis.getVoices() || [];
+            };
+          }
         }
         const voices = window._cachedVoicesList;
+
+        const FEMALE_NAMES = [
+          'samantha', 'victoria', 'karen', 'zira', 'serena', 'fiona', 'tessa', 'moira',
+          'veena', 'kate', 'ava', 'allison', 'susan', 'female', 'siri female', 'sangeeta',
+          'yuna', 'kyoko', 'stephanie', 'carmit', 'claire', 'amelie', 'anna', 'alva',
+          'monica', 'paulina', 'ioana', 'laura', 'helena', 'agnes', 'alice', 'zoe', 'kendra'
+        ];
+        const isStrictlyMale = (v) => {
+          if (!v || !v.name) return false;
+          const n = v.name.toLowerCase();
+          for (const fem of FEMALE_NAMES) {
+            if (n.includes(fem)) return false;
+          }
+          return true;
+        };
 
         if (voices && voices.length > 0) {
           let chosen = null;
           if (isHighCommand || isTuxSide) {
-            // Tux / High Command: Always prioritize deep resonant MALE voices
-            chosen = voices.find(v => 
-              v.name.toLowerCase().includes('daniel') ||
-              v.name.toLowerCase().includes('alex') ||
-              v.name.toLowerCase().includes('fred') ||
-              v.name.toLowerCase().includes('oliver') ||
-              v.name.toLowerCase().includes('david') ||
-              v.name.toLowerCase().includes('mark') ||
-              v.name.toLowerCase().includes('george') ||
-              (v.name.toLowerCase().includes('male') && !v.name.toLowerCase().includes('female') && v.lang && v.lang.startsWith('en'))
-            ) || voices.find(v => v.lang && v.lang.startsWith('en'));
+            // Tux / John Helldiver: Strict male voice priority (Alex, Fred, Daniel, Oliver, Tom, David, etc.)
+            // NEVER allow Samantha or any female voice under any circumstance!
+            const maleNames = ['alex', 'fred', 'daniel', 'oliver', 'tom', 'david', 'mark', 'george', 'richard', 'ralph', 'bruce', 'junior', 'albert', 'lee', 'rishi', 'arthur'];
+            chosen = voices.find(v => {
+              const n = v.name.toLowerCase();
+              return isStrictlyMale(v) && maleNames.some(m => n.includes(m));
+            });
+            if (!chosen) {
+              // Find ANY English voice that is NOT female
+              chosen = voices.find(v => v.lang && v.lang.startsWith('en') && isStrictlyMale(v));
+            }
+            if (!chosen) {
+              // Any language voice that is NOT female
+              chosen = voices.find(v => isStrictlyMale(v));
+            }
           } else if (isFemaleEnemy) {
-            // Enemy corporate AI: Always prioritize sterile FEMALE voices
-            chosen = voices.find(v => 
-              v.name.toLowerCase().includes('samantha') ||
-              v.name.toLowerCase().includes('victoria') ||
-              v.name.toLowerCase().includes('karen') ||
-              v.name.toLowerCase().includes('zira') ||
-              v.name.toLowerCase().includes('serena') ||
-              v.name.toLowerCase().includes('fiona') ||
-              v.name.toLowerCase().includes('tessa') ||
-              v.name.toLowerCase().includes('female')
-            ) || voices.find(v => v.lang && v.lang.startsWith('en'));
+            // Enemy corporate AI: Sterile FEMALE voices (Samantha, Victoria, Karen, etc.)
+            chosen = voices.find(v => {
+              const n = v.name.toLowerCase();
+              return FEMALE_NAMES.some(fem => n.includes(fem));
+            }) || voices.find(v => v.lang && v.lang.startsWith('en'));
           } else {
-            // Male corporate tyrant / glitched voice
-            chosen = voices.find(v => 
-              v.name.toLowerCase().includes('zarvox') ||
-              v.name.toLowerCase().includes('cellos') ||
-              v.name.toLowerCase().includes('trinoids') ||
-              v.name.toLowerCase().includes('ralph') ||
-              v.name.toLowerCase().includes('male')
-            ) || voices.find(v => v.lang && v.lang.startsWith('en'));
+            // Corporate male tyrant / glitch voice
+            chosen = voices.find(v => {
+              const n = v.name.toLowerCase();
+              return isStrictlyMale(v) && (n.includes('zarvox') || n.includes('cellos') || n.includes('trinoids') || n.includes('ralph') || n.includes('fred'));
+            }) || voices.find(v => isStrictlyMale(v));
           }
           if (chosen) utter.voice = chosen;
         }
