@@ -1,0 +1,1278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>TUX: ROOT PURGE - The Open Source Reckoning</title>
+  <style>
+    :root {
+      --bg: #070a0e;
+      --card-bg: #0b1118;
+      --border: #1e293b;
+      --border-bright: #334155;
+      --primary: #22c55e;
+      --primary-dim: #14532d;
+      --accent-amber: #f59e0b;
+      --accent-red: #ef4444;
+      --accent-cyan: #38bdf8;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: var(--bg);
+      font-family: var(--font-mono);
+      color: var(--text);
+    }
+
+    #gameCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      display: block;
+      z-index: 1;
+    }
+
+    /* MGS Tactical CRT Scanline & Phosphor Vignette */
+    .crt-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 5;
+      background: radial-gradient(circle, rgba(0,0,0,0) 68%, rgba(2, 6, 10, 0.85) 100%),
+                  linear-gradient(rgba(10, 16, 24, 0) 50%, rgba(0, 0, 0, 0.28) 50%);
+      background-size: 100% 100%, 100% 4px;
+      opacity: 0.6;
+    }
+
+    /* HUD Layout */
+    #hud {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 10;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .hud-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+
+    .hud-player-stats {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--primary);
+      border-radius: 0;
+      padding: 10px 14px;
+      width: 320px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.85);
+    }
+
+    .stat-row {
+      margin-bottom: 6px;
+    }
+    .stat-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .stat-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--text-muted);
+      margin-bottom: 2px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .bar-container {
+      width: 100%;
+      height: 9px;
+      background: #030712;
+      border-radius: 0;
+      overflow: hidden;
+      border: 1px solid #1e293b;
+    }
+
+    .bar-fill {
+      height: 100%;
+      transition: width 0.1s ease;
+    }
+
+    #hpFill {
+      background: #dc2626;
+    }
+
+    #shieldFill {
+      background: #0ea5e9;
+    }
+
+    #fuelFill {
+      background: #f59e0b;
+    }
+
+    #rootFill {
+      background: #22c55e;
+    }
+
+    .status-badge {
+      display: inline-block;
+      font-size: 9.5px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 0;
+      background: #0f172a;
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      margin-top: 4px;
+    }
+    .status-badge.ready {
+      background: #14532d;
+      color: #86efac;
+      border-color: #22c55e;
+    }
+    .status-badge.active {
+      background: #78350f;
+      color: #fef08a;
+      border-color: #f59e0b;
+    }
+
+    .hud-meta-stats {
+      text-align: right;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-right: 3px solid #f59e0b;
+      border-radius: 0;
+      padding: 8px 14px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.85);
+    }
+
+    .score-title {
+      font-size: 16px;
+      font-weight: 800;
+      color: #22c55e;
+      letter-spacing: 1px;
+    }
+
+    .wave-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: #f59e0b;
+      margin-top: 2px;
+      letter-spacing: 0.5px;
+    }
+
+    .combo-badge {
+      display: none;
+      margin-top: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #22c55e;
+      background: rgba(34, 197, 94, 0.1);
+      border: 1px solid #22c55e;
+      border-radius: 0;
+      padding: 2px 6px;
+    }
+
+    .hud-bottom {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 16px;
+    }
+
+    .hud-center-bottom {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .abilities-bar {
+      display: flex;
+      gap: 10px;
+    }
+
+    .ability-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 7px 12px;
+      font-size: 11px;
+      font-weight: bold;
+      color: #86efac;
+    }
+
+    /* 2-Weapon Inventory Bar (Soul Knight x MGS Style) */
+    .weapon-bar {
+      display: flex;
+      gap: 12px;
+      pointer-events: auto;
+    }
+
+    .weapon-slot {
+      background: #081117;
+      border: 1px solid var(--border);
+      border-radius: 0;
+      padding: 7px 12px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-width: 140px;
+      position: relative;
+      transition: all 0.12s ease;
+    }
+
+    .weapon-slot:hover {
+      border-color: #475569;
+      background: #0f1722;
+    }
+
+    .weapon-slot.active {
+      border-color: #22c55e;
+      border-left: 4px solid #22c55e;
+      background: #0c1813;
+      transform: translateY(-2px);
+    }
+
+    .weapon-slot-tag {
+      position: absolute;
+      top: -8px;
+      left: 8px;
+      font-size: 9px;
+      font-weight: 900;
+      background: #14532d;
+      color: #86efac;
+      border: 1px solid #22c55e;
+      padding: 1px 6px;
+      border-radius: 0;
+      letter-spacing: 0.8px;
+    }
+
+    .weapon-slot:not(.active) .weapon-slot-tag {
+      background: #0b131a;
+      border-color: var(--border);
+      color: var(--text-muted);
+    }
+
+    .weapon-key {
+      font-size: 11px;
+      font-weight: bold;
+      color: #38bdf8;
+      font-family: ui-monospace, monospace;
+    }
+
+    .weapon-name {
+      font-size: 13px;
+      font-weight: 900;
+      color: #f8fafc;
+      margin: 3px 0;
+      letter-spacing: 0.5px;
+    }
+
+    .weapon-ammo {
+      font-size: 10px;
+      color: var(--text-muted);
+      font-family: ui-monospace, monospace;
+    }
+
+    /* Tactical Ground Item Pickup Prompt [E] */
+    .pickup-prompt {
+      position: absolute;
+      bottom: 125px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(6, 13, 10, 0.98);
+      border: 1.5px solid #22c55e;
+      border-left: 5px solid #22c55e;
+      border-radius: 0;
+      padding: 7px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      z-index: 45;
+      pointer-events: none;
+    }
+
+    .pickup-key {
+      background: #22c55e;
+      color: #020617;
+      font-size: 11px;
+      font-weight: 900;
+      padding: 2px 7px;
+      border-radius: 0;
+      font-family: ui-monospace, monospace;
+      letter-spacing: 0.5px;
+    }
+
+    .pickup-text {
+      font-size: 12px;
+      font-weight: 900;
+      color: #f0fdf4;
+      letter-spacing: 1px;
+      font-family: ui-monospace, monospace;
+    }
+
+    /* Objectives Tracker Card */
+    .objective-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-left: 3px solid #38bdf8;
+      border-radius: 0;
+      padding: 9px 12px;
+      width: 320px;
+      margin-top: 10px;
+    }
+
+    .objective-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 4px;
+      margin-bottom: 6px;
+    }
+
+    .sector-title {
+      font-size: 11px;
+      font-weight: 900;
+      color: #38bdf8;
+      letter-spacing: 1px;
+      font-family: ui-monospace, monospace;
+    }
+
+    .obj-badge {
+      font-size: 9px;
+      font-weight: 900;
+      padding: 2px 6px;
+      border-radius: 0;
+      font-family: ui-monospace, monospace;
+      letter-spacing: 0.5px;
+    }
+
+    .obj-badge.in-progress {
+      background: #ca8a04;
+      color: #020617;
+    }
+
+    .obj-badge.complete {
+      background: #22c55e;
+      color: #020617;
+    }
+
+    .objective-list {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .objective-item {
+      font-size: 11px;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-family: ui-monospace, monospace;
+    }
+
+    .objective-item.done {
+      color: #4ade80;
+      text-decoration: line-through;
+      opacity: 0.75;
+    }
+
+    .obj-check {
+      font-size: 11px;
+      font-weight: bold;
+    }
+
+    /* Soliton Minimap Radar */
+    .minimap-container {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 0;
+      padding: 8px;
+      margin-top: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .minimap-header {
+      font-size: 9.5px;
+      font-weight: 900;
+      color: #22c55e;
+      letter-spacing: 1.5px;
+      margin-bottom: 4px;
+      font-family: ui-monospace, monospace;
+    }
+
+    #minimapCanvas {
+      background: #030805;
+      border: 1.5px solid #14532d;
+      border-radius: 0;
+      display: block;
+    }
+
+    /* Helldivers Stratagems Panel */
+    .stratagem-panel {
+      background: #070d14;
+      border: 1px solid #1e293b;
+      border-left: 3px solid #facc15;
+      border-radius: 0;
+      padding: 8px 10px;
+      min-width: 330px;
+      max-width: 440px;
+      pointer-events: auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+
+    .stratagem-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      font-weight: 700;
+      color: #facc15;
+      letter-spacing: 0.8px;
+      margin-bottom: 6px;
+      border-bottom: 1px solid #1e293b;
+      padding-bottom: 4px;
+    }
+
+    .stratagem-tip {
+      font-size: 9px;
+      color: #94a3b8;
+      font-weight: normal;
+    }
+
+    .stratagem-list {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+    }
+
+    .stratagem-card {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      background: #0a1118;
+      border: 1px solid #1e293b;
+      border-radius: 0;
+      padding: 4px 6px;
+      cursor: pointer;
+      font-size: 10px;
+      transition: background 0.1s, border-color 0.1s;
+    }
+
+    .stratagem-card:hover {
+      border-color: #64748b;
+      background: #141f2e;
+    }
+
+    .stratagem-card.ready {
+      border-color: #1e3a2b;
+      border-left: 2px solid #22c55e;
+    }
+
+    .stratagem-card.active-calling {
+      background: #1c190a;
+      border-color: #facc15;
+    }
+
+    .strat-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2px;
+    }
+
+    .strat-left {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .strat-hotkey {
+      color: #38bdf8;
+      font-weight: 900;
+      font-size: 10px;
+    }
+
+    .strat-name {
+      font-weight: 700;
+      color: #f8fafc;
+      font-size: 9.5px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 120px;
+    }
+
+    .strat-code {
+      color: #facc15;
+      font-weight: 700;
+      letter-spacing: 1px;
+      font-size: 9.5px;
+    }
+
+    .strat-cooldown {
+      font-size: 9px;
+      color: #22c55e;
+      font-weight: 700;
+      min-width: 44px;
+      text-align: right;
+    }
+
+    /* Stratagem Input Terminal (Kojima Field Terminal) */
+    .stratagem-terminal {
+      position: absolute;
+      top: 130px;
+      left: 24px;
+      background: #070d14;
+      border: 2px solid #eab308;
+      border-left: 5px solid #eab308;
+      border-radius: 0;
+      padding: 12px 16px;
+      pointer-events: none;
+      z-index: 50;
+      width: 320px;
+      font-family: ui-monospace, monospace;
+    }
+
+    .terminal-title {
+      font-size: 11px;
+      font-weight: 900;
+      color: #eab308;
+      letter-spacing: 1.5px;
+      margin-bottom: 6px;
+    }
+
+    .terminal-input-display {
+      font-size: 10px;
+      color: #94a3b8;
+      margin-bottom: 6px;
+    }
+
+    .terminal-current-sequence {
+      display: flex;
+      gap: 6px;
+      font-size: 18px;
+      font-weight: 900;
+      color: #facc15;
+      min-height: 26px;
+    }
+
+    /* Tactical Exosuit Status Card */
+    .marine-suit-card {
+      background: #08110b;
+      border: 1px solid #166534;
+      border-left: 4px solid #38bdf8;
+      border-radius: 0;
+      padding: 8px 12px;
+      margin-top: 8px;
+      width: 100%;
+    }
+
+    .suit-badge {
+      font-size: 10px;
+      font-weight: 900;
+      color: #38bdf8;
+      letter-spacing: 1px;
+      margin-bottom: 4px;
+      text-align: center;
+      font-family: ui-monospace, monospace;
+    }
+
+    .suit-stat-row {
+      margin-bottom: 4px;
+    }
+
+    .suit-stat-label {
+      font-size: 9.5px;
+      font-weight: bold;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 2px;
+      font-family: ui-monospace, monospace;
+    }
+
+    .suit-bar-bg {
+      width: 100%;
+      height: 6px;
+      background: #030805;
+      border-radius: 0;
+      overflow: hidden;
+      border: 1px solid #14532d;
+    }
+
+    .suit-shield-fill {
+      height: 100%;
+      background: #06b6d4;
+      transition: width 0.1s ease;
+    }
+
+    .suit-abilities-text {
+      font-size: 9.5px;
+      color: #facc15;
+      font-weight: bold;
+      text-align: center;
+      letter-spacing: 0.5px;
+      font-family: ui-monospace, monospace;
+    }
+
+    /* Tactical Boss Bar */
+    .boss-bar-container {
+      position: absolute;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 480px;
+      max-width: 90%;
+      background: #0d0707;
+      border: 1.5px solid #ef4444;
+      border-radius: 0;
+      padding: 8px 14px;
+      z-index: 20;
+    }
+
+    .boss-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      font-weight: 900;
+      color: #ef4444;
+      letter-spacing: 1.5px;
+      margin-bottom: 4px;
+      font-family: ui-monospace, monospace;
+    }
+
+    .boss-bar-bg {
+      width: 100%;
+      height: 8px;
+      background: #1c0808;
+      border-radius: 0;
+      overflow: hidden;
+      border: 1px solid #7f1d1d;
+    }
+
+    .boss-bar-fill {
+      height: 100%;
+      background: #ef4444;
+      transition: width 0.15s ease;
+    }
+
+    /* Metal Gear Solid Codec Transceiver Transmission Banner */
+    .boss-comms-banner {
+      position: absolute;
+      top: 68px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 620px;
+      max-width: 94%;
+      background: #050d08;
+      border: 1.5px solid #14532d;
+      border-left: 5px solid #22c55e;
+      border-radius: 0;
+      padding: 8px 14px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      z-index: 25;
+      pointer-events: none;
+      font-family: ui-monospace, SFMono-Regular, monospace;
+    }
+
+    .comms-avatar-box {
+      width: 44px;
+      height: 44px;
+      background: #07150c;
+      border: 1px solid #166534;
+      border-radius: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .comms-avatar-icon {
+      font-size: 20px;
+    }
+
+    .comms-signal-meter {
+      display: flex;
+      gap: 2px;
+      margin-top: 2px;
+    }
+
+    .comms-signal-meter .bar {
+      width: 4px;
+      height: 6px;
+      background: #22c55e;
+      border-radius: 0;
+    }
+
+    .comms-content {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .comms-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2px;
+      border-bottom: 1px solid #0f2b17;
+      padding-bottom: 2px;
+    }
+
+    .comms-freq {
+      font-size: 9px;
+      color: #22c55e;
+      letter-spacing: 1px;
+      font-weight: 700;
+    }
+
+    .comms-speaker {
+      font-size: 11px;
+      font-weight: 900;
+      color: #f87171;
+      letter-spacing: 1.2px;
+    }
+
+    .comms-message {
+      font-size: 11.5px;
+      color: #86efac;
+      font-weight: 600;
+      line-height: 1.35;
+      margin-top: 3px;
+    }
+
+    /* Ambush Alert Banner */
+    .ambush-alert-banner {
+      position: absolute;
+      top: 130px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #140505;
+      border: 1.5px solid #ef4444;
+      border-radius: 0;
+      padding: 7px 18px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      z-index: 30;
+      pointer-events: none;
+      font-family: ui-monospace, monospace;
+    }
+
+    .ambush-icon {
+      font-size: 16px;
+    }
+
+    .ambush-text {
+      font-size: 12px;
+      font-weight: 900;
+      color: #fecaca;
+      letter-spacing: 1.5px;
+    }
+
+    /* Modal Windows (Title, Upgrades, GameOver, Victory) - MGS Briefing Style */
+    .modal-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(3, 7, 10, 0.94);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 100;
+    }
+
+    .modal-content {
+      max-width: 680px;
+      width: 90%;
+      text-align: center;
+      background: #080f16;
+      border: 1.5px solid #1e293b;
+      border-left: 5px solid #22c55e;
+      border-radius: 0;
+      padding: 28px 32px;
+      font-family: ui-monospace, monospace;
+    }
+
+    h1.game-title {
+      font-size: 34px;
+      font-weight: 900;
+      letter-spacing: 3px;
+      color: #f8fafc;
+      margin-bottom: 4px;
+    }
+
+    h2.game-sub {
+      font-size: 12px;
+      color: #38bdf8;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-bottom: 18px;
+    }
+
+    .lore-text {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.6;
+      margin-bottom: 22px;
+      text-align: left;
+    }
+
+    .controls-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      text-align: left;
+      background: #050b10;
+      border: 1px solid var(--border);
+      padding: 12px;
+      border-radius: 0;
+      margin-bottom: 22px;
+      font-size: 11px;
+    }
+
+    .key-badge {
+      display: inline-block;
+      background: #0c1c14;
+      color: #4ade80;
+      padding: 2px 6px;
+      border-radius: 0;
+      font-weight: bold;
+      margin-right: 6px;
+      border: 1px solid #14532d;
+    }
+
+    .btn {
+      background: #0b1f13;
+      color: #86efac;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 900;
+      padding: 10px 28px;
+      border: 1.5px solid #22c55e;
+      border-radius: 0;
+      cursor: pointer;
+      transition: all 0.12s ease;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+    }
+
+    .btn:hover {
+      background: #166534;
+      color: #ffffff;
+      border-color: #4ade80;
+      transform: translateY(-1px);
+    }
+
+    /* Tactical Upgrade Selection Cards */
+    .upgrade-cards-container {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin: 18px 0;
+    }
+
+    .upgrade-card {
+      background: #09121a;
+      border: 1px solid var(--border);
+      border-left: 4px solid #f59e0b;
+      border-radius: 0;
+      padding: 12px 14px;
+      text-align: left;
+      cursor: pointer;
+      transition: all 0.12s ease;
+      position: relative;
+    }
+
+    .upgrade-card:hover {
+      border-color: #38bdf8;
+      border-left-color: #38bdf8;
+      background: #0f1c29;
+    }
+
+    .upgrade-num {
+      position: absolute;
+      top: 12px;
+      right: 14px;
+      font-weight: 900;
+      color: #38bdf8;
+      font-size: 13px;
+    }
+
+    .upgrade-title {
+      font-size: 15px;
+      font-weight: bold;
+      color: #fbbf24;
+      margin-bottom: 4px;
+      letter-spacing: 0.5px;
+    }
+
+    .upgrade-desc {
+      font-size: 12px;
+      color: #94a3b8;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+  <div class="crt-overlay"></div>
+  <canvas id="gameCanvas"></canvas>
+
+  <!-- BOSS BAR CONTAINER -->
+  <div id="bossBarContainer" class="boss-bar-container" style="display: none;">
+    <div class="boss-header">
+      <span id="bossName">BLOATWARE MONOLITH</span>
+      <span id="bossHpText">1800 / 1800</span>
+    </div>
+    <div class="boss-bar-bg">
+      <div id="bossHpFill" class="boss-bar-fill" style="width: 100%;"></div>
+    </div>
+  </div>
+
+  <!-- BOSS COMMS RADIO TRANSMISSION BANNER (MGS CODEC TRANSCEIVER) -->
+  <div id="bossCommsBanner" class="boss-comms-banner" style="display: none;">
+    <div class="comms-avatar-box">
+      <div id="commsAvatarIcon" class="comms-avatar-icon">☠️</div>
+      <div class="comms-signal-meter">
+        <span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span>
+      </div>
+    </div>
+    <div class="comms-content">
+      <div class="comms-header">
+        <span class="comms-freq">[ CODEC // 140.85 MHz ] [ ENCRYPTED CARTEL OVERRIDE ]</span>
+        <span id="commsSpeaker" class="comms-speaker">BALLMER-BOT 9000</span>
+      </div>
+      <div id="commsMessage" class="comms-message">"DEVELOPERS! DEVELOPERS! LINUX IS A CANCER! PREPARE TO BE PURGED!"</div>
+    </div>
+  </div>
+
+  <!-- AMBUSH ALERT BANNER -->
+  <div id="ambushAlertBanner" class="ambush-alert-banner" style="display: none;">
+    <span class="ambush-icon">⚠️</span>
+    <span id="ambushAlertText" class="ambush-text">WARNING: HOSTILE AMBUSH DETECTED! SENSORS RED!</span>
+    <span class="ambush-icon">⚠️</span>
+  </div>
+
+  <!-- STRATAGEM INPUT TERMINAL OVERLAY -->
+  <div id="stratagemTerminal" class="stratagem-terminal" style="display: none;">
+    <div class="terminal-title">SUPER DESTROYER STRATAGEM UPLINK</div>
+    <div class="terminal-input-display" id="terminalInputDisplay">INPUT CODE WITH ARROW KEYS ONLY [▲ ▼ ◀ ▶]</div>
+    <div class="terminal-current-sequence" id="terminalCurrentSeq"></div>
+  </div>
+
+  <!-- GROUND PICKUP PROMPT [E] -->
+  <div id="groundPickupPrompt" class="pickup-prompt" style="display: none;">
+    <span class="pickup-key">[E]</span>
+    <span id="pickupPromptText" class="pickup-text">SWAP FOR BREAKER SHOTGUN</span>
+  </div>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div class="hud-top">
+      <div>
+        <div class="hud-player-stats">
+          <!-- HP -->
+          <div class="stat-row">
+            <div class="stat-header">
+              <span>Tux Integrity (RAM)</span>
+              <span id="hpText">140 / 140</span>
+            </div>
+            <div class="bar-container">
+              <div id="hpFill" class="bar-fill" style="width: 100%;"></div>
+            </div>
+          </div>
+          <!-- Tactical Shield Matrix -->
+          <div class="stat-row">
+            <div class="stat-header">
+              <span>Tactical Shield Matrix</span>
+              <span id="shieldText">60 / 60</span>
+            </div>
+            <div class="bar-container">
+              <div id="shieldFill" class="bar-fill" style="width: 100%;"></div>
+            </div>
+          </div>
+          <!-- Fuel / Weapon Ammo / Heat -->
+          <div class="stat-row">
+            <div class="stat-header">
+              <span id="ammoHeatLabel">Weapon Heat / Fuel</span>
+            </div>
+            <div class="bar-container">
+              <div id="fuelFill" class="bar-fill" style="width: 100%;"></div>
+            </div>
+          </div>
+          <!-- Root Access Meter -->
+          <div class="stat-row">
+            <div class="stat-header">
+              <span>Open Source Zeal (Root)</span>
+            </div>
+            <div class="bar-container">
+              <div id="rootFill" class="bar-fill" style="width: 0%;"></div>
+            </div>
+            <div id="rootStatus" class="status-badge">ACCUMULATING COMMITS...</div>
+          </div>
+
+          <!-- Space Marine Suit Status (Visible when equipped) -->
+          <div id="marineSuitCard" class="marine-suit-card" style="display: none;">
+            <div class="suit-badge">⚡ ASTARTES POWER ARMOR ENGAGED ⚡</div>
+            <div class="suit-stat-row">
+              <div class="suit-stat-label">
+                <span>Ceramite Armor Plating</span>
+                <span id="suitShieldText">150 / 150</span>
+              </div>
+              <div class="suit-bar-bg">
+                <div id="suitShieldFill" class="suit-shield-fill" style="width: 100%;"></div>
+              </div>
+            </div>
+            <div class="suit-stat-row">
+              <div class="suit-stat-label">
+                <span>Plasma Battery Runtime</span>
+                <span id="suitBatteryText">25.0s</span>
+              </div>
+              <div class="suit-bar-bg">
+                <div id="suitBatteryFill" class="suit-shield-fill" style="width: 100%; background: #eab308;"></div>
+              </div>
+            </div>
+            <div class="suit-abilities-text">[SPACE] THUNDER SLAM | TWIN BOLTERS [TACTICAL EXOSUIT]</div>
+          </div>
+        </div>
+
+        <!-- Objectives Tracker Card -->
+        <div id="objectiveCard" class="objective-card">
+          <div class="objective-header">
+            <span id="sectorTitle" class="sector-title">SECTOR 1-1: REPO VAULT</span>
+            <span id="objectiveStatusBadge" class="obj-badge in-progress">ACTIVE</span>
+          </div>
+          <div id="objectiveList" class="objective-list">
+            <div class="objective-item"><span class="obj-check">◻</span> Purge Room Hostiles</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; align-items: flex-end;">
+        <div class="hud-meta-stats">
+          <div class="score-title" id="scoreDisplay">PURGED: 0</div>
+          <div class="wave-title" id="waveDisplay">SECTOR: 1-1</div>
+          <div style="font-size: 12px; color: #94a3b8; margin-top: 2px;" id="levelDisplay">LVL: 1</div>
+          <div class="combo-badge" id="comboDisplay">COMBO x2 (5 PURGES)</div>
+        </div>
+
+        <!-- Minimap Radar Container -->
+        <div id="minimapContainer" class="minimap-container">
+          <div class="minimap-header">SOLITON RADAR // 2400M</div>
+          <canvas id="minimapCanvas" width="130" height="130"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="hud-bottom">
+      <!-- Abilities on left -->
+      <div class="abilities-bar">
+        <div class="ability-card" id="slideStatus">SUDO DASH: READY [SPACE]</div>
+        <div class="ability-card" id="kill9Status">KILL -9: READY [RIGHT CLICK]</div>
+      </div>
+
+      <!-- 2-Weapon Selection Bar Center (Soul Knight Style) -->
+      <div class="hud-center-bottom">
+        <div class="weapon-bar">
+          <div class="weapon-slot active" id="weaponSlot0" onclick="window.switchWeapon && window.switchWeapon(0)">
+            <span class="weapon-slot-tag" id="weaponTag0">PRIMARY</span>
+            <span class="weapon-key">[1]</span>
+            <span class="weapon-name" id="weaponName0">GPL FLAMER</span>
+            <span class="weapon-ammo" id="weaponAmmo0">PYRO CONE</span>
+          </div>
+          <div class="weapon-slot" id="weaponSlot1" onclick="window.switchWeapon && window.switchWeapon(1)">
+            <span class="weapon-slot-tag" id="weaponTag1">SECONDARY</span>
+            <span class="weapon-key">[2]</span>
+            <span class="weapon-name" id="weaponName1">BREAKER</span>
+            <span class="weapon-ammo" id="weaponAmmo1">BUCKSHOT</span>
+          </div>
+        </div>
+        <div style="font-size: 10px; color: #94a3b8; font-weight: bold; margin-top: 4px;">
+          SWITCH: [1] / [2] / [Q] / [WHEEL] | [E] SWAP GROUND WEAPON / INTERACT
+        </div>
+      </div>
+
+      <!-- Helldivers Stratagems Panel Right (Mandatory Arrow Sequences) -->
+      <div class="stratagem-panel">
+        <div class="stratagem-header">
+          <span>ORBITAL STRATAGEMS</span>
+          <span class="stratagem-tip">[ARROWS ONLY ▲ ▶ ▼ ◀]</span>
+        </div>
+        <div class="stratagem-list">
+          <div class="stratagem-card ready" id="stratCard0" onclick="window.openTerminalForStratagem && window.openTerminalForStratagem(0)">
+            <div class="strat-top">
+              <span class="strat-name">500KG BOMB</span>
+              <span class="strat-cooldown" id="stratCd0">READY</span>
+            </div>
+            <div class="strat-code">▲ ▶ ▼ ▼ ▼</div>
+          </div>
+          <div class="stratagem-card ready" id="stratCard1" onclick="window.openTerminalForStratagem && window.openTerminalForStratagem(1)">
+            <div class="strat-top">
+              <span class="strat-name">380MM BARRAGE</span>
+              <span class="strat-cooldown" id="stratCd1">READY</span>
+            </div>
+            <div class="strat-code">▶ ▼ ▲ ▲ ◀ ▼ ▼</div>
+          </div>
+          <div class="stratagem-card ready" id="stratCard2" onclick="window.openTerminalForStratagem && window.openTerminalForStratagem(2)">
+            <div class="strat-top">
+              <span class="strat-name">GATLING SENTRY</span>
+              <span class="strat-cooldown" id="stratCd2">READY</span>
+            </div>
+            <div class="strat-code">▼ ▲ ▶ ▼</div>
+          </div>
+          <div class="stratagem-card ready" id="stratCard3" onclick="window.openTerminalForStratagem && window.openTerminalForStratagem(3)">
+            <div class="strat-top">
+              <span class="strat-name">ORBITAL LASER</span>
+              <span class="strat-cooldown" id="stratCd3">READY</span>
+            </div>
+            <div class="strat-code">▶ ▼ ▲ ▶ ▼</div>
+          </div>
+          <div class="stratagem-card ready" id="stratCard4" onclick="window.openTerminalForStratagem && window.openTerminalForStratagem(4)">
+            <div class="strat-top">
+              <span class="strat-name">ASTARTES SUIT</span>
+              <span class="strat-cooldown" id="stratCd4">READY</span>
+            </div>
+            <div class="strat-code">▼ ▼ ▲ ▶</div>
+          </div>
+          <div class="stratagem-card ready" id="stratCard5" onclick="window.openTerminalForStratagem && window.openTerminalForStratagem(5)">
+            <div class="strat-top">
+              <span class="strat-name">DOME SHIELD</span>
+              <span class="strat-cooldown" id="stratCd5">READY</span>
+            </div>
+            <div class="strat-code">▼ ▼ ▲ ▲ ◀ ▶</div>
+          </div>
+          <div class="stratagem-card ready" id="stratCard6" onclick="window.openTerminalForStratagem && window.openTerminalForStratagem(6)">
+            <div class="strat-top">
+              <span class="strat-name">RAILCANNON</span>
+              <span class="strat-cooldown" id="stratCd6">READY</span>
+            </div>
+            <div class="strat-code">▶ ▲ ▼ ▼ ▶</div>
+          </div>
+          <div class="stratagem-card ready" id="stratCard7" onclick="window.openTerminalForStratagem && window.openTerminalForStratagem(7)">
+            <div class="strat-top">
+              <span class="strat-name">TESLA TOWER</span>
+              <span class="strat-cooldown" id="stratCd7">READY</span>
+            </div>
+            <div class="strat-code">▼ ▲ ▶ ▲ ◀ ▶</div>
+          </div>
+          <div class="stratagem-card ready" id="stratCard8" onclick="window.openTerminalForStratagem && window.openTerminalForStratagem(8)">
+            <div class="strat-top">
+              <span class="strat-name">NAPALM STRIKE</span>
+              <span class="strat-cooldown" id="stratCd8">READY</span>
+            </div>
+            <div class="strat-code">▶ ▲ ◀ ▶ ▼</div>
+          </div>
+          <div class="stratagem-card ready" id="stratCard9" onclick="window.openTerminalForStratagem && window.openTerminalForStratagem(9)">
+            <div class="strat-top">
+              <span class="strat-name">GUARD DOG</span>
+              <span class="strat-cooldown" id="stratCd9">READY</span>
+            </div>
+            <div class="strat-code">▼ ▲ ◀ ▼ ▲ ▶</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TITLE SCREEN MODAL (MGS TACTICAL BRIEFING) -->
+  <div id="titleScreen" class="modal-overlay">
+    <div class="modal-content" style="max-width: 780px;">
+      <h1 class="game-title">OPERATION: ROOT PURGE</h1>
+      <h2 class="game-sub">A HIDEO KOJIMA TRIBUTE // TACTICAL ROGUELIKE ACTION</h2>
+      <p class="lore-text">
+        The proprietary tech cartel has occupied open network nodes with telemetry agents, DRM auditors, and monopoly legal counsel.<br><br>
+        Infiltrate the server matrix, use the <strong>Soliton Radar objective telemetry</strong> to navigate, eliminate hostile corporate units, and take down apex corporate bosses to <strong>drop procedural portals into deeper sectors and confidential data vaults</strong>!
+      </p>
+
+      <div class="controls-grid" style="grid-template-columns: 1fr 1fr; font-size: 12px; gap: 8px;">
+        <div><span class="key-badge">WASD</span> Snappy Movement & Waddle</div>
+        <div><span class="key-badge">Arrow Keys</span> Stratagem Arrow Codes ONLY</div>
+        <div><span class="key-badge">Left Click</span> Fire Weapon / Throw Armed Beacon</div>
+        <div><span class="key-badge">1 / 2 / Q / Wheel</span> Switch Held Weapons (Max 2)</div>
+        <div><span class="key-badge">E</span> Swap Ground Weapon / Open Chest / Hack / Warp</div>
+        <div><span class="key-badge">Space / Shift</span> Sudo Belly Slide (or Space Marine Slam!)</div>
+        <div><span class="key-badge">Right Click</span> KILL -9 SIGKILL Nova Shockwave</div>
+        <div><span class="key-badge">Tab / Ctrl / G</span> Toggle Stratagem Terminal</div>
+      </div>
+
+      <button id="startBtn" class="btn">INITIALIZE PURGE [SPACE]</button>
+    </div>
+  </div>
+
+  <!-- UPGRADE MODAL -->
+  <div id="upgradeModal" class="modal-overlay" style="display: none;">
+    <div class="modal-content">
+      <h2 style="font-size: 26px; color: #fbbf24; margin-bottom: 8px;">KERNEL RECOMPILED!</h2>
+      <p style="color: #94a3b8; font-size: 13px;">Choose an open source patch to augment Tux's arsenal:</p>
+
+      <div class="upgrade-cards-container" id="upgradeChoices">
+        <!-- Populated dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <!-- GAME OVER MODAL -->
+  <div id="gameOverModal" class="modal-overlay" style="display: none;">
+    <div class="modal-content">
+      <h1 style="color: #ef4444; font-size: 38px; margin-bottom: 10px;">KERNEL PANIC</h1>
+      <p style="color: #94a3b8; margin-bottom: 16px;">Tux was overwhelmed by proprietary bloatware.</p>
+      <div id="finalScoreText" style="font-size: 22px; color: #fbbf24; font-weight: bold; margin-bottom: 24px;"></div>
+      <button id="restartBtn" class="btn">REBOOT SYSTEM [TRY AGAIN]</button>
+    </div>
+  </div>
+
+  <!-- VICTORY MODAL -->
+  <div id="victoryModal" class="modal-overlay" style="display: none;">
+    <div class="modal-content">
+      <h1 style="color: #22c55e; font-size: 38px; margin-bottom: 10px;">PROPRIETARY OVERTHROWN!</h1>
+      <p style="color: #94a3b8; margin-bottom: 16px;">All monopolies purged. The world has been liberated under GPLv3!</p>
+      <div id="victoryScoreText" style="font-size: 22px; color: #fbbf24; font-weight: bold; margin-bottom: 24px;"></div>
+      <button id="playAgainBtn" class="btn">PURGE AGAIN</button>
+    </div>
+  </div>
+
+  <script src="audio.js"></script>
+  <script src="mcp_enemy_tools.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

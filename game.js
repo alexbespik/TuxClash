@@ -1,0 +1,10409 @@
+// TUX: ROOT PURGE - The Open Source Reckoning
+// Fast, Juicy Arcade Action Game where Tux incinerates Proprietary Bullshit
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// --- GAME STATE ---
+const STATE = {
+  TITLE: 0,
+  PLAYING: 1,
+  UPGRADE: 2,
+  GAMEOVER: 3,
+  VICTORY: 4
+};
+
+let gameState = STATE.TITLE;
+let gameTime = 0;
+let lastTimestamp = 0;
+let screenShake = 0;
+let hitStop = 0;
+
+// Procedural Dungeon & Arena dimensions (Soul Knight Style)
+const TILE_SIZE = 64;
+const DUNGEON_COLS = 64;
+const DUNGEON_ROWS = 48;
+let WORLD_WIDTH = DUNGEON_COLS * TILE_SIZE; // 4096px
+let WORLD_HEIGHT = DUNGEON_ROWS * TILE_SIZE; // 3072px
+
+// Camera
+const camera = {
+  x: 0,
+  y: 0,
+  targetX: 0,
+  targetY: 0
+};
+
+// Input
+const keys = {};
+const mouse = {
+  x: window.innerWidth / 2,
+  y: window.innerHeight / 2,
+  worldX: 0,
+  worldY: 0,
+  down: false,
+  rightDown: false
+};
+
+let screenFlash = 0;
+const playerProjectiles = [];
+const orbitalStrikes = [];
+const sentryTurrets = [];
+const dropPods = [];
+const spaceMarineSuitPickups = [];
+const groundWeapons = [];
+const weaponChests = [];
+const objectiveTargets = [];
+const floorHazards = [];
+const activeDomeShields = [];
+const teslaTowers = [];
+const proceduralPortals = [];
+const environmentalHazards = [];
+let dungeon = null;
+let isStratagemTerminalOpen = false;
+let currentTerminalSequence = [];
+let stratagemResetTimer = null;
+
+// Weapon Arsenal Catalogue
+const WEAPON_CATALOG = [
+  { id: 0, name: "GPL FLAMETHROWER", shortName: "GPL FLAMER", ammoText: "PYRO CONE", color: "#f97316", type: "flame" },
+  { id: 1, name: "BREAKER SHOTGUN", shortName: "BREAKER", ammoText: "BUCKSHOT", color: "#fbbf24", type: "buckshot" },
+  { id: 2, name: "INDOMITUS BOLTER", shortName: "BOLTER", ammoText: "HE ASTARTES", color: "#f59e0b", type: "bolter" },
+  { id: 3, name: "SUDO MINIGUN", shortName: "MINIGUN", ammoText: "SUDO ROTARY", color: "#38bdf8", type: "minigun" },
+  { id: 4, name: "FORKBOMB RPG", shortName: "FORKBOMB", ammoText: "CLUSTER RPG", color: "#ef4444", type: "rocket" },
+  { id: 5, name: "PLASMA RAILGUN", shortName: "RAILGUN", ammoText: "GIGAWATT SLUG", color: "#a855f7", type: "railgun" },
+  { id: 6, name: "CRYO CANNON", shortName: "CRYO CANNON", ammoText: "SUB-ZERO KERNEL", color: "#06b6d4", type: "cryo" },
+  { id: 7, name: "TESLA DAEMON CASTER", shortName: "TESLA ARC", ammoText: "CHAIN LIGHTNING", color: "#38bdf8", type: "tesla" },
+  { id: 8, name: "NANO CYBER-KATANA", shortName: "BASH BLADE", ammoText: "KINETIC SLASH", color: "#22c55e", type: "melee" },
+  { id: 9, name: "CLUSTER GRENADE LAUNCHER", shortName: "GRENADE LOB", ammoText: "BOMBLETS", color: "#f97316", type: "grenade" },
+  { id: 10, name: "TACHYON BEAM DRILL", shortName: "BEAM DRILL", ammoText: "CONTINUOUS RAY", color: "#e879f9", type: "beam" },
+  { id: 11, name: "GNU FLECHETTE SPIKER", shortName: "SPIKER", ammoText: "PNEUMATIC NAILS", color: "#cbd5e1", type: "spiker" },
+  { id: 12, name: "AMR ANTI-MATERIEL SNIPER", shortName: "AMR SNIPER", ammoText: "HEAVY AP SLUG", color: "#ef4444", type: "amr_sniper" },
+  { id: 13, name: "SINGULARITY VORTEX CANNON", shortName: "VORTEX CANNON", ammoText: "EVENT HORIZON", color: "#c084fc", type: "singularity" },
+  { id: 14, name: "KINETIC SAWBLADE LAUNCHER", shortName: "SAWBLADE DISC", ammoText: "RICOCHET DISCS", color: "#38bdf8", type: "sawblade" },
+  { id: 15, name: "CORROSIVE ACID SPRAYER", shortName: "ACID SPRAYER", ammoText: "CAUSTIC SLUDGE", color: "#22c55e", type: "acid_sprayer" }
+];
+
+// Player (TUX - High Commander of Open Source)
+class Player {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.vx = 0;
+    this.vy = 0;
+    this.radius = 26;
+    this.angle = 0;
+    this.hp = 140;
+    this.maxHp = 140;
+    this.shield = 60;
+    this.maxShield = 60;
+    this.shieldRegenDelay = 3.0;
+    this.shieldRegenTimer = 0;
+    this.baseSpeed = 340;
+    this.speed = 340;
+    
+    // Weapon Arsenal: Strictly 2 Weapons Held (Soul Knight Style)
+    this.heldWeapons = [WEAPON_CATALOG[0], WEAPON_CATALOG[1]];
+    this.activeWeaponSlot = 0; // 0 (Primary) or 1 (Secondary)
+    this.weaponCooldowns = new Array(16).fill(0);
+    this.guardDogDrone = null;
+    this.corrodedTimer = 0;
+
+    // Fuel & Heat
+    this.fuel = 100;
+    this.maxFuel = 100;
+    this.fuelRegen = 40; // per second
+    this.fuelCostPerSec = 35;
+    this.isFiring = false;
+
+    // Belly Slide (sudo dash)
+    this.isSliding = false;
+    this.slideTimer = 0;
+    this.slideDuration = 0.38;
+    this.slideCooldown = 0;
+    this.slideCooldownMax = 1.1;
+    this.slideDirX = 0;
+    this.slideDirY = 0;
+
+    // ASTARTES SPACE MARINE POWER SUIT (Balanced Exosuit: 25s Battery & 150 Shield)
+    this.isSpaceMarine = false;
+    this.suitShield = 0;
+    this.maxSuitShield = 150;
+    this.suitBattery = 25.0;
+    this.maxSuitBattery = 25.0;
+    this.suitSlamCooldown = 0;
+    this.stepTimer = 0;
+
+    // Helldivers Stratagems
+    this.holdingStratagem = null;
+
+    // Root Access Mode (Frenzy)
+    this.rootCharge = 0;
+    this.rootMax = 100;
+    this.isRootMode = false;
+    this.rootDuration = 0;
+    this.rootDurationMax = 9.0;
+
+    // Secondary Weapon: KILL -9 Shockwave
+    this.kill9Cooldown = 0;
+    this.kill9CooldownMax = 4.0;
+
+    // Animations
+    this.waddleTime = 0;
+    this.blinkTimer = 0;
+    this.invulnerableTimer = 0;
+    this.shieldRegenTimer = 0;
+    this.webSlowTimer = 0;
+
+    // Upgrades / Stats
+    this.level = 1;
+    this.xp = 0;
+    this.xpNeeded = 100;
+    this.flameDamageMult = 1.0;
+    this.flameRangeMult = 1.0;
+    this.flameSpread = 0.38;
+    this.plasmaFlames = false;
+    this.forkBombPerk = false;
+    this.magmaSlidePerk = false;
+    this.infectiousGPL = false;
+    this.communityPenguins = 0;
+    this.armorReduction = 0;
+    this.regenRate = 0; // hp per sec
+
+    // New Perk Flags
+    this.naniteShieldPerk = false;
+    this.akimboPerk = false;
+    this.stratagemHeroPerk = false;
+    this.patriotStimPerk = false;
+    this.armorPiercePerk = false;
+    this.clusterPerk = false;
+    this.teslaCoilPerk = false;
+    this.titanPlatingPerk = false;
+  }
+
+  update(dt) {
+    // Regenerate HP
+    if (this.regenRate > 0 && this.hp < this.maxHp) {
+      this.hp = Math.min(this.maxHp, this.hp + this.regenRate * dt);
+    }
+
+    // Cooldowns
+    if (this.slideCooldown > 0) this.slideCooldown -= dt;
+    if (this.kill9Cooldown > 0) this.kill9Cooldown -= dt;
+    if (this.invulnerableTimer > 0) this.invulnerableTimer -= dt;
+    if (this.suitSlamCooldown > 0) this.suitSlamCooldown -= dt;
+    this.shieldRegenTimer += dt;
+
+    for (let i = 0; i < this.weaponCooldowns.length; i++) {
+      if (this.weaponCooldowns[i] > 0) this.weaponCooldowns[i] -= dt;
+    }
+
+    // Natural Tactical Energy Shield Regeneration (Soul Knight Style - Regenerates out of combat)
+    if (!this.isSpaceMarine && this.shieldRegenTimer >= this.shieldRegenDelay && this.shield < this.maxShield) {
+      this.shield = Math.min(this.maxShield, this.shield + 22 * dt);
+      if (Math.random() < 0.15) {
+        particles.push(new SparkParticle(this.x + (Math.random() - 0.5) * 20, this.y + (Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20, -25, "#06b6d4"));
+      }
+    }
+
+    // Space Marine Power Suit Battery Depletion
+    if (this.isSpaceMarine) {
+      this.suitBattery -= dt;
+      if (this.suitBattery <= 0) {
+        this.suitBattery = 0;
+        this.ejectSpaceMarineSuit();
+      }
+    }
+
+    // Nanite Shield passive regen out of combat
+    if (this.naniteShieldPerk && this.shieldRegenTimer > 2.5 && this.hp < this.maxHp) {
+      this.hp = Math.min(this.maxHp, this.hp + 12 * dt);
+    }
+
+    // Root mode timer
+    if (this.isRootMode) {
+      this.rootDuration -= dt;
+      if (this.rootDuration <= 0) {
+        this.isRootMode = false;
+        this.rootCharge = 0;
+        addFloatingText(this.x, this.y - 40, "ROOT EXPIRED", "#f97316", 24);
+      }
+    }
+
+    // Handle Belly Slide
+    if (this.isSliding) {
+      this.slideTimer -= dt;
+      // Allow responsive steering during slide so Tux never feels stuck or out of control
+      let steerX = 0, steerY = 0;
+      if (keys['KeyW']) steerY -= 1;
+      if (keys['KeyS']) steerY += 1;
+      if (keys['KeyA']) steerX -= 1;
+      if (keys['KeyD']) steerX += 1;
+      const steerLen = Math.hypot(steerX, steerY);
+      if (steerLen > 0) {
+        this.slideDirX = this.slideDirX * 0.88 + (steerX / steerLen) * 0.12;
+        this.slideDirY = this.slideDirY * 0.88 + (steerY / steerLen) * 0.12;
+        const norm = Math.hypot(this.slideDirX, this.slideDirY);
+        if (norm > 0) {
+          this.slideDirX /= norm;
+          this.slideDirY /= norm;
+        }
+      }
+      const slideSpeedMult = this.patriotStimPerk ? 3.2 : 2.6;
+      this.vx = this.slideDirX * this.speed * slideSpeedMult;
+      this.vy = this.slideDirY * this.speed * slideSpeedMult;
+      this.x += this.vx * dt;
+      this.y += this.vy * dt;
+      if (dungeon) dungeon.resolveCircle(this, this.radius);
+
+      // Magma trail particles & damage
+      if (Math.random() < 0.8) {
+        particles.push(new ScorchTrail(
+          this.x - this.slideDirX * 20 + (Math.random() - 0.5) * 15,
+          this.y - this.slideDirY * 20 + (Math.random() - 0.5) * 15,
+          this.magmaSlidePerk ? 4.5 : 1.2
+        ));
+      }
+
+      // Slide ram damage into enemies
+      for (const enemy of enemies) {
+        const dx = enemy.x - this.x;
+        const dy = enemy.y - this.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < this.radius + enemy.radius) {
+          enemy.takeDamage(this.magmaSlidePerk ? 140 : 75, "SUDO SLIDE RAM!");
+          enemy.vx += this.slideDirX * 450;
+          enemy.vy += this.slideDirY * 450;
+          enemy.ignite(3.0);
+          addScreenShake(6);
+        }
+      }
+
+      if (this.slideTimer <= 0) {
+        this.isSliding = false;
+      }
+    } else {
+      // Normal Walking Movement (Strictly WASD - Snappy Soul Knight Response)
+      let moveX = 0;
+      let moveY = 0;
+      if (keys['KeyW']) moveY -= 1;
+      if (keys['KeyS']) moveY += 1;
+      if (keys['KeyA']) moveX -= 1;
+      if (keys['KeyD']) moveX += 1;
+
+      const len = Math.hypot(moveX, moveY);
+      if (len > 0) {
+        moveX /= len;
+        moveY /= len;
+        let curSpeed = this.isRootMode ? this.speed * 1.35 : (this.isSpaceMarine ? this.speed * 1.05 : this.speed);
+        if (this.webSlowTimer && this.webSlowTimer > 0) {
+          curSpeed *= 0.5;
+        }
+        if (dungeon) {
+          const curTile = dungeon.getTileAt(this.x, this.y);
+          if (curTile === 3) {
+            // Water puddle slows movement by 15% and emits ripples
+            curSpeed *= 0.85;
+            if (Math.random() < 0.25) {
+              particles.push(new SparkParticle(this.x + (Math.random() - 0.5) * 16, this.y + 12, (Math.random() - 0.5) * 25, -15, "#10b981"));
+            }
+          } else if (curTile === 4) {
+            // Rustling tall grass
+            if (Math.random() < 0.2) {
+              particles.push(new SparkParticle(this.x + (Math.random() - 0.5) * 16, this.y + (Math.random() - 0.5) * 16, (Math.random() - 0.5) * 20, -20, "#22c55e"));
+            }
+          }
+        }
+        const biomeFriction = (dungeon && dungeon.currentBiome && dungeon.currentBiome.frictionMult !== undefined)
+          ? dungeon.currentBiome.frictionMult
+          : 1.0;
+
+        if (biomeFriction < 0.9) {
+          // Sub-zero ice skating drift acceleration
+          const targetVx = moveX * curSpeed;
+          const targetVy = moveY * curSpeed;
+          const accel = dt * 6.5;
+          this.vx += (targetVx - this.vx) * accel;
+          this.vy += (targetVy - this.vy) * accel;
+          if (Math.random() < 0.3) {
+            particles.push(new SparkParticle(this.x + (Math.random() - 0.5) * 16, this.y + 12, -this.vx * 0.15, -this.vy * 0.15, "#38bdf8"));
+          }
+        } else {
+          this.vx = moveX * curSpeed;
+          this.vy = moveY * curSpeed;
+        }
+        this.waddleTime += dt * 14;
+
+        // Heavy Space Marine Footsteps!
+        if (this.isSpaceMarine) {
+          this.stepTimer += dt;
+          if (this.stepTimer > 0.28) {
+            this.stepTimer = 0;
+            window.soundEngine.playHeavyFootstep();
+            addScreenShake(1.5);
+            for (let i = 0; i < 4; i++) {
+              particles.push(new SparkParticle(this.x + (Math.random() - 0.5) * 15, this.y + 16, (Math.random() - 0.5) * 40, (Math.random() - 0.5) * 40, "#94a3b8"));
+            }
+          }
+        }
+      } else {
+        const biomeFriction = (dungeon && dungeon.currentBiome && dungeon.currentBiome.frictionMult !== undefined)
+          ? dungeon.currentBiome.frictionMult
+          : 1.0;
+
+        if (biomeFriction < 0.9) {
+          // Ice glide deceleration with momentum
+          const decay = Math.pow(0.20, dt * 1.8);
+          this.vx *= decay;
+          this.vy *= decay;
+          if (Math.hypot(this.vx, this.vy) < 8) {
+            this.vx = 0;
+            this.vy = 0;
+          } else if (Math.random() < 0.25) {
+            particles.push(new SparkParticle(this.x + (Math.random() - 0.5) * 16, this.y + 12, 0, -10, "#38bdf8"));
+          }
+        } else {
+          // Instant digital stop (Soul Knight style - crisp & controlled)
+          this.vx = 0;
+          this.vy = 0;
+        }
+      }
+
+      this.x += this.vx * dt;
+      this.y += this.vy * dt;
+      if (dungeon) dungeon.resolveCircle(this, this.radius);
+
+      // Start Slide or Thunder Slam
+      if ((keys['ShiftLeft'] || keys['ShiftRight'] || (keys['Space'] && len > 0))) {
+        if (this.isSpaceMarine && this.suitSlamCooldown <= 0) {
+          this.thunderSlam();
+        } else if (!this.isSpaceMarine && this.slideCooldown <= 0) {
+          this.startSlide(moveX, moveY);
+        }
+      }
+    }
+
+    // Aim angle towards mouse
+    const aimDx = mouse.worldX - this.x;
+    const aimDy = mouse.worldY - this.y;
+    this.angle = Math.atan2(aimDy, aimDx);
+
+    // Fuel Regen (for flamethrower)
+    if (!this.isFiring || this.currentWeapon !== 0) {
+      this.fuel = Math.min(this.maxFuel, this.fuel + this.fuelRegen * dt);
+    }
+
+    // Fire Weapon (Left click)
+    if (mouse.down && !this.isSliding) {
+      this.fireCurrentWeapon(dt);
+    } else {
+      if (this.currentWeapon === 0) {
+        this.isFiring = false;
+        window.soundEngine.setFlamethrower(false);
+      }
+    }
+
+    // Trigger Root Mode if full and key pressed
+    if ((keys['KeyR'] || keys['KeyF']) && this.rootCharge >= this.rootMax && !this.isRootMode) {
+      this.activateRootMode();
+    }
+
+    // Secondary Weapon: KILL -9 Shockwave (Right Click)
+    if (mouse.rightDown && this.kill9Cooldown <= 0) {
+      this.triggerKill9();
+    }
+
+    // Touch check for Space Marine Drop Pods / Pickups
+    for (let i = spaceMarineSuitPickups.length - 1; i >= 0; i--) {
+      const sp = spaceMarineSuitPickups[i];
+      if (Math.hypot(sp.x - this.x, sp.y - this.y) < this.radius + sp.radius) {
+        this.equipSpaceMarineSuit();
+        spaceMarineSuitPickups.splice(i, 1);
+      }
+    }
+
+    if (this.webSlowTimer > 0) {
+      this.webSlowTimer -= dt;
+    }
+
+    if (this.corrodedTimer > 0) {
+      this.corrodedTimer -= dt;
+      if (Math.random() < 0.2) {
+        particles.push(new SparkParticle(this.x + (Math.random() - 0.5) * 20, this.y + (Math.random() - 0.5) * 20, 0, -15, "#22c55e"));
+      }
+    }
+
+    // Update Guard Dog Combat Drone
+    if (this.guardDogDrone) {
+      if (!this.guardDogDrone.update(dt, this)) {
+        this.guardDogDrone = null;
+      }
+    }
+
+    // Update Ground Weapon / Cache Pickup Prompt in HUD
+    this.updateGroundPickupPrompt();
+  }
+
+  get currentWeapon() {
+    return this.heldWeapons[this.activeWeaponSlot] ? this.heldWeapons[this.activeWeaponSlot].id : 0;
+  }
+
+  updateGroundPickupPrompt() {
+    let promptText = null;
+    for (const gw of groundWeapons) {
+      if (Math.hypot(gw.x - this.x, gw.y - this.y) < 70) {
+        promptText = `SWAP ${this.heldWeapons[this.activeWeaponSlot].shortName} FOR ${gw.weapon.name}`;
+        break;
+      }
+    }
+    if (!promptText) {
+      for (const chest of weaponChests) {
+        if (!chest.opened && Math.hypot(chest.x - this.x, chest.y - this.y) < 70) {
+          promptText = "OPEN WEAPON CACHE";
+          break;
+        }
+      }
+    }
+    if (!promptText && typeof proceduralPortals !== 'undefined') {
+      for (const portal of proceduralPortals) {
+        if (Math.hypot(portal.x - this.x, portal.y - this.y) < 85) {
+          promptText = `[E] ENTER PORTAL: ${portal.biome.name} [${portal.objectiveTitle}]`;
+          break;
+        }
+      }
+    }
+    if (!promptText && dungeon && dungeon.isSectorCompleted() && dungeon.exitGateway) {
+      if (Math.hypot(dungeon.exitGateway.x - this.x, dungeon.exitGateway.y - this.y) < 80) {
+        promptText = "ENTER WARP GATEWAY";
+      }
+    }
+
+    const promptEl = document.getElementById('groundPickupPrompt');
+    const promptTextEl = document.getElementById('pickupPromptText');
+    if (promptEl && promptTextEl) {
+      if (promptText) {
+        promptEl.style.display = 'flex';
+        promptTextEl.innerText = promptText;
+      } else {
+        promptEl.style.display = 'none';
+      }
+    }
+  }
+
+  switchSlot(slot) {
+    if (slot !== 0 && slot !== 1) return;
+    this.activeWeaponSlot = slot;
+    if (this.currentWeapon !== 0) {
+      this.isFiring = false;
+      window.soundEngine.setFlamethrower(false);
+    }
+    this.updateWeaponHud();
+    const activeW = this.heldWeapons[this.activeWeaponSlot];
+    if (activeW) {
+      addFloatingText(this.x, this.y - 40, activeW.name, activeW.color, 18);
+    }
+    window.soundEngine.playPickup();
+  }
+
+  swapActiveWeapon(newWeapon) {
+    const oldWeapon = this.heldWeapons[this.activeWeaponSlot];
+    groundWeapons.push(new GroundWeapon(this.x, this.y, oldWeapon));
+    this.heldWeapons[this.activeWeaponSlot] = newWeapon;
+    if (this.currentWeapon !== 0) {
+      this.isFiring = false;
+      window.soundEngine.setFlamethrower(false);
+    }
+    this.updateWeaponHud();
+    window.soundEngine.playPickup();
+    addFloatingText(this.x, this.y - 45, `EQUIPPED ${newWeapon.name}!`, newWeapon.color, 24);
+    addScreenShake(4);
+  }
+
+  interact() {
+    // 1. Proximity check for GroundWeapon (< 75px)
+    for (let i = groundWeapons.length - 1; i >= 0; i--) {
+      const gw = groundWeapons[i];
+      if (Math.hypot(gw.x - this.x, gw.y - this.y) < 75) {
+        this.swapActiveWeapon(gw.weapon);
+        groundWeapons.splice(i, 1);
+        return;
+      }
+    }
+
+    // 2. Proximity check for WeaponChest (< 70px)
+    for (const chest of weaponChests) {
+      if (!chest.opened && Math.hypot(chest.x - this.x, chest.y - this.y) < 70) {
+        chest.open();
+        return;
+      }
+    }
+
+    // 3. Proximity check for ProceduralPortal (< 85px)
+    if (typeof proceduralPortals !== 'undefined') {
+      for (const portal of proceduralPortals) {
+        if (Math.hypot(portal.x - this.x, portal.y - this.y) < 85) {
+          portal.enter();
+          return;
+        }
+      }
+    }
+
+    // 4. Proximity check for ExitWarpGateway (< 85px)
+    if (dungeon && dungeon.isSectorCompleted() && dungeon.exitGateway) {
+      if (Math.hypot(dungeon.exitGateway.x - this.x, dungeon.exitGateway.y - this.y) < 85) {
+        dungeon.warpToNextSector();
+        return;
+      }
+    }
+  }
+
+  updateWeaponHud() {
+    for (let i = 0; i < 2; i++) {
+      const slotEl = document.getElementById(`weaponSlot${i}`);
+      const nameEl = document.getElementById(`weaponName${i}`);
+      const ammoEl = document.getElementById(`weaponAmmo${i}`);
+      const tagEl = document.getElementById(`weaponTag${i}`);
+      const w = this.heldWeapons[i];
+      if (slotEl && w) {
+        if (i === this.activeWeaponSlot) slotEl.classList.add('active');
+        else slotEl.classList.remove('active');
+      }
+      if (nameEl && w) nameEl.innerText = w.shortName;
+      if (ammoEl && w) ammoEl.innerText = w.ammoText;
+      if (tagEl) tagEl.innerText = i === 0 ? "PRIMARY" : "SECONDARY";
+    }
+  }
+
+  fireCurrentWeapon(dt) {
+    // If holding a stratagem beacon, do not fire regular weapon (thrown on click)
+    if (this.holdingStratagem !== null) {
+      return;
+    }
+
+    const curW = this.heldWeapons[this.activeWeaponSlot];
+    const weaponId = curW ? curW.id : 0;
+    const nozzleDist = this.isSpaceMarine ? 42 : 36;
+    const nozzleX = this.x + Math.cos(this.angle) * nozzleDist;
+    const nozzleY = this.y + Math.sin(this.angle) * nozzleDist;
+
+    if (weaponId === 0) {
+      // 0. GPL Flamethrower
+      if (this.fuel > 0 || this.isRootMode) {
+        this.isFiring = true;
+        if (!this.isRootMode) {
+          this.fuel = Math.max(0, this.fuel - this.fuelCostPerSec * dt);
+        }
+        this.spewFlames(dt);
+        window.soundEngine.setFlamethrower(true, this.isRootMode ? 1.5 : 1.0);
+      } else {
+        this.isFiring = false;
+        window.soundEngine.setFlamethrower(false);
+      }
+    } else if (weaponId === 1) {
+      // 1. Breaker Shotgun
+      if (this.weaponCooldowns[1] <= 0) {
+        this.weaponCooldowns[1] = 0.52;
+        this.fireShotgun(nozzleX, nozzleY);
+      }
+    } else if (weaponId === 2) {
+      // 2. Heavy Bolter
+      if (this.weaponCooldowns[2] <= 0) {
+        this.weaponCooldowns[2] = 0.16;
+        this.fireBolter(nozzleX, nozzleY);
+      }
+    } else if (weaponId === 3) {
+      // 3. Sudo Rotary Minigun
+      if (this.weaponCooldowns[3] <= 0) {
+        this.weaponCooldowns[3] = 0.065;
+        this.fireMinigun(nozzleX, nozzleY);
+      }
+    } else if (weaponId === 4) {
+      // 4. Forkbomb Cluster RPG
+      if (this.weaponCooldowns[4] <= 0) {
+        this.weaponCooldowns[4] = 1.05;
+        this.fireRPG(nozzleX, nozzleY);
+      }
+    } else if (weaponId === 5) {
+      // 5. Plasma Railgun
+      if (this.weaponCooldowns[5] <= 0) {
+        this.weaponCooldowns[5] = 0.65;
+        this.fireRailgun(nozzleX, nozzleY);
+      }
+    } else if (weaponId === 6) {
+      // 6. Cryo Freezing Cannon
+      if (this.weaponCooldowns[6] <= 0) {
+        this.weaponCooldowns[6] = 0.38;
+        this.fireCryoCannon(nozzleX, nozzleY);
+      }
+    } else if (weaponId === 7) {
+      // 7. Tesla Daemon (Arc Caster)
+      if (this.weaponCooldowns[7] <= 0) {
+        this.weaponCooldowns[7] = 0.42;
+        this.fireTeslaArc(nozzleX, nozzleY);
+      }
+    } else if (weaponId === 8) {
+      // 8. Nano Cyber-Katana (Bash Blade)
+      if (this.weaponCooldowns[8] <= 0) {
+        this.weaponCooldowns[8] = 0.32;
+        this.fireCyberKatana(nozzleX, nozzleY);
+      }
+    } else if (weaponId === 9) {
+      // 9. Cluster Grenade Launcher
+      if (this.weaponCooldowns[9] <= 0) {
+        this.weaponCooldowns[9] = 0.75;
+        this.fireGrenadeLauncher(nozzleX, nozzleY);
+      }
+    } else if (weaponId === 10) {
+      // 10. Tachyon Beam Laser Drill
+      if (this.weaponCooldowns[10] <= 0) {
+        this.weaponCooldowns[10] = 0.10;
+        this.fireTachyonBeam(nozzleX, nozzleY);
+      }
+    } else if (weaponId === 11) {
+      // 11. GNU Flechette Spiker (Nailgun)
+      if (this.weaponCooldowns[11] <= 0) {
+        this.weaponCooldowns[11] = 0.28;
+        this.fireFlechetteSpiker(nozzleX, nozzleY);
+      }
+    } else if (weaponId === 12) {
+      // 12. AMR Anti-Materiel Heavy Sniper
+      if (this.weaponCooldowns[12] <= 0) {
+        this.weaponCooldowns[12] = 0.85;
+        this.fireAMRSniper(nozzleX, nozzleY);
+      }
+    } else if (weaponId === 13) {
+      // 13. Singularity Vortex Cannon
+      if (this.weaponCooldowns[13] <= 0) {
+        this.weaponCooldowns[13] = 1.15;
+        this.fireSingularityVortex(nozzleX, nozzleY);
+      }
+    } else if (weaponId === 14) {
+      // 14. Kinetic Sawblade Launcher
+      if (this.weaponCooldowns[14] <= 0) {
+        this.weaponCooldowns[14] = 0.40;
+        this.fireSawbladeLauncher(nozzleX, nozzleY);
+      }
+    } else if (weaponId === 15) {
+      // 15. Corrosive Acid Sludge Sprayer
+      if (this.weaponCooldowns[15] <= 0) {
+        this.weaponCooldowns[15] = 0.22;
+        this.fireAcidSprayer(nozzleX, nozzleY);
+      }
+    }
+
+    // Space Marine Twin Shoulder Bolter barrage bonus
+    if (this.isSpaceMarine && Math.random() < 0.35) {
+      this.fireSpaceMarineShoulderBolters();
+    }
+  }
+
+  fireTeslaArc(nozzleX, nozzleY) {
+    if (window.soundEngine && window.soundEngine.playTeslaArc) window.soundEngine.playTeslaArc();
+    addScreenShake(3);
+
+    // Find up to 4 targets in front arc
+    const candidates = enemies.filter(e => {
+      const d = Math.hypot(e.x - nozzleX, e.y - nozzleY);
+      if (d > 650) return false;
+      const angleTo = Math.atan2(e.y - nozzleY, e.x - nozzleX);
+      const diff = Math.abs(Math.atan2(Math.sin(angleTo - this.angle), Math.cos(angleTo - this.angle)));
+      return diff < 1.2;
+    }).sort((a, b) => Math.hypot(a.x - nozzleX, a.y - nozzleY) - Math.hypot(b.x - nozzleX, b.y - nozzleY));
+
+    const targets = candidates.slice(0, 4);
+    let prevX = nozzleX, prevY = nozzleY;
+    const damage = 85 * this.flameDamageMult * (this.isRootMode ? 1.8 : 1.0);
+
+    for (const tgt of targets) {
+      tgt.takeDamage(damage, "TESLA DISCHARGE");
+      tgt.vx += Math.cos(this.angle) * 160;
+      tgt.vy += Math.sin(this.angle) * 160;
+
+      // Draw lightning chain segment particles
+      const segDist = Math.hypot(tgt.x - prevX, tgt.y - prevY);
+      const steps = Math.max(3, Math.floor(segDist / 20));
+      for (let s = 0; s <= steps; s++) {
+        const t = s / steps;
+        const px = prevX + (tgt.x - prevX) * t + (Math.random() - 0.5) * 22;
+        const py = prevY + (tgt.y - prevY) * t + (Math.random() - 0.5) * 22;
+        particles.push(new SparkParticle(px, py, (Math.random() - 0.5) * 50, (Math.random() - 0.5) * 50, "#38bdf8"));
+      }
+      prevX = tgt.x;
+      prevY = tgt.y;
+    }
+
+    if (targets.length === 0) {
+      // Fire wild arc forward
+      for (let i = 0; i < 8; i++) {
+        const dist = i * 40;
+        const px = nozzleX + Math.cos(this.angle) * dist + (Math.random() - 0.5) * 25;
+        const py = nozzleY + Math.sin(this.angle) * dist + (Math.random() - 0.5) * 25;
+        particles.push(new SparkParticle(px, py, (Math.random() - 0.5) * 80, (Math.random() - 0.5) * 80, "#38bdf8"));
+      }
+    }
+  }
+
+  fireCyberKatana(nozzleX, nozzleY) {
+    if (window.soundEngine && window.soundEngine.playKatanaSlash) window.soundEngine.playKatanaSlash();
+    addScreenShake(6);
+
+    const slashRadius = 145;
+    const slashArc = 1.6; // ~90 degrees sweep
+    const damage = 190 * this.flameDamageMult * (this.isRootMode ? 1.8 : 1.0);
+
+    // 1. Vaporize incoming enemy projectiles caught in the swing
+    for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
+      const ep = enemyProjectiles[i];
+      const dist = Math.hypot(ep.x - this.x, ep.y - this.y);
+      if (dist <= slashRadius + 20) {
+        const angleTo = Math.atan2(ep.y - this.y, ep.x - this.x);
+        const diff = Math.abs(Math.atan2(Math.sin(angleTo - this.angle), Math.cos(angleTo - this.angle)));
+        if (diff < slashArc * 0.6) {
+          for (let p = 0; p < 4; p++) {
+            particles.push(new SparkParticle(ep.x, ep.y, (Math.random() - 0.5) * 80, (Math.random() - 0.5) * 80, "#22c55e"));
+          }
+          enemyProjectiles.splice(i, 1);
+        }
+      }
+    }
+
+    // 2. Cleave and knock back hostiles in swing arc
+    for (const enemy of enemies) {
+      const dist = Math.hypot(enemy.x - this.x, enemy.y - this.y);
+      if (dist <= slashRadius + enemy.radius) {
+        const angleTo = Math.atan2(enemy.y - this.y, enemy.x - this.x);
+        const diff = Math.abs(Math.atan2(Math.sin(angleTo - this.angle), Math.cos(angleTo - this.angle)));
+        if (diff < slashArc * 0.6) {
+          enemy.takeDamage(damage, "KINETIC SLASH");
+          enemy.vx += Math.cos(this.angle) * 450;
+          enemy.vy += Math.sin(this.angle) * 450;
+        }
+      }
+    }
+
+    // 3. Emit glowing crescent particles
+    for (let i = -8; i <= 8; i++) {
+      const a = this.angle + (i / 8) * (slashArc * 0.5);
+      const dist = slashRadius * (0.8 + Math.random() * 0.3);
+      particles.push(new SparkParticle(
+        this.x + Math.cos(a) * dist,
+        this.y + Math.sin(a) * dist,
+        Math.cos(a) * 120,
+        Math.sin(a) * 120,
+        "#22c55e"
+      ));
+    }
+  }
+
+  fireGrenadeLauncher(nozzleX, nozzleY) {
+    if (window.soundEngine && window.soundEngine.playGrenadeLaunch) window.soundEngine.playGrenadeLaunch();
+    addScreenShake(5);
+    const speed = 760;
+    const spread = (Math.random() - 0.5) * 0.08;
+    const pAngle = this.angle + spread;
+    const vx = Math.cos(pAngle) * speed + this.vx * 0.2;
+    const vy = Math.sin(pAngle) * speed + this.vy * 0.2;
+    const damage = 140 * this.flameDamageMult * (this.isRootMode ? 1.8 : 1.0);
+
+    const grenade = new PlayerBullet(
+      nozzleX, nozzleY, vx, vy, 9, damage, "#f97316", 0.95, true, 80, 0, "GRENADE"
+    );
+
+    // Override bullet die to trigger secondary cluster bomblets
+    const origDie = grenade.onExpire || function() {};
+    grenade.onExpire = () => {
+      origDie();
+      // Spawn 5 cluster bomblets
+      for (let c = 0; c < 5; c++) {
+        const bAngle = (Math.PI * 2 / 5) * c + Math.random() * 0.5;
+        const bSpeed = 260 + Math.random() * 120;
+        playerProjectiles.push(new PlayerBullet(
+          grenade.x,
+          grenade.y,
+          Math.cos(bAngle) * bSpeed,
+          Math.sin(bAngle) * bSpeed,
+          6,
+          45,
+          "#fbbf24",
+          0.38,
+          true,
+          45,
+          0,
+          "BOMBLET"
+        ));
+      }
+    };
+
+    playerProjectiles.push(grenade);
+  }
+
+  fireTachyonBeam(nozzleX, nozzleY) {
+    if (window.soundEngine && window.soundEngine.playLaserBeam) window.soundEngine.playLaserBeam();
+    addScreenShake(2);
+    const range = 950;
+    const beamEndDist = range;
+    const damage = 68 * this.flameDamageMult * (this.isRootMode ? 1.8 : 1.0);
+
+    // Continuous Piercing Beam
+    for (const enemy of enemies) {
+      const dx = enemy.x - nozzleX;
+      const dy = enemy.y - nozzleY;
+      const proj = dx * Math.cos(this.angle) + dy * Math.sin(this.angle);
+      if (proj > 0 && proj < beamEndDist) {
+        const perp = Math.abs(-dx * Math.sin(this.angle) + dy * Math.cos(this.angle));
+        if (perp < enemy.radius + 18) {
+          enemy.takeDamage(damage * 0.16, "TACHYON BEAM");
+          enemy.vx += Math.cos(this.angle) * 40;
+          enemy.vy += Math.sin(this.angle) * 40;
+          if (Math.random() < 0.4) {
+            particles.push(new SparkParticle(enemy.x, enemy.y, (Math.random() - 0.5) * 70, (Math.random() - 0.5) * 70, "#e879f9"));
+          }
+        }
+      }
+    }
+
+    // High tech laser ion ray particles
+    for (let i = 0; i < 14; i++) {
+      const dist = (i / 14) * beamEndDist;
+      particles.push(new SparkParticle(
+        nozzleX + Math.cos(this.angle) * dist,
+        nozzleY + Math.sin(this.angle) * dist,
+        (Math.random() - 0.5) * 20,
+        (Math.random() - 0.5) * 20,
+        Math.random() < 0.5 ? "#e879f9" : "#c084fc"
+      ));
+    }
+  }
+
+  fireFlechetteSpiker(nozzleX, nozzleY) {
+    if (window.soundEngine && window.soundEngine.playNailgun) window.soundEngine.playNailgun();
+    addScreenShake(4);
+    const count = 3;
+    for (let i = 0; i < count; i++) {
+      const spread = (i - 1) * 0.05 + (Math.random() - 0.5) * 0.03;
+      const pAngle = this.angle + spread;
+      const speed = 1850;
+      const vx = Math.cos(pAngle) * speed + this.vx * 0.2;
+      const vy = Math.sin(pAngle) * speed + this.vy * 0.2;
+      const damage = (58 + Math.random() * 12) * this.flameDamageMult * (this.isRootMode ? 1.8 : 1.0);
+
+      playerProjectiles.push(new PlayerBullet(
+        nozzleX,
+        nozzleY,
+        vx,
+        vy,
+        5,
+        damage,
+        "#cbd5e1",
+        0.8,
+        false,
+        0,
+        3, // Pierces up to 3 targets
+        "FLECHETTE"
+      ));
+    }
+  }
+
+  fireRailgun(nozzleX, nozzleY) {
+    if (window.soundEngine.playRailgunShot) window.soundEngine.playRailgunShot();
+    addScreenShake(6);
+    const speed = 1600;
+    const vx = Math.cos(this.angle) * speed;
+    const vy = Math.sin(this.angle) * speed;
+    const damage = 220 * this.flameDamageMult * (this.isRootMode ? 1.8 : 1.0);
+
+    playerProjectiles.push(new PlayerBullet(
+      nozzleX, nozzleY, vx, vy, 8, damage, "#a855f7", 0.75, false, 0, 8, "RAILGUN"
+    ));
+
+    for (let i = 0; i < 10; i++) {
+      particles.push(new SparkParticle(
+        nozzleX, nozzleY,
+        Math.cos(this.angle) * 300 + (Math.random() - 0.5) * 150,
+        Math.sin(this.angle) * 300 + (Math.random() - 0.5) * 150,
+        Math.random() < 0.5 ? "#a855f7" : "#38bdf8"
+      ));
+    }
+  }
+
+  fireCryoCannon(nozzleX, nozzleY) {
+    window.soundEngine.playShotgun();
+    addScreenShake(3);
+    const count = 7;
+    for (let i = 0; i < count; i++) {
+      const spread = (Math.random() - 0.5) * 0.35;
+      const speed = 750 + Math.random() * 150;
+      const pAngle = this.angle + spread;
+      const vx = Math.cos(pAngle) * speed + this.vx * 0.2;
+      const vy = Math.sin(pAngle) * speed + this.vy * 0.2;
+      const damage = 42 * this.flameDamageMult * (this.isRootMode ? 1.8 : 1.0);
+
+      playerProjectiles.push(new PlayerBullet(
+        nozzleX, nozzleY, vx, vy, 6, damage, "#06b6d4", 0.55, false, 0, 1, "CRYO"
+      ));
+    }
+  }
+
+  fireShotgun(nozzleX, nozzleY) {
+    window.soundEngine.playShotgun();
+    addScreenShake(5);
+    const count = this.isRootMode ? 14 : 9;
+    for (let i = 0; i < count; i++) {
+      const spread = (Math.random() - 0.5) * 0.44;
+      const speed = 720 + Math.random() * 200;
+      const pAngle = this.angle + spread;
+      const vx = Math.cos(pAngle) * speed + this.vx * 0.2;
+      const vy = Math.sin(pAngle) * speed + this.vy * 0.2;
+      const damage = (26 + Math.random() * 8) * this.flameDamageMult * (this.isRootMode ? 1.8 : 1.0);
+
+      playerProjectiles.push(new PlayerBullet(
+        nozzleX,
+        nozzleY,
+        vx,
+        vy,
+        5,
+        damage,
+        "#fbbf24",
+        0.42,
+        false,
+        0,
+        this.armorPiercePerk ? 2 : 0,
+        "BUCK"
+      ));
+    }
+    // Muzzle smoke & sparks
+    for (let i = 0; i < 6; i++) {
+      particles.push(new SparkParticle(nozzleX, nozzleY, Math.cos(this.angle) * 180 + (Math.random() - 0.5) * 80, Math.sin(this.angle) * 180 + (Math.random() - 0.5) * 80, "#94a3b8"));
+    }
+  }
+
+  fireBolter(nozzleX, nozzleY) {
+    window.soundEngine.playBolterShot();
+    addScreenShake(3);
+    const speed = 880;
+    const spread = (Math.random() - 0.5) * 0.08;
+    const pAngle = this.angle + spread;
+    const vx = Math.cos(pAngle) * speed + this.vx * 0.2;
+    const vy = Math.sin(pAngle) * speed + this.vy * 0.2;
+    const damage = (56 + Math.random() * 12) * this.flameDamageMult * (this.isRootMode ? 1.8 : 1.0);
+
+    playerProjectiles.push(new PlayerBullet(
+      nozzleX,
+      nozzleY,
+      vx,
+      vy,
+      7,
+      damage,
+      "#f59e0b",
+      1.1,
+      true, // isExplosive
+      38, // explosiveRadius
+      this.armorPiercePerk ? 3 : 1,
+      "BOLT"
+    ));
+
+    // Extra akimbo shot if perk unlocked
+    if (this.akimboPerk || this.isRootMode) {
+      const a2 = this.angle + 0.12;
+      playerProjectiles.push(new PlayerBullet(
+        nozzleX, nozzleY, Math.cos(a2) * speed, Math.sin(a2) * speed, 6, damage * 0.8, "#f59e0b", 1.1, true, 30, 1, "BOLT"
+      ));
+    }
+  }
+
+  fireMinigun(nozzleX, nozzleY) {
+    window.soundEngine.playMinigunShot();
+    addScreenShake(1.8);
+    const speed = 980;
+    const spread = (Math.random() - 0.5) * 0.16;
+    const pAngle = this.angle + spread;
+    const vx = Math.cos(pAngle) * speed + this.vx * 0.2;
+    const vy = Math.sin(pAngle) * speed + this.vy * 0.2;
+    const damage = (20 + Math.random() * 5) * this.flameDamageMult * (this.isRootMode ? 1.8 : 1.0);
+
+    playerProjectiles.push(new PlayerBullet(
+      nozzleX,
+      nozzleY,
+      vx,
+      vy,
+      4.5,
+      damage,
+      "#38bdf8",
+      0.9,
+      false,
+      0,
+      this.armorPiercePerk ? 2 : 0,
+      "TRACER"
+    ));
+
+    // Eject glowing spent brass casings
+    const casingAngle = this.angle - Math.PI / 2 + (Math.random() - 0.5) * 0.4;
+    particles.push(new SparkParticle(
+      this.x - Math.cos(this.angle) * 8,
+      this.y - Math.sin(this.angle) * 8,
+      Math.cos(casingAngle) * 160,
+      Math.sin(casingAngle) * 160,
+      "#fef08a"
+    ));
+  }
+
+  fireRPG(nozzleX, nozzleY) {
+    window.soundEngine.playRocketLaunch();
+    addScreenShake(9);
+    const damage = 290 * this.flameDamageMult * (this.isRootMode ? 1.6 : 1.0);
+    playerProjectiles.push(new PlayerRocket(
+      nozzleX,
+      nozzleY,
+      mouse.worldX,
+      mouse.worldY,
+      damage,
+      140,
+      this.clusterPerk ? 8 : 4
+    ));
+
+    // Backblast flame particles
+    for (let i = 0; i < 8; i++) {
+      const a = this.angle + Math.PI + (Math.random() - 0.5) * 0.6;
+      const spd = 220 + Math.random() * 120;
+      particles.push(new SparkParticle(nozzleX - Math.cos(this.angle) * 25, nozzleY - Math.sin(this.angle) * 25, Math.cos(a) * spd, Math.sin(a) * spd, "#f97316"));
+    }
+  }
+
+  fireAMRSniper(nozzleX, nozzleY) {
+    if (window.soundEngine && window.soundEngine.playSniperShot) window.soundEngine.playSniperShot();
+    addScreenShake(12);
+    // Heavy backwards recoil pushback on Tux
+    this.vx -= Math.cos(this.angle) * 260;
+    this.vy -= Math.sin(this.angle) * 260;
+
+    const speed = 3400;
+    const vx = Math.cos(this.angle) * speed;
+    const vy = Math.sin(this.angle) * speed;
+    const damage = 460 * this.flameDamageMult * (this.isRootMode ? 1.8 : 1.0);
+
+    playerProjectiles.push(new PlayerBullet(
+      nozzleX, nozzleY, vx, vy, 6, damage, "#ef4444", 0.65, false, 0, 12, "AMR_SLUG"
+    ));
+
+    // Hypersonic red laser tracer trail
+    for (let i = 0; i < 18; i++) {
+      const dist = i * 45;
+      particles.push(new SparkParticle(
+        nozzleX + Math.cos(this.angle) * dist,
+        nozzleY + Math.sin(this.angle) * dist,
+        (Math.random() - 0.5) * 60,
+        (Math.random() - 0.5) * 60,
+        "#ef4444"
+      ));
+    }
+  }
+
+  fireSingularityVortex(nozzleX, nozzleY) {
+    if (window.soundEngine && window.soundEngine.playSingularityVortex) window.soundEngine.playSingularityVortex();
+    addScreenShake(4);
+    const speed = 360;
+    const vx = Math.cos(this.angle) * speed;
+    const vy = Math.sin(this.angle) * speed;
+    const tickDamage = 28 * this.flameDamageMult * (this.isRootMode ? 1.8 : 1.0);
+    const popDamage = 350 * this.flameDamageMult * (this.isRootMode ? 1.8 : 1.0);
+
+    playerProjectiles.push(new SingularityOrb(nozzleX, nozzleY, vx, vy, tickDamage, popDamage));
+  }
+
+  fireSawbladeLauncher(nozzleX, nozzleY) {
+    if (window.soundEngine && window.soundEngine.playSawbladeLaunch) window.soundEngine.playSawbladeLaunch();
+    addScreenShake(4);
+    const speed = 1150;
+    const spread = (Math.random() - 0.5) * 0.06;
+    const pAngle = this.angle + spread;
+    const vx = Math.cos(pAngle) * speed + this.vx * 0.2;
+    const vy = Math.sin(pAngle) * speed + this.vy * 0.2;
+    const damage = 180 * this.flameDamageMult * (this.isRootMode ? 1.8 : 1.0);
+
+    playerProjectiles.push(new SawbladeBullet(nozzleX, nozzleY, vx, vy, damage));
+  }
+
+  fireAcidSprayer(nozzleX, nozzleY) {
+    if (window.soundEngine && window.soundEngine.playAcidSplash) window.soundEngine.playAcidSplash();
+    addScreenShake(3);
+    const count = 4;
+    for (let i = 0; i < count; i++) {
+      const spread = (i - 1.5) * 0.12 + (Math.random() - 0.5) * 0.08;
+      const speed = 700 + Math.random() * 160;
+      const pAngle = this.angle + spread;
+      const vx = Math.cos(pAngle) * speed + this.vx * 0.2;
+      const vy = Math.sin(pAngle) * speed + this.vy * 0.2;
+      const damage = 55 * this.flameDamageMult * (this.isRootMode ? 1.8 : 1.0);
+
+      playerProjectiles.push(new AcidGlobBullet(nozzleX, nozzleY, vx, vy, damage));
+    }
+  }
+
+  fireSpaceMarineShoulderBolters() {
+    const leftPodX = this.x + Math.cos(this.angle - 1.2) * 26;
+    const leftPodY = this.y + Math.sin(this.angle - 1.2) * 26;
+    const rightPodX = this.x + Math.cos(this.angle + 1.2) * 26;
+    const rightPodY = this.y + Math.sin(this.angle + 1.2) * 26;
+    const spd = 850;
+
+    playerProjectiles.push(new PlayerBullet(
+      leftPodX, leftPodY, Math.cos(this.angle) * spd, Math.sin(this.angle) * spd, 6, 45, "#ef4444", 1.0, true, 30, 1, "ASTARTES"
+    ));
+    playerProjectiles.push(new PlayerBullet(
+      rightPodX, rightPodY, Math.cos(this.angle) * spd, Math.sin(this.angle) * spd, 6, 45, "#ef4444", 1.0, true, 30, 1, "ASTARTES"
+    ));
+  }
+
+  throwStratagemBeacon(stratId) {
+    const beacon = new StratagemBeacon(this.x, this.y, mouse.worldX, mouse.worldY, stratId);
+    playerProjectiles.push(beacon);
+    if (window.adaptiveDirector) {
+      window.adaptiveDirector.recordStratagem();
+    }
+    window.soundEngine.playStratagemCall();
+    addScreenShake(4);
+    addFloatingText(this.x, this.y - 40, "BEACON DEPLOYED!", "#eab308", 22);
+  }
+
+  equipSpaceMarineSuit() {
+    this.isSpaceMarine = true;
+    this.suitShield = this.maxSuitShield;
+    this.suitBattery = this.maxSuitBattery;
+    this.armorReduction = 0.35; // Balanced tactical armor
+    window.soundEngine.playPowerArmorEquip();
+    addScreenShake(18);
+    particles.push(new ShockwaveRing(this.x, this.y, 190));
+    for (let i = 0; i < 40; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const spd = 80 + Math.random() * 240;
+      particles.push(new SparkParticle(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, "#06b6d4"));
+    }
+    addFloatingText(this.x, this.y - 65, "⚡ ASTARTES POWER SUIT ENGAGED! ⚡", "#06b6d4", 30);
+    comboTracker.addBonus("ADEPTUS ASTARTES ONLINE", 500);
+  }
+
+  ejectSpaceMarineSuit() {
+    this.isSpaceMarine = false;
+    this.armorReduction = 0;
+    this.invulnerableTimer = 1.2;
+    window.soundEngine.playOrbitalExplosion();
+    addScreenShake(22);
+    particles.push(new ShockwaveRing(this.x, this.y, 230));
+    for (const enemy of enemies) {
+      const d = Math.hypot(enemy.x - this.x, enemy.y - this.y);
+      if (d < 230) {
+        enemy.takeDamage(160, "SUIT EJECTION DISCHARGE");
+        enemy.vx += ((enemy.x - this.x) / d) * 500;
+        enemy.vy += ((enemy.y - this.y) / d) * 500;
+      }
+    }
+    for (let i = 0; i < 35; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const spd = 120 + Math.random() * 260;
+      particles.push(new SparkParticle(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, Math.random() < 0.5 ? "#38bdf8" : "#fbbf24"));
+    }
+    addFloatingText(this.x, this.y - 45, "CERAMITE BREACH - SAFELY EJECTED!", "#ef4444", 24);
+  }
+
+  thunderSlam() {
+    this.suitSlamCooldown = 3.2;
+    this.invulnerableTimer = 0.5;
+    window.soundEngine.playThunderSlam();
+    addScreenShake(26);
+    particles.push(new ShockwaveRing(this.x, this.y, 280));
+    for (let i = 0; i < 50; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const spd = 140 + Math.random() * 320;
+      particles.push(new SparkParticle(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, Math.random() < 0.5 ? "#38bdf8" : "#fbbf24"));
+    }
+    let count = 0;
+    for (const enemy of enemies) {
+      const d = Math.hypot(enemy.x - this.x, enemy.y - this.y);
+      if (d < 280) {
+        count++;
+        enemy.takeDamage(340, "THUNDER SLAM");
+        enemy.ignite(4.0);
+        const a = Math.atan2(enemy.y - this.y, enemy.x - this.x);
+        enemy.vx += Math.cos(a) * 750;
+        enemy.vy += Math.sin(a) * 750;
+      }
+    }
+    addFloatingText(this.x, this.y - 45, `THUNDER SLAM (${count} PURGED)`, "#38bdf8", 26);
+  }
+
+  startSlide(dirX, dirY) {
+    if (dirX === 0 && dirY === 0) {
+      dirX = Math.cos(this.angle);
+      dirY = Math.sin(this.angle);
+    }
+    this.isSliding = true;
+    this.slideTimer = this.slideDuration;
+    this.slideCooldown = this.slideCooldownMax;
+    this.slideDirX = dirX;
+    this.slideDirY = dirY;
+    this.invulnerableTimer = this.slideDuration + 0.1;
+
+    // Super-Earth Patriot Stim Perk bonus
+    if (this.patriotStimPerk) {
+      this.hp = Math.min(this.maxHp, this.hp + 20);
+      addFloatingText(this.x, this.y - 30, "+20 STIM HEAL", "#22c55e", 18);
+    }
+
+    window.soundEngine.playSlide();
+    addScreenShake(5);
+
+    // Initial burst of sparks
+    for (let i = 0; i < 22; i++) {
+      particles.push(new SparkParticle(
+        this.x - dirX * 15,
+        this.y - dirY * 15,
+        -dirX * 350 + (Math.random() - 0.5) * 200,
+        -dirY * 350 + (Math.random() - 0.5) * 200,
+        "#fbbf24"
+      ));
+    }
+  }
+
+  spewFlames(dt) {
+    const nozzleDist = this.isSpaceMarine ? 42 : 36;
+    const nozzleX = this.x + Math.cos(this.angle) * nozzleDist;
+    const nozzleY = this.y + Math.sin(this.angle) * nozzleDist;
+
+    const count = this.isRootMode ? 6 : 3;
+    for (let i = 0; i < count; i++) {
+      const spread = (Math.random() - 0.5) * (this.isRootMode ? 0.7 : this.flameSpread);
+      const speed = (580 + Math.random() * 240) * (this.isRootMode ? 1.4 : 1.0);
+      const pAngle = this.angle + spread;
+      const vx = Math.cos(pAngle) * speed + this.vx * 0.25;
+      const vy = Math.sin(pAngle) * speed + this.vy * 0.25;
+
+      const lifetime = (0.42 + Math.random() * 0.25) * this.flameRangeMult;
+      const damage = (3.5 + Math.random() * 1.5) * this.flameDamageMult * (this.isRootMode ? 2.2 : 1.0);
+
+      particles.push(new FlameParticle(
+        nozzleX,
+        nozzleY,
+        vx,
+        vy,
+        lifetime,
+        damage,
+        this.plasmaFlames || this.isRootMode
+      ));
+    }
+  }
+
+  triggerKill9() {
+    this.kill9Cooldown = this.kill9CooldownMax;
+    window.soundEngine.playKill9Nova();
+    addScreenShake(18);
+
+    const novaRadius = 380;
+    particles.push(new ShockwaveRing(this.x, this.y, novaRadius));
+
+    for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
+      enemyProjectiles[i].destroy();
+      enemyProjectiles.splice(i, 1);
+    }
+
+    let hitCount = 0;
+    for (const enemy of enemies) {
+      const dx = enemy.x - this.x;
+      const dy = enemy.y - this.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist <= novaRadius) {
+        hitCount++;
+        const falloff = 1 - (dist / novaRadius) * 0.5;
+        enemy.takeDamage(240 * falloff, "KILL -9 SIGKILL!");
+        enemy.ignite(5.0);
+        const pushAngle = Math.atan2(dy, dx);
+        enemy.vx += Math.cos(pushAngle) * 600;
+        enemy.vy += Math.sin(pushAngle) * 600;
+      }
+    }
+
+    addFloatingText(this.x, this.y - 30, `KILL -9 PURGE (${hitCount} TARGETS)`, "#ef4444", 26);
+  }
+
+  activateRootMode() {
+    this.isRootMode = true;
+    this.rootDuration = this.rootDurationMax;
+    this.fuel = this.maxFuel;
+    window.soundEngine.playRootModeEnter();
+    addScreenShake(20);
+
+    for (let i = 0; i < 40; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const spd = 200 + Math.random() * 300;
+      particles.push(new SparkParticle(this.x, this.y, Math.cos(angle) * spd, Math.sin(angle) * spd, "#ef4444"));
+    }
+
+    addFloatingText(this.x, this.y - 50, "ROOT ACCESS UNLOCKED!", "#ef4444", 32);
+    comboTracker.addBonus("ROOT ACCESS ACTIVATED!", 500);
+  }
+
+  takeDamage(amount, source) {
+    if (this.invulnerableTimer > 0 || this.isRootMode) return;
+    let finalDamage = amount * (1 - this.armorReduction);
+    if (this.corrodedTimer > 0) {
+      finalDamage *= 1.5; // Corrosive acid shreds armor!
+    }
+    this.invulnerableTimer = 0.4;
+    this.shieldRegenTimer = 0;
+
+    if (adaptiveDirector) {
+      adaptiveDirector.recordDamageTaken(finalDamage);
+    }
+
+    // 1. Space Marine Suit absorbs damage first!
+    if (this.isSpaceMarine && this.suitShield > 0) {
+      this.suitShield -= finalDamage;
+      window.soundEngine.playNoiseBurst(0.1, 0.35, 900, 180);
+      addScreenShake(6);
+      addFloatingText(this.x, this.y - 25, `-${Math.round(finalDamage)} CERAMITE`, "#06b6d4", 20);
+      if (this.suitShield <= 0) {
+        this.suitShield = 0;
+        this.ejectSpaceMarineSuit();
+      }
+      return;
+    }
+
+    // 2. Base Tux Tactical Shield Matrix absorbs damage before HP!
+    if (this.shield > 0) {
+      if (finalDamage <= this.shield) {
+        this.shield -= finalDamage;
+        addFloatingText(this.x, this.y - 25, `-${Math.round(finalDamage)} SHIELD`, "#06b6d4", 18);
+        window.soundEngine.playNoiseBurst(0.08, 0.25, 950, 300);
+        addScreenShake(4);
+        finalDamage = 0;
+      } else {
+        finalDamage -= this.shield;
+        this.shield = 0;
+        addFloatingText(this.x, this.y - 25, "SHIELD DEPLETED!", "#06b6d4", 20);
+        window.soundEngine.playNoiseBurst(0.14, 0.4, 1200, 250);
+        addScreenShake(7);
+      }
+    }
+
+    // 3. Excess damage penetrates to HP
+    if (finalDamage > 0) {
+      this.hp -= finalDamage;
+      addScreenShake(10);
+      window.soundEngine.playNoiseBurst(0.12, 0.4, 400, 80);
+      addFloatingText(this.x, this.y - 20, `-${Math.round(finalDamage)} HP`, "#ef4444", 20);
+
+      if (this.hp <= 0) {
+        this.hp = 0;
+        triggerGameOver();
+      }
+    }
+  }
+
+  addXP(amount) {
+    this.xp += amount;
+    this.rootCharge = Math.min(this.rootMax, this.rootCharge + amount * 0.4);
+    if (this.xp >= this.xpNeeded) {
+      this.xp -= this.xpNeeded;
+      this.xpNeeded = Math.round(this.xpNeeded * 1.45);
+      this.level++;
+      window.soundEngine.playLevelUp();
+      showUpgradeScreen();
+    }
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    if (this.invulnerableTimer > 0 && Math.floor(gameTime * 25) % 2 === 0) {
+      ctx.globalAlpha = 0.4;
+    }
+
+    if (this.isSliding) {
+      // BELLY SLIDE POSE
+      const slideAngle = Math.atan2(this.slideDirY, this.slideDirX);
+      ctx.rotate(slideAngle);
+
+      ctx.fillStyle = "#f97316";
+      ctx.beginPath();
+      ctx.moveTo(-30, -10);
+      ctx.lineTo(-55 - Math.random() * 20, 0);
+      ctx.lineTo(-30, 10);
+      ctx.fill();
+
+      ctx.fillStyle = "rgba(0,0,0,0.3)";
+      ctx.beginPath();
+      ctx.ellipse(0, 5, 32, 14, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#1e293b";
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 28, 16, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#f8fafc";
+      ctx.beginPath();
+      ctx.ellipse(4, 2, 20, 10, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#0f172a";
+      ctx.beginPath();
+      ctx.arc(22, 0, 13, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#f59e0b";
+      ctx.beginPath();
+      ctx.moveTo(30, -5);
+      ctx.lineTo(44, 0);
+      ctx.lineTo(30, 5);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = "#ef4444";
+      ctx.fillRect(16, -11, 10, 5);
+      ctx.beginPath();
+      ctx.moveTo(16, -10);
+      ctx.lineTo(0 - Math.random() * 15, -16);
+      ctx.lineTo(16, -6);
+      ctx.fill();
+
+    } else if (this.isSpaceMarine) {
+      // ==========================================
+      // ASTARTES POWER ARMOR TUX (TERMINATOR SUIT)
+      // ==========================================
+      ctx.rotate(this.angle);
+
+      // Shadow
+      ctx.fillStyle = "rgba(0,0,0,0.45)";
+      ctx.beginPath();
+      ctx.ellipse(0, 26, 30, 12, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Reactor Exhaust Powerpack on back with glowing blue vents
+      ctx.fillStyle = "#1e293b";
+      ctx.fillRect(-26, -18, 14, 36);
+      ctx.fillStyle = "#38bdf8";
+      ctx.fillRect(-28, -14, 4, 8);
+      ctx.fillRect(-28, 6, 4, 8);
+
+      // Twin Shoulder Bolter Pods
+      ctx.fillStyle = "#334155";
+      ctx.fillRect(-6, -24, 18, 8);
+      ctx.fillRect(-6, 16, 18, 8);
+      ctx.fillStyle = "#0f172a";
+      ctx.fillRect(12, -23, 4, 6);
+      ctx.fillRect(12, 17, 4, 6);
+
+      // Massive Rounded Ceramite Shoulders (Pauldrons)
+      ctx.fillStyle = "#1e3a8a"; // Ultramarine blue
+      ctx.beginPath();
+      ctx.ellipse(0, -18, 12, 8, -0.2, 0, Math.PI * 2);
+      ctx.ellipse(0, 18, 12, 8, 0.2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Gold Trim on Pauldrons
+      ctx.strokeStyle = "#fbbf24";
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      // Purity Seal fluttering on right pauldron
+      ctx.fillStyle = "#b91c1c"; // Red wax seal
+      ctx.beginPath();
+      ctx.arc(-2, 20, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#fef08a"; // Parchment strip
+      ctx.beginPath();
+      ctx.moveTo(-2, 23);
+      ctx.lineTo(-14 - Math.sin(gameTime * 10) * 4, 25);
+      ctx.lineTo(-2, 27);
+      ctx.fill();
+
+      // Heavy Armored Tux Body (Ceramite Chestplate)
+      ctx.fillStyle = "#0f172a";
+      ctx.beginPath();
+      ctx.ellipse(2, 0, 24, 20, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Golden Linux Skull / Aquila on Chest
+      ctx.fillStyle = "#fbbf24";
+      ctx.beginPath();
+      ctx.moveTo(0, -6);
+      ctx.lineTo(8, 0);
+      ctx.lineTo(0, 6);
+      ctx.lineTo(2, 0);
+      ctx.closePath();
+      ctx.fill();
+
+      // Space Marine Armored Helmet
+      ctx.fillStyle = "#1e3a8a";
+      ctx.beginPath();
+      ctx.arc(12, 0, 15, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#38bdf8";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Glowing Cyan Visor / Optical Eye Lenses
+      ctx.fillStyle = "#38bdf8";
+      ctx.beginPath();
+      ctx.ellipse(19, -4.5, 4, 2.5, 0.2, 0, Math.PI * 2);
+      ctx.ellipse(19, 4.5, 4, 2.5, -0.2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Gold Beak / Respirator Grill
+      ctx.fillStyle = "#f59e0b";
+      ctx.beginPath();
+      ctx.moveTo(21, -5);
+      ctx.lineTo(31, 0);
+      ctx.lineTo(21, 5);
+      ctx.closePath();
+      ctx.fill();
+
+      // Armored Heavy Autocannon Weapon in Hand
+      ctx.fillStyle = "#1e293b";
+      ctx.fillRect(12, 6, 28, 9);
+      ctx.fillStyle = "#475569";
+      ctx.fillRect(40, 7, 10, 7);
+      ctx.fillStyle = "#fbbf24";
+      ctx.fillRect(20, 15, 12, 4); // Ammo magazine
+
+    } else {
+      // ==========================================
+      // NORMAL WADDLING / AIMING TUX POSE
+      // ==========================================
+      ctx.fillStyle = "rgba(0,0,0,0.35)";
+      ctx.beginPath();
+      ctx.ellipse(0, 22, 22, 9, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.rotate(this.angle);
+      const waddle = Math.sin(this.waddleTime) * 0.12;
+
+      // 1. Gas Fuel Tank on back
+      ctx.save();
+      ctx.translate(-16, 0);
+      ctx.fillStyle = this.isRootMode ? "#dc2626" : "#475569";
+      ctx.beginPath();
+      ctx.roundRect(-8, -12, 12, 24, 4);
+      ctx.fill();
+      ctx.fillStyle = this.fuel > 20 ? "#22c55e" : "#ef4444";
+      ctx.fillRect(-6, -8, 8, (this.fuel / 100) * 16);
+      ctx.restore();
+
+      // 2. Yellow Feet
+      ctx.fillStyle = "#f59e0b";
+      ctx.beginPath();
+      ctx.ellipse(-6, -16 + waddle * 10, 9, 5, -0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(-6, 16 - waddle * 10, 9, 5, 0.2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 3. Black Tux Body
+      ctx.fillStyle = "#0f172a";
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 22, 18, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 4. White Belly
+      ctx.fillStyle = "#f8fafc";
+      ctx.beginPath();
+      ctx.ellipse(3, 0, 14, 12, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 5. Head
+      ctx.fillStyle = "#0f172a";
+      ctx.beginPath();
+      ctx.arc(10, 0, 14, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 6. Cute Determined Eyes
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.arc(15, -5, 4.5, 0, Math.PI * 2);
+      ctx.arc(15, 5, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Pupils
+      ctx.fillStyle = this.isRootMode ? "#ef4444" : "#0284c7";
+      ctx.beginPath();
+      ctx.arc(17, -5, 2.2, 0, Math.PI * 2);
+      ctx.arc(17, 5, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 7. Iconic Yellow/Orange Beak
+      ctx.fillStyle = "#f59e0b";
+      ctx.beginPath();
+      ctx.moveTo(18, -6);
+      ctx.lineTo(29, 0);
+      ctx.lineTo(18, 6);
+      ctx.closePath();
+      ctx.fill();
+
+      // 8. Red "ROOT" Ninja Bandana
+      ctx.fillStyle = "#ef4444";
+      ctx.fillRect(8, -13, 8, 4);
+      ctx.beginPath();
+      ctx.moveTo(7, -13);
+      ctx.lineTo(-8 - Math.sin(gameTime * 15) * 5, -18);
+      ctx.lineTo(6, -9);
+      ctx.fill();
+
+      // 9. DYNAMIC WEAPON DRAWING IN FLIPPERS
+      if (this.currentWeapon === 0) {
+        // GPL Flamethrower
+        ctx.fillStyle = "#334155";
+        ctx.fillRect(8, 6, 24, 7);
+        ctx.fillStyle = this.plasmaFlames ? "#8b5cf6" : "#f97316";
+        ctx.beginPath();
+        ctx.moveTo(32, 4);
+        ctx.lineTo(39, 2);
+        ctx.lineTo(39, 13);
+        ctx.lineTo(32, 11);
+        ctx.closePath();
+        ctx.fill();
+        const pilotFlicker = Math.random() * 4;
+        ctx.fillStyle = this.plasmaFlames ? "#a855f7" : "#fbbf24";
+        ctx.beginPath();
+        ctx.arc(41 + pilotFlicker, 7.5, 3 + pilotFlicker * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (this.currentWeapon === 1) {
+        // Breaker Shotgun (double dark barrel)
+        ctx.fillStyle = "#1e293b";
+        ctx.fillRect(8, 5, 28, 8);
+        ctx.fillStyle = "#64748b";
+        ctx.fillRect(36, 4, 6, 10);
+        ctx.fillStyle = "#94a3b8";
+        ctx.fillRect(20, 11, 10, 4); // Pump grip
+      } else if (this.currentWeapon === 2) {
+        // Indomitus Bolter (Heavy box magazine & muzzle brake)
+        ctx.fillStyle = "#0f172a";
+        ctx.fillRect(8, 4, 26, 10);
+        ctx.fillStyle = "#f59e0b";
+        ctx.fillRect(18, 14, 8, 6); // Sick gold magazine
+        ctx.fillStyle = "#475569";
+        ctx.fillRect(34, 3, 7, 12); // Square muzzle brake
+      } else if (this.currentWeapon === 3) {
+        // Sudo Rotary Minigun (Spinning multi-barrels)
+        ctx.fillStyle = "#334155";
+        ctx.fillRect(8, 4, 18, 12);
+        ctx.fillStyle = "#0284c7";
+        ctx.fillRect(12, 16, 10, 8); // Drum magazine
+        ctx.fillStyle = "#94a3b8";
+        ctx.fillRect(26, 5, 16, 10); // Rotating barrel cluster
+      } else if (this.currentWeapon === 4) {
+        // Forkbomb Cluster RPG
+        ctx.fillStyle = "#14532d"; // Military green tube
+        ctx.fillRect(0, -18, 38, 8);
+        ctx.fillStyle = "#ef4444";
+        ctx.beginPath(); // Warhead tip
+        ctx.moveTo(38, -19);
+        ctx.lineTo(46, -14);
+        ctx.lineTo(38, -9);
+        ctx.fill();
+      }
+
+      // Root Mode Aura
+      if (this.isRootMode) {
+        ctx.strokeStyle = "rgba(239, 68, 68, 0.6)";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(0, 0, 32 + Math.sin(gameTime * 20) * 4, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+
+    // Stratagem Beacon in hand indicator
+    if (this.holdingStratagem !== null) {
+      ctx.fillStyle = "#ef4444";
+      ctx.beginPath();
+      ctx.arc(28, -18, 9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.arc(28, -18, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Tactical Energy Shield matrix visual around Tux
+    if (this.shield > 0 && !this.isSpaceMarine) {
+      const shieldRatio = this.shield / this.maxShield;
+      ctx.strokeStyle = `rgba(6, 182, 212, ${0.25 + 0.35 * shieldRatio})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      const numPts = 6;
+      const shR = 29 + Math.sin(gameTime * 4) * 1.5;
+      for (let s = 0; s < numPts; s++) {
+        const sa = (s / numPts) * Math.PI * 2 + gameTime * 0.8;
+        const sx = Math.cos(sa) * shR;
+        const sy = Math.sin(sa) * shR;
+        if (s === 0) ctx.moveTo(sx, sy);
+        else ctx.lineTo(sx, sy);
+      }
+      ctx.closePath();
+      ctx.stroke();
+    }
+
+    ctx.restore();
+
+    // Orbital Aiming Reticle to Mouse Cursor when holding a beacon!
+    if (this.holdingStratagem !== null) {
+      ctx.save();
+      // Dashed red targeting line from Tux to Mouse
+      ctx.strokeStyle = "rgba(239, 68, 68, 0.75)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 6]);
+      ctx.beginPath();
+      ctx.moveTo(this.x, this.y);
+      ctx.lineTo(mouse.worldX, mouse.worldY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Pulsing beacon target circle at mouse cursor
+      const pulse = Math.sin(gameTime * 12) * 5;
+      ctx.strokeStyle = "#ef4444";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(mouse.worldX, mouse.worldY, 32 + pulse, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.fillStyle = "rgba(239, 68, 68, 0.25)";
+      ctx.fill();
+
+      // Targeting Crosshairs
+      ctx.beginPath();
+      ctx.moveTo(mouse.worldX - 44, mouse.worldY);
+      ctx.lineTo(mouse.worldX + 44, mouse.worldY);
+      ctx.moveTo(mouse.worldX, mouse.worldY - 44);
+      ctx.lineTo(mouse.worldX, mouse.worldY + 44);
+      ctx.stroke();
+
+      const strat = STRATAGEMS[this.holdingStratagem];
+      ctx.fillStyle = "#facc15";
+      ctx.font = "bold 13px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(`CLICK TO DEPLOY: ${strat ? strat.name : 'BEACON'}`, mouse.worldX, mouse.worldY - 42);
+
+      ctx.restore();
+    }
+
+    if (this.guardDogDrone) {
+      this.guardDogDrone.draw(ctx, this);
+    }
+  }
+}
+
+// --- HELPER MINI PENGUINS (Community Pull Requests Upgrade) ---
+class HelperPenguin {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.angle = 0;
+    this.target = null;
+    this.fireTimer = 0;
+  }
+
+  update(dt) {
+    // Find closest enemy
+    let closest = null;
+    let minDist = 500;
+    for (const enemy of enemies) {
+      const d = Math.hypot(enemy.x - this.x, enemy.y - this.y);
+      if (d < minDist) {
+        minDist = d;
+        closest = enemy;
+      }
+    }
+    this.target = closest;
+
+    if (this.target) {
+      const dx = this.target.x - this.x;
+      const dy = this.target.y - this.y;
+      this.angle = Math.atan2(dy, dx);
+      if (minDist > 90) {
+        this.x += Math.cos(this.angle) * 220 * dt;
+        this.y += Math.sin(this.angle) * 220 * dt;
+      }
+
+      this.fireTimer += dt;
+      if (this.fireTimer > 0.08) {
+        this.fireTimer = 0;
+        // Spew mini flame
+        const speed = 400;
+        particles.push(new FlameParticle(
+          this.x + Math.cos(this.angle) * 20,
+          this.y + Math.sin(this.angle) * 20,
+          Math.cos(this.angle + (Math.random() - 0.5) * 0.4) * speed,
+          Math.sin(this.angle + (Math.random() - 0.5) * 0.4) * speed,
+          0.3,
+          2.0,
+          false
+        ));
+      }
+    } else {
+      // Orbit player
+      const dPlayer = Math.hypot(player.x - this.x, player.y - this.y);
+      if (dPlayer > 120) {
+        const a = Math.atan2(player.y - this.y, player.x - this.x);
+        this.x += Math.cos(a) * 240 * dt;
+        this.y += Math.sin(a) * 240 * dt;
+      }
+    }
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.angle);
+    // Cute mini Tux
+    ctx.fillStyle = "#0f172a";
+    ctx.beginPath();
+    ctx.arc(0, 0, 12, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.arc(3, 0, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#f59e0b";
+    ctx.beginPath();
+    ctx.moveTo(10, -3);
+    ctx.lineTo(16, 0);
+    ctx.lineTo(10, 3);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+// --- PLAYER PROJECTILES ---
+class PlayerBullet {
+  constructor(x, y, vx, vy, radius, damage, color, lifetime, isExplosive = false, explosiveRadius = 0, pierceCount = 0, label = "") {
+    this.x = x;
+    this.y = y;
+    this.vx = vx;
+    this.vy = vy;
+    this.radius = radius;
+    this.damage = damage;
+    this.color = color;
+    this.lifetime = lifetime;
+    this.maxLifetime = lifetime;
+    this.isExplosive = isExplosive;
+    this.explosiveRadius = explosiveRadius;
+    this.pierceCount = pierceCount;
+    this.label = label;
+    this.hitEnemies = new Set();
+  }
+
+  update(dt) {
+    this.lifetime -= dt;
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+
+    // Check hit against dungeon walls
+    if (dungeon && dungeon.isSolid(this.x, this.y)) {
+      if (this.onExpire) this.onExpire();
+      for (let i = 0; i < 4; i++) {
+        particles.push(new SparkParticle(this.x, this.y, (Math.random() - 0.5) * 120, (Math.random() - 0.5) * 120, this.color));
+      }
+      return false;
+    }
+
+    // Check hit against objective targets (relays, etc.)
+    for (const target of objectiveTargets) {
+      if (Math.hypot(target.x - this.x, target.y - this.y) < this.radius + target.radius) {
+        if (target.takeDamage) target.takeDamage(this.damage, this.label || "BULLET");
+        for (let i = 0; i < 4; i++) {
+          particles.push(new SparkParticle(this.x, this.y, (Math.random() - 0.5) * 120, (Math.random() - 0.5) * 120, this.color));
+        }
+        if (this.pierceCount > 0) this.pierceCount--;
+        else {
+          if (this.onExpire) this.onExpire();
+          return false;
+        }
+      }
+    }
+
+    // Check hit against enemies
+    for (const enemy of enemies) {
+      if (this.hitEnemies.has(enemy)) continue;
+      const dist = Math.hypot(enemy.x - this.x, enemy.y - this.y);
+      if (dist < this.radius + enemy.radius) {
+        this.hitEnemies.add(enemy);
+        enemy.takeDamage(this.damage, this.label || "BULLET");
+        enemy.vx += (this.vx / Math.hypot(this.vx, this.vy)) * 140;
+        enemy.vy += (this.vy / Math.hypot(this.vx, this.vy)) * 140;
+
+        // Sparks on hit
+        for (let i = 0; i < 4; i++) {
+          particles.push(new SparkParticle(this.x, this.y, (Math.random() - 0.5) * 120, (Math.random() - 0.5) * 120, this.color));
+        }
+
+        // Explosive flak detonation (Bolters)
+        if (this.isExplosive) {
+          particles.push(new ShockwaveRing(this.x, this.y, this.explosiveRadius));
+          for (const other of enemies) {
+            if (other !== enemy) {
+              const d = Math.hypot(other.x - this.x, other.y - this.y);
+              if (d < this.explosiveRadius + other.radius) {
+                other.takeDamage(this.damage * 0.6, "BOLTER EXPLOSION");
+                other.ignite(1.5);
+              }
+            }
+          }
+        }
+
+        // Tesla coil perk chain lightning
+        if (player.teslaCoilPerk && Math.random() < 0.4) {
+          let chained = 0;
+          for (const other of enemies) {
+            if (other !== enemy && Math.hypot(other.x - enemy.x, other.y - enemy.y) < 160 && chained < 2) {
+              other.takeDamage(35, "TESLA ARC");
+              chained++;
+              // Lightning spark line
+              for (let i = 0; i < 6; i++) {
+                particles.push(new SparkParticle(
+                  enemy.x + (other.x - enemy.x) * (i / 6),
+                  enemy.y + (other.y - enemy.y) * (i / 6),
+                  (Math.random() - 0.5) * 30, (Math.random() - 0.5) * 30, "#38bdf8"
+                ));
+              }
+            }
+          }
+        }
+
+        if (this.pierceCount > 0) {
+          this.pierceCount--;
+        } else {
+          if (this.onExpire) this.onExpire();
+          return false;
+        }
+      }
+    }
+
+    if (this.lifetime <= 0) {
+      if (this.onExpire) this.onExpire();
+      return false;
+    }
+    return true;
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    const angle = Math.atan2(this.vy, this.vx);
+    ctx.rotate(angle);
+
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, this.radius * 2, this.radius, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Hot glowing core
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.ellipse(2, 0, this.radius, this.radius * 0.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+}
+
+class PlayerRocket {
+  constructor(x, y, targetX, targetY, damage, explosiveRadius, clusterCount) {
+    this.x = x;
+    this.y = y;
+    this.targetX = targetX;
+    this.targetY = targetY;
+    this.damage = damage;
+    this.explosiveRadius = explosiveRadius;
+    this.clusterCount = clusterCount;
+    this.angle = Math.atan2(targetY - y, targetX - x);
+    this.speed = 320;
+    this.maxSpeed = 700;
+    this.lifetime = 3.0;
+  }
+
+  update(dt) {
+    this.lifetime -= dt;
+    this.speed = Math.min(this.maxSpeed, this.speed + 600 * dt);
+    this.x += Math.cos(this.angle) * this.speed * dt;
+    this.y += Math.sin(this.angle) * this.speed * dt;
+
+    // Check hit against dungeon walls
+    if (dungeon && dungeon.isSolid(this.x, this.y)) {
+      this.explode();
+      return false;
+    }
+
+    // Fiery smoke trail
+    if (Math.random() < 0.85) {
+      particles.push(new SparkParticle(
+        this.x - Math.cos(this.angle) * 16,
+        this.y - Math.sin(this.angle) * 16,
+        -Math.cos(this.angle) * 80 + (Math.random() - 0.5) * 40,
+        -Math.sin(this.angle) * 80 + (Math.random() - 0.5) * 40,
+        Math.random() < 0.6 ? "#f97316" : "#64748b"
+      ));
+    }
+
+    // Check hit against objective targets
+    for (const target of objectiveTargets) {
+      if (Math.hypot(target.x - this.x, target.y - this.y) < 20 + target.radius) {
+        this.explode();
+        return false;
+      }
+    }
+
+    // Check hit against enemies
+    for (const enemy of enemies) {
+      if (Math.hypot(enemy.x - this.x, enemy.y - this.y) < 20 + enemy.radius) {
+        this.explode();
+        return false;
+      }
+    }
+
+    if (this.lifetime <= 0) {
+      this.explode();
+      return false;
+    }
+    return true;
+  }
+
+  explode() {
+    window.soundEngine.playRocketExplode();
+    addScreenShake(14);
+    particles.push(new ShockwaveRing(this.x, this.y, this.explosiveRadius));
+
+    // AOE damage to objective targets
+    for (const target of objectiveTargets) {
+      const d = Math.hypot(target.x - this.x, target.y - this.y);
+      if (d < this.explosiveRadius + target.radius && target.takeDamage) {
+        target.takeDamage(this.damage * 0.85, "FORKBOMB RPG");
+      }
+    }
+
+    // AOE damage to enemies
+    for (const enemy of enemies) {
+      const d = Math.hypot(enemy.x - this.x, enemy.y - this.y);
+      if (d < this.explosiveRadius + enemy.radius) {
+        const falloff = 1 - (d / (this.explosiveRadius + enemy.radius)) * 0.45;
+        enemy.takeDamage(this.damage * falloff, "FORKBOMB RPG");
+        enemy.ignite(3.5);
+        const a = Math.atan2(enemy.y - this.y, enemy.x - this.x);
+        enemy.vx += Math.cos(a) * 450;
+        enemy.vy += Math.sin(a) * 450;
+      }
+    }
+
+    // Spawn cluster fireballs
+    for (let i = 0; i < this.clusterCount; i++) {
+      const a = (Math.PI * 2 / this.clusterCount) * i + Math.random() * 0.4;
+      const spd = 280 + Math.random() * 120;
+      particles.push(new FlameParticle(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, 0.45, 35, true));
+    }
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.angle);
+
+    // Rocket body
+    ctx.fillStyle = "#1e293b";
+    ctx.fillRect(-14, -4, 22, 8);
+    // Fins
+    ctx.fillStyle = "#ef4444";
+    ctx.beginPath();
+    ctx.moveTo(-14, -8);
+    ctx.lineTo(-8, -4);
+    ctx.lineTo(-14, 0);
+    ctx.moveTo(-14, 8);
+    ctx.lineTo(-8, 4);
+    ctx.lineTo(-14, 0);
+    ctx.fill();
+    // Warhead tip
+    ctx.fillStyle = "#f59e0b";
+    ctx.beginPath();
+    ctx.moveTo(8, -4);
+    ctx.lineTo(16, 0);
+    ctx.lineTo(8, 4);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.restore();
+  }
+}
+
+// --- KINETIC SAWBLADE (Wall-Ricocheting Serrated Disc) ---
+class SawbladeBullet {
+  constructor(x, y, vx, vy, damage) {
+    this.x = x;
+    this.y = y;
+    this.vx = vx;
+    this.vy = vy;
+    this.radius = 11;
+    this.damage = damage;
+    this.bouncesLeft = 5;
+    this.lifetime = 4.0;
+    this.spin = 0;
+    this.hitCooldowns = new Map();
+  }
+
+  update(dt) {
+    this.lifetime -= dt;
+    this.spin += dt * 32;
+
+    for (const [enemy, t] of this.hitCooldowns.entries()) {
+      if (t - dt <= 0) this.hitCooldowns.delete(enemy);
+      else this.hitCooldowns.set(enemy, t - dt);
+    }
+
+    const nextX = this.x + this.vx * dt;
+    const nextY = this.y + this.vy * dt;
+
+    if (dungeon) {
+      let bounced = false;
+      if (dungeon.isSolid(nextX, this.y)) {
+        this.vx = -this.vx;
+        bounced = true;
+      }
+      if (dungeon.isSolid(this.x, nextY)) {
+        this.vy = -this.vy;
+        bounced = true;
+      }
+      if (bounced) {
+        this.bouncesLeft--;
+        if (window.soundEngine && window.soundEngine.playSawbladeRicochet) window.soundEngine.playSawbladeRicochet();
+        addScreenShake(2);
+        for (let i = 0; i < 5; i++) {
+          particles.push(new SparkParticle(this.x, this.y, (Math.random() - 0.5) * 120, (Math.random() - 0.5) * 120, "#38bdf8"));
+        }
+        if (this.bouncesLeft <= 0) return false;
+      }
+    }
+
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+
+    for (const enemy of enemies) {
+      if (this.hitCooldowns.has(enemy)) continue;
+      const dist = Math.hypot(enemy.x - this.x, enemy.y - this.y);
+      if (dist < this.radius + enemy.radius) {
+        this.hitCooldowns.set(enemy, 0.16);
+        enemy.takeDamage(this.damage, "SAWBLADE");
+        enemy.vx += (this.vx / Math.hypot(this.vx, this.vy)) * 180;
+        enemy.vy += (this.vy / Math.hypot(this.vx, this.vy)) * 180;
+        for (let i = 0; i < 4; i++) {
+          particles.push(new SparkParticle(this.x, this.y, (Math.random() - 0.5) * 90, (Math.random() - 0.5) * 90, "#38bdf8"));
+        }
+      }
+    }
+
+    return this.lifetime > 0;
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.spin);
+
+    ctx.fillStyle = "#0284c7";
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#38bdf8";
+    const teeth = 8;
+    for (let i = 0; i < teeth; i++) {
+      const a = (Math.PI * 2 / teeth) * i;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * this.radius, Math.sin(a) * this.radius);
+      ctx.lineTo(Math.cos(a + 0.3) * (this.radius + 6), Math.sin(a + 0.3) * (this.radius + 6));
+      ctx.lineTo(Math.cos(a + 0.6) * this.radius, Math.sin(a + 0.6) * this.radius);
+      ctx.fill();
+    }
+
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.arc(0, 0, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+}
+
+// --- SINGULARITY GRAVITATIONAL VORTEX ORB ---
+class SingularityOrb {
+  constructor(x, y, vx, vy, tickDamage, popDamage) {
+    this.x = x;
+    this.y = y;
+    this.vx = vx;
+    this.vy = vy;
+    this.radius = 18;
+    this.tickDamage = tickDamage;
+    this.popDamage = popDamage;
+    this.lifetime = 2.4;
+    this.tickTimer = 0;
+    this.spin = 0;
+  }
+
+  update(dt) {
+    this.lifetime -= dt;
+    this.spin += dt * 6.5;
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+
+    this.vx *= Math.pow(0.85, dt * 60);
+    this.vy *= Math.pow(0.85, dt * 60);
+
+    const pullRadius = 320;
+    for (const enemy of enemies) {
+      const dx = this.x - enemy.x;
+      const dy = this.y - enemy.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < pullRadius && dist > 10) {
+        const pullForce = (1 - dist / pullRadius) * 420;
+        enemy.vx += (dx / dist) * pullForce * dt;
+        enemy.vy += (dy / dist) * pullForce * dt;
+      }
+    }
+
+    this.tickTimer += dt;
+    if (this.tickTimer >= 0.22) {
+      this.tickTimer = 0;
+      for (const enemy of enemies) {
+        if (Math.hypot(enemy.x - this.x, enemy.y - this.y) < 140) {
+          enemy.takeDamage(this.tickDamage, "GRAVITY TEAR");
+          particles.push(new SparkParticle(enemy.x, enemy.y, (Math.random() - 0.5) * 50, (Math.random() - 0.5) * 50, "#c084fc"));
+        }
+      }
+    }
+
+    if (Math.random() < 0.45) {
+      const a = Math.random() * Math.PI * 2;
+      const r = 25 + Math.random() * 45;
+      particles.push(new SparkParticle(this.x + Math.cos(a) * r, this.y + Math.sin(a) * r, -Math.cos(a) * 80, -Math.sin(a) * 80, "#a855f7"));
+    }
+
+    if (this.lifetime <= 0 || (dungeon && dungeon.isSolid(this.x, this.y))) {
+      this.implode();
+      return false;
+    }
+    return true;
+  }
+
+  implode() {
+    if (window.soundEngine && window.soundEngine.playSingularityImplosion) window.soundEngine.playSingularityImplosion();
+    addScreenShake(14);
+    screenFlash = 0.5;
+
+    particles.push(new ShockwaveRing(this.x, this.y, 240, "#c084fc"));
+    for (let i = 0; i < 28; i++) {
+      const a = (Math.PI * 2 / 28) * i;
+      const spd = 260 + Math.random() * 180;
+      particles.push(new SparkParticle(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, i % 2 === 0 ? "#a855f7" : "#e879f9"));
+    }
+
+    for (const enemy of enemies) {
+      const dist = Math.hypot(enemy.x - this.x, enemy.y - this.y);
+      if (dist < 240 + enemy.radius) {
+        const falloff = 1 - (dist / (240 + enemy.radius)) * 0.4;
+        enemy.takeDamage(this.popDamage * falloff, "SINGULARITY COLLAPSE");
+        const a = Math.atan2(enemy.y - this.y, enemy.x - this.x);
+        enemy.vx += Math.cos(a) * 550;
+        enemy.vy += Math.sin(a) * 550;
+      }
+    }
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    const grad = ctx.createRadialGradient(0, 0, 4, 0, 0, 48);
+    grad.addColorStop(0, "#000000");
+    grad.addColorStop(0.35, "rgba(126, 34, 206, 0.75)");
+    grad.addColorStop(0.7, "rgba(168, 85, 247, 0.35)");
+    grad.addColorStop(1, "rgba(232, 121, 249, 0)");
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(0, 0, 52, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#090414";
+    ctx.beginPath();
+    ctx.arc(0, 0, 16, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#e879f9";
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+
+    for (let i = 0; i < 3; i++) {
+      const a = this.spin + (Math.PI * 2 / 3) * i;
+      ctx.strokeStyle = "rgba(192, 132, 252, 0.8)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, 24 + i * 6, a, a + 1.2);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+}
+
+// --- CORROSIVE ACID GLOB BULLET ---
+class AcidGlobBullet {
+  constructor(x, y, vx, vy, damage) {
+    this.x = x;
+    this.y = y;
+    this.vx = vx;
+    this.vy = vy;
+    this.radius = 8;
+    this.damage = damage;
+    this.lifetime = 0.55;
+  }
+
+  update(dt) {
+    this.lifetime -= dt;
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+
+    if (Math.random() < 0.3) {
+      particles.push(new SparkParticle(this.x, this.y, (Math.random() - 0.5) * 30, (Math.random() - 0.5) * 30, "#22c55e"));
+    }
+
+    for (const enemy of enemies) {
+      if (Math.hypot(enemy.x - this.x, enemy.y - this.y) < this.radius + enemy.radius) {
+        enemy.takeDamage(this.damage, "ACID_SPLAT");
+        this.splash();
+        return false;
+      }
+    }
+
+    if (this.lifetime <= 0 || (dungeon && dungeon.isSolid(this.x, this.y))) {
+      this.splash();
+      return false;
+    }
+    return true;
+  }
+
+  splash() {
+    if (window.soundEngine && window.soundEngine.playAcidSplash) window.soundEngine.playAcidSplash();
+    floorHazards.push(new AcidPuddleHazard(this.x, this.y));
+    for (let i = 0; i < 8; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const spd = 60 + Math.random() * 80;
+      particles.push(new SparkParticle(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, "#22c55e"));
+    }
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.fillStyle = "#22c55e";
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#86efac";
+    ctx.beginPath();
+    ctx.arc(-2, -2, this.radius * 0.45, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+// --- ACID PUDDLE HAZARD ---
+class AcidPuddleHazard {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.radius = 36;
+    this.lifetime = 8.0;
+    this.bubbleTimer = 0;
+  }
+
+  update(dt) {
+    this.lifetime -= dt;
+    this.bubbleTimer += dt;
+    if (this.bubbleTimer > 0.25) {
+      this.bubbleTimer = 0;
+      particles.push(new SparkParticle(
+        this.x + (Math.random() - 0.5) * this.radius * 1.4,
+        this.y + (Math.random() - 0.5) * this.radius * 1.4,
+        (Math.random() - 0.5) * 15,
+        -20,
+        "#4ade80"
+      ));
+    }
+
+    for (const enemy of enemies) {
+      if (Math.hypot(enemy.x - this.x, enemy.y - this.y) < this.radius + enemy.radius) {
+        enemy.takeDamage(12 * dt, "CORROSIVE_ACID");
+        enemy.corrodedTimer = 2.0;
+      }
+    }
+
+    return this.lifetime > 0;
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    const alpha = Math.min(1, this.lifetime / 1.0);
+    ctx.fillStyle = `rgba(34, 197, 94, ${0.45 * alpha})`;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, this.radius, this.radius * 0.65, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = `rgba(74, 222, 128, ${0.75 * alpha})`;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// --- HELLDIVERS STRATAGEMS (STRICTLY ARROW KEYS ONLY) ---
+const STRATAGEMS = [
+  {
+    id: 0,
+    name: "500KG BOMB",
+    code: ["ArrowUp", "ArrowRight", "ArrowDown", "ArrowDown", "ArrowDown"],
+    cooldownMax: 18.0,
+    cooldown: 0,
+    callTime: 2.2,
+    execute: (x, y) => orbitalStrikes.push(new Orbital500KgBomb(x, y))
+  },
+  {
+    id: 1,
+    name: "380MM BARRAGE",
+    code: ["ArrowRight", "ArrowDown", "ArrowUp", "ArrowUp", "ArrowLeft", "ArrowDown", "ArrowDown"],
+    cooldownMax: 28.0,
+    cooldown: 0,
+    callTime: 2.0,
+    execute: (x, y) => orbitalStrikes.push(new Orbital380mmBarrage(x, y))
+  },
+  {
+    id: 2,
+    name: "GATLING SENTRY",
+    code: ["ArrowDown", "ArrowUp", "ArrowRight", "ArrowDown"],
+    cooldownMax: 35.0,
+    cooldown: 0,
+    callTime: 2.4,
+    execute: (x, y) => dropPods.push(new SentryDropPod(x, y))
+  },
+  {
+    id: 3,
+    name: "ORBITAL LASER",
+    code: ["ArrowRight", "ArrowDown", "ArrowUp", "ArrowRight", "ArrowDown"],
+    cooldownMax: 40.0,
+    cooldown: 0,
+    callTime: 1.8,
+    execute: (x, y) => orbitalStrikes.push(new OrbitalLaserStrike(x, y))
+  },
+  {
+    id: 4,
+    name: "ASTARTES SUIT",
+    code: ["ArrowDown", "ArrowDown", "ArrowUp", "ArrowRight"],
+    cooldownMax: 55.0,
+    cooldown: 0,
+    callTime: 2.5,
+    execute: (x, y) => dropPods.push(new SpaceMarineDropPod(x, y))
+  },
+  {
+    id: 5,
+    name: "CYBER DOME SHIELD",
+    code: ["ArrowDown", "ArrowDown", "ArrowUp", "ArrowUp", "ArrowLeft", "ArrowRight"],
+    cooldownMax: 38.0,
+    cooldown: 0,
+    callTime: 1.8,
+    execute: (x, y) => dropPods.push(new DomeShieldDropPod(x, y))
+  },
+  {
+    id: 6,
+    name: "PRECISION RAILCANNON",
+    code: ["ArrowRight", "ArrowUp", "ArrowDown", "ArrowDown", "ArrowRight"],
+    cooldownMax: 26.0,
+    cooldown: 0,
+    callTime: 1.2,
+    execute: (x, y) => orbitalStrikes.push(new OrbitalPrecisionRailcannon(x, y))
+  },
+  {
+    id: 7,
+    name: "TESLA ARC TOWER",
+    code: ["ArrowDown", "ArrowUp", "ArrowRight", "ArrowUp", "ArrowLeft", "ArrowRight"],
+    cooldownMax: 36.0,
+    cooldown: 0,
+    callTime: 2.2,
+    execute: (x, y) => dropPods.push(new TeslaTowerDropPod(x, y))
+  },
+  {
+    id: 8,
+    name: "NAPALM AIRSTRIKE",
+    code: ["ArrowRight", "ArrowUp", "ArrowLeft", "ArrowRight", "ArrowDown"],
+    cooldownMax: 22.0,
+    cooldown: 0,
+    callTime: 1.5,
+    execute: (x, y) => orbitalStrikes.push(new EagleNapalmStrike(x, y))
+  },
+  {
+    id: 9,
+    name: "GUARD DOG DRONE",
+    code: ["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowDown", "ArrowUp", "ArrowRight"],
+    cooldownMax: 45.0,
+    cooldown: 0,
+    callTime: 2.0,
+    execute: (x, y) => dropPods.push(new GuardDogDropPod(x, y))
+  }
+];
+
+class StratagemBeacon {
+  constructor(startX, startY, targetX, targetY, stratId) {
+    this.x = startX;
+    this.y = startY;
+    this.targetX = targetX;
+    this.targetY = targetY;
+    this.stratId = stratId;
+    this.strat = STRATAGEMS[stratId];
+    this.time = 0;
+    this.duration = 0.45;
+    this.landed = false;
+    this.countdown = this.strat.callTime;
+    this.beepTimer = 0;
+    this.radius = 8;
+  }
+
+  update(dt) {
+    if (!this.landed) {
+      this.time += dt;
+      const t = Math.min(1, this.time / this.duration);
+      this.x = this.x + (this.targetX - this.x) * (dt * 9);
+      this.y = this.y + (this.targetY - this.y) * (dt * 9);
+
+      if (t >= 0.95 || Math.hypot(this.targetX - this.x, this.targetY - this.y) < 18) {
+        this.x = this.targetX;
+        this.y = this.targetY;
+        this.landed = true;
+        window.soundEngine.playStratagemBeep(true);
+        addFloatingText(this.x, this.y - 25, `${this.strat.name} INBOUND!`, "#ef4444", 22);
+      }
+    } else {
+      this.countdown -= dt;
+      this.beepTimer += dt;
+      if (this.beepTimer > 0.4) {
+        this.beepTimer = 0;
+        window.soundEngine.playStratagemBeep(true);
+      }
+      if (this.countdown <= 0) {
+        this.strat.execute(this.x, this.y);
+        this.strat.cooldown = this.strat.cooldownMax * (player.stratagemHeroPerk ? 0.65 : 1.0);
+        return false;
+      }
+    }
+    return true;
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    if (this.landed) {
+      // High-intensity red vertical orbital beacon beam to the sky!
+      const pulse = Math.sin(gameTime * 20) * 0.2 + 0.8;
+      ctx.fillStyle = `rgba(239, 68, 68, ${0.4 * pulse})`;
+      ctx.fillRect(-14, -12000, 28, 12000);
+      ctx.fillStyle = `rgba(255, 255, 255, ${0.85 * pulse})`;
+      ctx.fillRect(-3, -12000, 6, 12000);
+
+      // Flashing countdown text
+      ctx.fillStyle = "#facc15";
+      ctx.font = "bold 13px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(`${this.strat.name}: ${this.countdown.toFixed(1)}s`, 0, -30);
+    }
+
+    ctx.fillStyle = "#ef4444";
+    ctx.beginPath();
+    ctx.arc(0, 0, 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.arc(0, 0, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+}
+
+// --- ORBITAL PAYLOADS ---
+class Orbital500KgBomb {
+  constructor(targetX, targetY) {
+    this.targetX = targetX;
+    this.targetY = targetY;
+    this.x = targetX;
+    this.y = targetY - 1200;
+    this.speed = 2200;
+    this.hasDetonated = false;
+    this.lifetime = 1.0;
+  }
+
+  update(dt) {
+    if (!this.hasDetonated) {
+      this.y += this.speed * dt;
+      if (this.y >= this.targetY) {
+        this.detonate();
+      }
+    } else {
+      this.lifetime -= dt;
+      return this.lifetime > 0;
+    }
+    return true;
+  }
+
+  detonate() {
+    this.hasDetonated = true;
+    this.y = this.targetY;
+    window.soundEngine.playOrbitalExplosion();
+    addScreenShake(36);
+    screenFlash = 0.25; // Nuclear white flash
+
+    const radius = player.stratagemHeroPerk ? 500 : 420;
+    particles.push(new ShockwaveRing(this.x, this.y, radius));
+    particles.push(new ScorchTrail(this.x, this.y, 8.0));
+
+    // Destroy all enemy projectiles in map!
+    for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
+      enemyProjectiles[i].destroy();
+      enemyProjectiles.splice(i, 1);
+    }
+
+    // Obliterate enemies
+    let purgedCount = 0;
+    for (const enemy of enemies) {
+      const d = Math.hypot(enemy.x - this.x, enemy.y - this.y);
+      if (d <= radius) {
+        purgedCount++;
+        const falloff = 1 - (d / radius) * 0.5;
+        enemy.takeDamage(2800 * falloff, "500KG ORBITAL STRIKE");
+        enemy.ignite(6.0);
+        const a = Math.atan2(enemy.y - this.y, enemy.x - this.x);
+        enemy.vx += Math.cos(a) * 800;
+        enemy.vy += Math.sin(a) * 800;
+      }
+    }
+
+    // Massive fire & ash smoke clouds
+    for (let i = 0; i < 90; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const spd = 120 + Math.random() * 450;
+      particles.push(new FlameParticle(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, 0.6 + Math.random() * 0.4, 60, true));
+    }
+
+    addFloatingText(this.x, this.y - 60, `500KG OBLITERATION (${purgedCount} PURGED)`, "#facc15", 32);
+    comboTracker.addBonus("500KG ORBITAL DROP", 1000);
+  }
+
+  draw(ctx) {
+    if (!this.hasDetonated) {
+      ctx.save();
+      ctx.translate(this.x, this.y);
+      // Giant 500KG bomb streaking down
+      ctx.fillStyle = "#1e293b";
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 16, 44, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // Yellow stripes
+      ctx.fillStyle = "#facc15";
+      ctx.fillRect(-14, -8, 28, 6);
+      ctx.fillRect(-14, 8, 28, 6);
+      // Thruster fire behind bomb
+      ctx.fillStyle = "#f97316";
+      ctx.beginPath();
+      ctx.moveTo(-10, -40);
+      ctx.lineTo(0, -75 - Math.random() * 30);
+      ctx.lineTo(10, -40);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+}
+
+class Orbital380mmBarrage {
+  constructor(targetX, targetY) {
+    this.targetX = targetX;
+    this.targetY = targetY;
+    this.totalShells = 6;
+    this.firedShells = 0;
+    this.shellTimer = 0;
+    this.interval = 0.65;
+    this.spreadRadius = 320;
+  }
+
+  update(dt) {
+    this.shellTimer -= dt;
+    if (this.shellTimer <= 0 && this.firedShells < this.totalShells) {
+      this.shellTimer = this.interval;
+      this.firedShells++;
+      const sx = this.targetX + (Math.random() - 0.5) * this.spreadRadius * 2;
+      const sy = this.targetY + (Math.random() - 0.5) * this.spreadRadius * 2;
+      this.impactShell(sx, sy);
+    }
+    return this.firedShells < this.totalShells || this.shellTimer > 0;
+  }
+
+  impactShell(x, y) {
+    window.soundEngine.playRocketExplode();
+    addScreenShake(18);
+    const radius = 180;
+    particles.push(new ShockwaveRing(x, y, radius));
+    particles.push(new ScorchTrail(x, y, 5.0));
+
+    for (const enemy of enemies) {
+      const d = Math.hypot(enemy.x - x, enemy.y - y);
+      if (d < radius + enemy.radius) {
+        enemy.takeDamage(850, "380MM HE SHELL");
+        enemy.ignite(4.0);
+        const a = Math.atan2(enemy.y - y, enemy.x - x);
+        enemy.vx += Math.cos(a) * 600;
+        enemy.vy += Math.sin(a) * 600;
+      }
+    }
+
+    for (let i = 0; i < 35; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const spd = 80 + Math.random() * 300;
+      particles.push(new SparkParticle(x, y, Math.cos(a) * spd, Math.sin(a) * spd, Math.random() < 0.5 ? "#f97316" : "#475569"));
+    }
+
+    addFloatingText(x, y - 20, "380MM IMPACT", "#ef4444", 20);
+  }
+
+  draw(ctx) {
+    // Ground target circle showing barrage zone
+    ctx.save();
+    ctx.strokeStyle = "rgba(234, 179, 8, 0.3)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 8]);
+    ctx.beginPath();
+    ctx.arc(this.targetX, this.targetY, this.spreadRadius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+class OrbitalLaserStrike {
+  constructor(targetX, targetY) {
+    this.x = targetX;
+    this.y = targetY;
+    this.duration = 7.0;
+    this.lifetime = 7.0;
+    this.beamRadius = 26;
+    this.target = null;
+    this.sizzleTimer = 0;
+  }
+
+  update(dt) {
+    this.lifetime -= dt;
+
+    // Track highest HP enemy or closest boss
+    let bestTarget = null;
+    let maxHp = -1;
+    for (const enemy of enemies) {
+      if (enemy.hp > maxHp) {
+        maxHp = enemy.hp;
+        bestTarget = enemy;
+      }
+    }
+    this.target = bestTarget;
+
+    if (this.target) {
+      const dx = this.target.x - this.x;
+      const dy = this.target.y - this.y;
+      const d = Math.hypot(dx, dy);
+      if (d > 5) {
+        this.x += (dx / d) * 175 * dt;
+        this.y += (dy / d) * 175 * dt;
+      }
+    }
+
+    // Burn enemies in beam
+    for (const enemy of enemies) {
+      const d = Math.hypot(enemy.x - this.x, enemy.y - this.y);
+      if (d < this.beamRadius + enemy.radius) {
+        enemy.takeDamage(520 * dt, "ORBITAL LASER");
+        enemy.ignite(2.5);
+      }
+    }
+
+    // Molten scorch ground under beam
+    if (Math.random() < 0.4) {
+      particles.push(new ScorchTrail(this.x, this.y, 2.5));
+    }
+
+    this.sizzleTimer += dt;
+    if (this.sizzleTimer > 0.08) {
+      this.sizzleTimer = 0;
+      window.soundEngine.playEnemyBurnSizzle();
+      for (let i = 0; i < 4; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const spd = 60 + Math.random() * 160;
+        particles.push(new SparkParticle(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, "#38bdf8"));
+      }
+    }
+
+    return this.lifetime > 0;
+  }
+
+  draw(ctx) {
+    ctx.save();
+    // Descending orbital beam from top of screen to ground
+    const pulse = Math.sin(gameTime * 25) * 0.15 + 0.85;
+
+    // Outer cyan heat haze
+    ctx.fillStyle = `rgba(56, 189, 248, ${0.45 * pulse})`;
+    ctx.fillRect(this.x - this.beamRadius, this.y - 12000, this.beamRadius * 2, 12000);
+
+    // Inner blinding white plasma core
+    ctx.fillStyle = `rgba(255, 255, 255, ${0.9 * pulse})`;
+    ctx.fillRect(this.x - this.beamRadius * 0.4, this.y - 12000, this.beamRadius * 0.8, 12000);
+
+    // Ground impact puddle
+    ctx.fillStyle = "#38bdf8";
+    ctx.beginPath();
+    ctx.ellipse(this.x, this.y, this.beamRadius * 1.5, this.beamRadius * 0.8, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.ellipse(this.x, this.y, this.beamRadius * 0.8, this.beamRadius * 0.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+}
+
+class SentryTurret {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.radius = 26;
+    this.hp = 480;
+    this.maxHp = 480;
+    this.lifetime = 32.0;
+    this.angle = 0;
+    this.fireTimer = 0;
+    this.target = null;
+  }
+
+  update(dt) {
+    this.lifetime -= dt;
+
+    // Find closest enemy within 650px
+    let closest = null;
+    let minDist = 650;
+    for (const enemy of enemies) {
+      const d = Math.hypot(enemy.x - this.x, enemy.y - this.y);
+      if (d < minDist) {
+        minDist = d;
+        closest = enemy;
+      }
+    }
+    this.target = closest;
+
+    if (this.target) {
+      const targetAngle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
+      // Smoothly rotate turret
+      this.angle = targetAngle;
+
+      this.fireTimer += dt;
+      if (this.fireTimer >= 0.08) {
+        this.fireTimer = 0;
+        this.fire();
+      }
+    }
+
+    if (this.hp <= 0 || this.lifetime <= 0) {
+      this.destroy();
+      return false;
+    }
+    return true;
+  }
+
+  fire() {
+    window.soundEngine.playMinigunShot();
+    addScreenShake(1.5);
+    const speed = 980;
+    const spread = (Math.random() - 0.5) * 0.12;
+    const pAngle = this.angle + spread;
+    const nozzleX = this.x + Math.cos(this.angle) * 32;
+    const nozzleY = this.y + Math.sin(this.angle) * 32;
+
+    playerProjectiles.push(new PlayerBullet(
+      nozzleX,
+      nozzleY,
+      Math.cos(pAngle) * speed,
+      Math.sin(pAngle) * speed,
+      4.5,
+      24,
+      "#facc15",
+      0.8,
+      false,
+      0,
+      1,
+      "SENTRY"
+    ));
+  }
+
+  takeDamage(amount) {
+    this.hp -= amount;
+  }
+
+  destroy() {
+    window.soundEngine.playProprietaryDestroyed('normal');
+    addScreenShake(8);
+    for (let i = 0; i < 20; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const spd = 60 + Math.random() * 220;
+      particles.push(new SparkParticle(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, "#94a3b8"));
+    }
+    addFloatingText(this.x, this.y - 30, "SENTRY EXPIRED", "#94a3b8", 18);
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    // Tripod Base
+    ctx.fillStyle = "#1e293b";
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#eab308";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // Rotating Turret Top
+    ctx.rotate(this.angle);
+    ctx.fillStyle = "#334155";
+    ctx.fillRect(-8, -10, 22, 20);
+
+    // Twin Gatling Barrels
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(14, -8, 20, 5);
+    ctx.fillRect(14, 3, 20, 5);
+
+    // Ammo Box on side
+    ctx.fillStyle = "#eab308";
+    ctx.fillRect(-6, 10, 14, 6);
+
+    ctx.restore();
+
+    // Overhead HP Bar
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(this.x - 25, this.y - 34, 50, 6);
+    ctx.fillStyle = "#eab308";
+    ctx.fillRect(this.x - 25, this.y - 34, (this.hp / this.maxHp) * 50, 6);
+  }
+}
+
+class SentryDropPod {
+  constructor(targetX, targetY) {
+    this.x = targetX;
+    this.targetY = targetY;
+    this.y = targetY - 1100;
+    this.speed = 2100;
+    this.landed = false;
+  }
+
+  update(dt) {
+    if (!this.landed) {
+      this.y += this.speed * dt;
+      if (this.y >= this.targetY) {
+        this.y = this.targetY;
+        this.landed = true;
+        window.soundEngine.playSentryDeploy();
+        addScreenShake(18);
+        particles.push(new ShockwaveRing(this.x, this.y, 160));
+        sentryTurrets.push(new SentryTurret(this.x, this.y));
+        addFloatingText(this.x, this.y - 40, "GATLING SENTRY DEPLOYED!", "#eab308", 22);
+        return false;
+      }
+    }
+    return true;
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.fillStyle = "#334155";
+    ctx.fillRect(-12, -28, 24, 56);
+    ctx.fillStyle = "#f97316";
+    ctx.beginPath();
+    ctx.moveTo(-10, -28);
+    ctx.lineTo(0, -55 - Math.random() * 20);
+    ctx.lineTo(10, -28);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+class SpaceMarineDropPod {
+  constructor(targetX, targetY) {
+    this.x = targetX;
+    this.targetY = targetY;
+    this.y = targetY - 1100;
+    this.speed = 2200;
+    this.landed = false;
+  }
+
+  update(dt) {
+    if (!this.landed) {
+      this.y += this.speed * dt;
+      if (this.y >= this.targetY) {
+        this.y = this.targetY;
+        this.landed = true;
+        window.soundEngine.playSentryDeploy();
+        addScreenShake(24);
+        particles.push(new ShockwaveRing(this.x, this.y, 220));
+        particles.push(new ScorchTrail(this.x, this.y, 6.0));
+        // Spawn pickup
+        spaceMarineSuitPickups.push(new SpaceMarineSuitPickup(this.x, this.y));
+        addFloatingText(this.x, this.y - 50, "ASTARTES DROP POD IMPACT!", "#38bdf8", 26);
+        return false;
+      }
+    }
+    return true;
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.fillStyle = "#1e3a8a"; // Blue Astartes Pod
+    ctx.fillRect(-18, -36, 36, 72);
+    ctx.strokeStyle = "#fbbf24";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(-18, -36, 36, 72);
+
+    ctx.fillStyle = "#f97316";
+    ctx.beginPath();
+    ctx.moveTo(-14, -36);
+    ctx.lineTo(0, -75 - Math.random() * 25);
+    ctx.lineTo(14, -36);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+class SpaceMarineSuitPickup {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.radius = 28;
+    this.lifetime = 60.0;
+  }
+
+  update(dt) {
+    this.lifetime -= dt;
+    return this.lifetime > 0;
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    const bob = Math.sin(gameTime * 5) * 4;
+
+    // Glowing holy aura
+    ctx.fillStyle = "rgba(56, 189, 248, 0.25)";
+    ctx.beginPath();
+    ctx.arc(0, 0 + bob, 36, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Terminator Armor Suit Shell
+    ctx.fillStyle = "#1e3a8a";
+    ctx.beginPath();
+    ctx.roundRect(-20, -22 + bob, 40, 44, 8);
+    ctx.fill();
+
+    ctx.strokeStyle = "#fbbf24";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // Skull Aquila
+    ctx.fillStyle = "#fbbf24";
+    ctx.beginPath();
+    ctx.arc(0, -4 + bob, 7, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Banner Text
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 10px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("SPACE MARINE SUIT", 0, -32 + bob);
+    ctx.fillText("[TOUCH TO DON]", 0, 34 + bob);
+
+    ctx.restore();
+  }
+}
+
+// --- STRATAGEM 5: CYBER DOME SHIELD BUNKER ---
+class ActiveDomeShield {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.radius = 190;
+    this.lifetime = 22.0;
+    this.pulse = 0;
+  }
+
+  update(dt) {
+    this.lifetime -= dt;
+    this.pulse += dt * 3.5;
+
+    // Deflect and vaporize incoming hostile projectiles
+    for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
+      const ep = enemyProjectiles[i];
+      const dist = Math.hypot(ep.x - this.x, ep.y - this.y);
+      if (dist <= this.radius + 12) {
+        if (window.soundEngine && window.soundEngine.playShieldDeflect) window.soundEngine.playShieldDeflect();
+        for (let p = 0; p < 5; p++) {
+          particles.push(new SparkParticle(ep.x, ep.y, (Math.random() - 0.5) * 90, (Math.random() - 0.5) * 90, "#06b6d4"));
+        }
+        enemyProjectiles.splice(i, 1);
+      }
+    }
+
+    // Repel enemies attempting to enter dome
+    for (const enemy of enemies) {
+      const dist = Math.hypot(enemy.x - this.x, enemy.y - this.y);
+      if (dist < this.radius + enemy.radius && dist > this.radius - 24) {
+        const a = Math.atan2(enemy.y - this.y, enemy.x - this.x);
+        enemy.x = this.x + Math.cos(a) * (this.radius + enemy.radius);
+        enemy.y = this.y + Math.sin(a) * (this.radius + enemy.radius);
+        enemy.vx += Math.cos(a) * 140;
+        enemy.vy += Math.sin(a) * 140;
+      }
+    }
+
+    return this.lifetime > 0;
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    const alpha = Math.min(1, this.lifetime / 2.0);
+    const wave = Math.sin(this.pulse) * 0.06 + 0.94;
+
+    ctx.fillStyle = `rgba(6, 182, 212, ${0.16 * alpha * wave})`;
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (Math.PI / 3) * i;
+      const hx = Math.cos(a) * this.radius * wave;
+      const hy = Math.sin(a) * this.radius * wave;
+      if (i === 0) ctx.moveTo(hx, hy);
+      else ctx.lineTo(hx, hy);
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = `rgba(56, 189, 248, ${0.75 * alpha * wave})`;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // Central emitter pylon
+    ctx.fillStyle = "#0f172a";
+    ctx.beginPath();
+    ctx.arc(0, 0, 18, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#06b6d4";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.fillStyle = "#38bdf8";
+    ctx.font = "bold 11px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText(`DOME SHIELD [${this.lifetime.toFixed(1)}s]`, 0, -26);
+
+    ctx.restore();
+  }
+}
+
+class DomeShieldDropPod {
+  constructor(targetX, targetY) {
+    this.x = targetX;
+    this.y = targetY - 1100;
+    this.targetX = targetX;
+    this.targetY = targetY;
+    this.speed = 1900;
+    this.landed = false;
+  }
+  update(dt) {
+    if (!this.landed) {
+      this.y += this.speed * dt;
+      if (this.y >= this.targetY) {
+        this.y = this.targetY;
+        this.landed = true;
+        if (window.soundEngine && window.soundEngine.playDomeDeploy) window.soundEngine.playDomeDeploy();
+        addScreenShake(8);
+        activeDomeShields.push(new ActiveDomeShield(this.targetX, this.targetY));
+        if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
+          window.soundEngine.speakRobot("DEFENSIVE DOME BUNKER DEPLOYED. ALLIED PROJECTION ONLINE.", "SUPER DESTROYER");
+        }
+        return false;
+      }
+    }
+    return true;
+  }
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.fillStyle = "#0284c7";
+    ctx.fillRect(-12, -26, 24, 52);
+    ctx.restore();
+  }
+}
+
+// --- STRATAGEM 6: ORBITAL PRECISION RAILCANNON STRIKE ---
+class OrbitalPrecisionRailcannon {
+  constructor(targetX, targetY) {
+    this.targetX = targetX;
+    this.targetY = targetY;
+    this.timer = 1.0;
+    this.struck = false;
+    this.lifetime = 0.6;
+    this.lockedTarget = null;
+
+    let bestTgt = null, maxHp = 0;
+    for (const e of enemies) {
+      if (Math.hypot(e.x - targetX, e.y - targetY) < 650) {
+        if (e.isBoss || e.hp > maxHp) {
+          maxHp = e.hp;
+          bestTgt = e;
+        }
+      }
+    }
+    this.lockedTarget = bestTgt;
+  }
+
+  update(dt) {
+    if (this.lockedTarget && this.lockedTarget.hp > 0) {
+      this.targetX = this.lockedTarget.x;
+      this.targetY = this.lockedTarget.y;
+    }
+
+    if (!this.struck) {
+      this.timer -= dt;
+      if (this.timer <= 0) {
+        this.strike();
+      }
+    } else {
+      this.lifetime -= dt;
+      return this.lifetime > 0;
+    }
+    return true;
+  }
+
+  strike() {
+    this.struck = true;
+    if (window.soundEngine && window.soundEngine.playRailcannonStrike) window.soundEngine.playRailcannonStrike();
+    addScreenShake(26);
+    screenFlash = 1.0;
+
+    if (this.lockedTarget && this.lockedTarget.hp > 0) {
+      this.lockedTarget.takeDamage(2600, "ORBITAL RAILCANNON PENETRATOR");
+      if (this.lockedTarget.shield) this.lockedTarget.shield = 0;
+      this.lockedTarget.corrodedTimer = 8.0;
+    } else {
+      for (const e of enemies) {
+        if (Math.hypot(e.x - this.targetX, e.y - this.targetY) < 180) {
+          e.takeDamage(1800, "RAILCANNON SHOCKWAVE");
+        }
+      }
+    }
+
+    particles.push(new ShockwaveRing(this.targetX, this.targetY, 260, "#ef4444"));
+    for (let i = 0; i < 30; i++) {
+      const a = (Math.PI * 2 / 30) * i;
+      const spd = 320 + Math.random() * 240;
+      particles.push(new SparkParticle(this.targetX, this.targetY, Math.cos(a) * spd, Math.sin(a) * spd, "#ef4444"));
+    }
+
+    if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
+      window.soundEngine.speakRobot("ORBITAL RAILCANNON CONFIRMED HIT. TARGET ARMOR SHATTERED.", "SUPER DESTROYER");
+    }
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.targetX, this.targetY);
+
+    if (!this.struck) {
+      const pulse = Math.sin(gameTime * 25) * 0.3 + 0.7;
+      ctx.strokeStyle = `rgba(239, 68, 68, ${pulse})`;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(0, 0, 36 * pulse, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(-45, 0); ctx.lineTo(45, 0);
+      ctx.moveTo(0, -45); ctx.lineTo(0, 45);
+      ctx.stroke();
+
+      ctx.fillStyle = "#ef4444";
+      ctx.font = "bold 11px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(`RAILCANNON LOCK: ${Math.max(0, this.timer).toFixed(1)}s`, 0, -46);
+    } else {
+      ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
+      ctx.fillRect(-12, -15000, 24, 15000);
+      ctx.fillStyle = "rgba(239, 68, 68, 0.65)";
+      ctx.fillRect(-28, -15000, 56, 15000);
+    }
+
+    ctx.restore();
+  }
+}
+
+// --- STRATAGEM 7: TESLA ARC TOWER ---
+class TeslaTower {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.radius = 26;
+    this.hp = 650;
+    this.maxHp = 650;
+    this.lifetime = 30.0;
+    this.zapTimer = 0;
+  }
+
+  update(dt) {
+    this.lifetime -= dt;
+    this.zapTimer += dt;
+
+    if (this.zapTimer >= 0.45) {
+      this.zapTimer = 0;
+      this.discharge();
+    }
+
+    return this.lifetime > 0 && this.hp > 0;
+  }
+
+  discharge() {
+    const range = 420;
+    const candidates = enemies.filter(e => Math.hypot(e.x - this.x, e.y - this.y) < range)
+      .sort((a, b) => Math.hypot(a.x - this.x, a.y - this.y) - Math.hypot(b.x - this.x, b.y - this.y));
+
+    const targets = candidates.slice(0, 5);
+    if (targets.length === 0) return;
+
+    if (window.soundEngine && window.soundEngine.playTeslaArc) window.soundEngine.playTeslaArc();
+    addScreenShake(2);
+
+    let prevX = this.x, prevY = this.y - 20;
+    for (const tgt of targets) {
+      tgt.takeDamage(95, "TESLA COIL DISCHARGE");
+      tgt.vx += (tgt.x - prevX) * 0.3;
+      tgt.vy += (tgt.y - prevY) * 0.3;
+
+      const segDist = Math.hypot(tgt.x - prevX, tgt.y - prevY);
+      const steps = Math.max(3, Math.floor(segDist / 18));
+      for (let s = 0; s <= steps; s++) {
+        const t = s / steps;
+        const px = prevX + (tgt.x - prevX) * t + (Math.random() - 0.5) * 20;
+        const py = prevY + (tgt.y - prevY) * t + (Math.random() - 0.5) * 20;
+        particles.push(new SparkParticle(px, py, (Math.random() - 0.5) * 40, (Math.random() - 0.5) * 40, "#38bdf8"));
+      }
+      prevX = tgt.x;
+      prevY = tgt.y;
+    }
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    ctx.fillStyle = "#1e293b";
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#38bdf8";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.fillStyle = "#0284c7";
+    ctx.fillRect(-8, -32, 16, 32);
+
+    const pulse = Math.sin(gameTime * 15) * 0.2 + 0.8;
+    ctx.fillStyle = `rgba(56, 189, 248, ${pulse})`;
+    ctx.beginPath();
+    ctx.arc(0, -38, 14, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 10px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText(`TESLA TOWER [${this.lifetime.toFixed(0)}s]`, 0, -56);
+
+    ctx.restore();
+  }
+}
+
+class TeslaTowerDropPod {
+  constructor(targetX, targetY) {
+    this.x = targetX;
+    this.y = targetY - 1100;
+    this.targetX = targetX;
+    this.targetY = targetY;
+    this.speed = 1900;
+    this.landed = false;
+  }
+  update(dt) {
+    if (!this.landed) {
+      this.y += this.speed * dt;
+      if (this.y >= this.targetY) {
+        this.y = this.targetY;
+        this.landed = true;
+        addScreenShake(8);
+        teslaTowers.push(new TeslaTower(this.targetX, this.targetY));
+        if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
+          window.soundEngine.speakRobot("TESLA DEFENSE TOWER ACTIVE. HIGH VOLTAGE ENGAGED.", "SUPER DESTROYER");
+        }
+        return false;
+      }
+    }
+    return true;
+  }
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.fillStyle = "#0284c7";
+    ctx.fillRect(-12, -26, 24, 52);
+    ctx.restore();
+  }
+}
+
+// --- STRATAGEM 8: EAGLE NAPALM FIREWALL AIRSTRIKE ---
+class EagleNapalmStrike {
+  constructor(x, y) {
+    this.targetX = x;
+    this.targetY = y;
+    this.timer = 0.45;
+    this.dropped = false;
+    this.lifetime = 0.5;
+  }
+
+  update(dt) {
+    if (!this.dropped) {
+      this.timer -= dt;
+      if (this.timer <= 0) {
+        this.dropped = true;
+        this.carpetBomb();
+      }
+    } else {
+      this.lifetime -= dt;
+      return this.lifetime > 0;
+    }
+    return true;
+  }
+
+  carpetBomb() {
+    if (window.soundEngine && window.soundEngine.playNapalmDrop) window.soundEngine.playNapalmDrop();
+    addScreenShake(12);
+
+    const aimAngle = player ? player.angle : 0;
+    const perpAngle = aimAngle + Math.PI / 2;
+
+    for (let i = -3; i <= 3; i++) {
+      const px = this.targetX + Math.cos(perpAngle) * (i * 65) + (Math.random() - 0.5) * 30;
+      const py = this.targetY + Math.sin(perpAngle) * (i * 65) + (Math.random() - 0.5) * 30;
+
+      floorHazards.push(new NapalmFireHazard(px, py));
+      for (let p = 0; p < 8; p++) {
+        const a = Math.random() * Math.PI * 2;
+        const spd = 120 + Math.random() * 140;
+        particles.push(new FlameParticle(px, py, Math.cos(a) * spd, Math.sin(a) * spd, 0.75, 45, false));
+      }
+    }
+
+    if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
+      window.soundEngine.speakRobot("EAGLE NAPALM AIRSTRIKE DELIVERED. ZONE CLEARED WITH FIRE.", "EAGLE-1");
+    }
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.targetX, this.targetY);
+    ctx.strokeStyle = "rgba(249, 115, 22, 0.75)";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(0, 0, 55, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+class NapalmFireHazard {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.radius = 42;
+    this.lifetime = 12.0;
+    this.flameTimer = 0;
+  }
+
+  update(dt) {
+    this.lifetime -= dt;
+    this.flameTimer += dt;
+    if (this.flameTimer > 0.12) {
+      this.flameTimer = 0;
+      particles.push(new FlameParticle(
+        this.x + (Math.random() - 0.5) * this.radius,
+        this.y + (Math.random() - 0.5) * this.radius,
+        (Math.random() - 0.5) * 30,
+        -40 - Math.random() * 40,
+        0.5,
+        25,
+        false
+      ));
+    }
+
+    for (const enemy of enemies) {
+      if (Math.hypot(enemy.x - this.x, enemy.y - this.y) < this.radius + enemy.radius) {
+        enemy.takeDamage(65 * dt, "NAPALM FIRE");
+        enemy.ignite(3.0);
+      }
+    }
+
+    return this.lifetime > 0;
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    const alpha = Math.min(1, this.lifetime / 1.5);
+    ctx.fillStyle = `rgba(234, 88, 12, ${0.4 * alpha})`;
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+// --- STRATAGEM 9: GUARD DOG COMBAT DRONE ---
+class GuardDogDrone {
+  constructor() {
+    this.battery = 45.0;
+    this.maxBattery = 45.0;
+    this.fireCooldown = 0;
+    this.angle = 0;
+    this.orbitAngle = 0;
+  }
+
+  update(dt, owner) {
+    this.battery -= dt;
+    if (this.battery <= 0) return false;
+
+    this.orbitAngle += dt * 2.5;
+    const droneX = owner.x + Math.cos(this.orbitAngle) * 44;
+    const droneY = owner.y + Math.sin(this.orbitAngle) * 44 - 15;
+
+    if (this.fireCooldown > 0) this.fireCooldown -= dt;
+
+    for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
+      const ep = enemyProjectiles[i];
+      if (Math.hypot(ep.x - droneX, ep.y - droneY) < 110) {
+        if (window.soundEngine && window.soundEngine.playDroneLaser) window.soundEngine.playDroneLaser();
+        for (let p = 0; p < 4; p++) {
+          particles.push(new SparkParticle(ep.x, ep.y, (Math.random() - 0.5) * 60, (Math.random() - 0.5) * 60, "#38bdf8"));
+        }
+        enemyProjectiles.splice(i, 1);
+        break;
+      }
+    }
+
+    let nearest = null, minDist = 420;
+    for (const e of enemies) {
+      const d = Math.hypot(e.x - droneX, e.y - droneY);
+      if (d < minDist) {
+        minDist = d;
+        nearest = e;
+      }
+    }
+
+    if (nearest) {
+      this.angle = Math.atan2(nearest.y - droneY, nearest.x - droneX);
+      if (this.fireCooldown <= 0) {
+        this.fireCooldown = 0.16;
+        if (window.soundEngine && window.soundEngine.playDroneLaser) window.soundEngine.playDroneLaser();
+        const spd = 1400;
+        playerProjectiles.push(new PlayerBullet(
+          droneX, droneY, Math.cos(this.angle) * spd, Math.sin(this.angle) * spd, 5, 34, "#38bdf8", 0.65, false, 0, 1, "GUARD_DOG"
+        ));
+      }
+    } else {
+      this.angle = owner.angle;
+    }
+
+    return true;
+  }
+
+  draw(ctx, owner) {
+    const droneX = owner.x + Math.cos(this.orbitAngle) * 44;
+    const droneY = owner.y + Math.sin(this.orbitAngle) * 44 - 15;
+
+    ctx.save();
+    ctx.translate(droneX, droneY);
+    ctx.rotate(this.angle);
+
+    ctx.fillStyle = "#1e293b";
+    ctx.beginPath();
+    ctx.roundRect(-10, -8, 20, 16, 4);
+    ctx.fill();
+    ctx.strokeStyle = "#38bdf8";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    ctx.fillStyle = "#0284c7";
+    ctx.fillRect(8, -6, 8, 3);
+    ctx.fillRect(8, 3, 8, 3);
+
+    ctx.fillStyle = "#38bdf8";
+    ctx.beginPath();
+    ctx.arc(3, 0, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+}
+
+class GuardDogDropPod {
+  constructor(targetX, targetY) {
+    this.x = targetX;
+    this.y = targetY - 1100;
+    this.targetX = targetX;
+    this.targetY = targetY;
+    this.speed = 1900;
+    this.landed = false;
+  }
+  update(dt) {
+    if (!this.landed) {
+      this.y += this.speed * dt;
+      if (this.y >= this.targetY) {
+        this.y = this.targetY;
+        this.landed = true;
+        addScreenShake(8);
+        if (player) {
+          player.guardDogDrone = new GuardDogDrone();
+        }
+        if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
+          window.soundEngine.speakRobot("GUARD DOG COMBAT DRONE DOCKED. AUTONOMOUS TARGETING ENGAGED.", "SUPER DESTROYER");
+        }
+        return false;
+      }
+    }
+    return true;
+  }
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.fillStyle = "#0284c7";
+    ctx.fillRect(-12, -26, 24, 52);
+    ctx.restore();
+  }
+}
+
+// --- PARTICLES ---
+class FlameParticle {
+  constructor(x, y, vx, vy, lifetime, damage, isPlasma = false) {
+    this.x = x;
+    this.y = y;
+    this.vx = vx;
+    this.vy = vy;
+    this.lifetime = lifetime;
+    this.maxLifetime = lifetime;
+    this.damage = damage;
+    this.isPlasma = isPlasma;
+    this.radius = 8 + Math.random() * 7;
+    this.hasHit = false;
+  }
+
+  update(dt) {
+    this.lifetime -= dt;
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+    this.vx *= 0.94; // Air drag
+    this.vy *= 0.94;
+    this.radius += 24 * dt; // Flame billows outwards
+
+    // Check hit against enemies
+    if (!this.hasHit) {
+      for (const enemy of enemies) {
+        const dx = enemy.x - this.x;
+        const dy = enemy.y - this.y;
+        if (Math.hypot(dx, dy) < this.radius + enemy.radius) {
+          enemy.takeDamage(this.damage, "BURN");
+          enemy.ignite(2.2);
+          this.hasHit = true;
+          window.soundEngine.playEnemyBurnSizzle();
+          break;
+        }
+      }
+    }
+
+    return this.lifetime > 0;
+  }
+
+  draw(ctx) {
+    const lifeRatio = this.lifetime / this.maxLifetime;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+
+    if (this.isPlasma) {
+      // Hot blue/violet/white plasma flame
+      if (lifeRatio > 0.7) ctx.fillStyle = `rgba(240, 249, 255, ${lifeRatio * 0.9})`;
+      else if (lifeRatio > 0.35) ctx.fillStyle = `rgba(168, 85, 247, ${lifeRatio * 0.8})`;
+      else ctx.fillStyle = `rgba(59, 130, 246, ${lifeRatio * 0.6})`;
+    } else {
+      // Classic roaring fire (white-yellow core -> intense orange -> dark smoky red)
+      if (lifeRatio > 0.75) ctx.fillStyle = `rgba(254, 240, 138, ${lifeRatio * 0.9})`;
+      else if (lifeRatio > 0.4) ctx.fillStyle = `rgba(249, 115, 22, ${lifeRatio * 0.8})`;
+      else ctx.fillStyle = `rgba(220, 38, 38, ${lifeRatio * 0.6})`;
+    }
+
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+class SparkParticle {
+  constructor(x, y, vx, vy, color) {
+    this.x = x;
+    this.y = y;
+    this.vx = vx;
+    this.vy = vy;
+    this.color = color;
+    this.lifetime = 0.25 + Math.random() * 0.3;
+    this.maxLifetime = this.lifetime;
+    this.size = 2 + Math.random() * 3;
+  }
+
+  update(dt) {
+    this.lifetime -= dt;
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+    return this.lifetime > 0;
+  }
+
+  draw(ctx) {
+    const alpha = this.lifetime / this.maxLifetime;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = this.color;
+    ctx.fillRect(this.x - this.size / 2, this.y - this.size / 2, this.size, this.size);
+    ctx.restore();
+  }
+}
+
+class ScorchTrail {
+  constructor(x, y, duration) {
+    this.x = x;
+    this.y = y;
+    this.lifetime = duration;
+    this.maxLifetime = duration;
+    this.radius = 24;
+  }
+
+  update(dt) {
+    this.lifetime -= dt;
+    // Burns enemies walking over it
+    for (const enemy of enemies) {
+      if (Math.hypot(enemy.x - this.x, enemy.y - this.y) < this.radius + enemy.radius) {
+        enemy.takeDamage(22 * dt, "MAGMA TRAIL");
+        enemy.ignite(1.5);
+      }
+    }
+    return this.lifetime > 0;
+  }
+
+  draw(ctx) {
+    const alpha = (this.lifetime / this.maxLifetime) * 0.55;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = "#ea580c";
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.fill();
+    // Inner molten glow
+    ctx.fillStyle = "#fde047";
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+class ShockwaveRing {
+  constructor(x, y, maxRadius) {
+    this.x = x;
+    this.y = y;
+    this.radius = 10;
+    this.maxRadius = maxRadius;
+    this.lifetime = 0.45;
+    this.maxLifetime = 0.45;
+  }
+
+  update(dt) {
+    this.lifetime -= dt;
+    this.radius += (this.maxRadius / this.maxLifetime) * dt;
+    return this.lifetime > 0;
+  }
+
+  draw(ctx) {
+    const alpha = this.lifetime / this.maxLifetime;
+    ctx.save();
+    ctx.lineWidth = 8 * alpha;
+    ctx.strokeStyle = `rgba(239, 68, 68, ${alpha})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.lineWidth = 3 * alpha;
+    ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius - 4, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// --- FLOATING TEXT & COMBOS ---
+const floatingTexts = [];
+function addFloatingText(x, y, text, color = "#ffffff", size = 18) {
+  floatingTexts.push({
+    x,
+    y,
+    text,
+    color,
+    size,
+    lifetime: 0.85,
+    maxLifetime: 0.85,
+    vy: -45
+  });
+}
+
+const comboTracker = {
+  count: 0,
+  timer: 0,
+  multiplier: 1,
+  totalScore: 0,
+
+  registerKill() {
+    this.count++;
+    this.timer = 2.5; // Combo reset window
+    this.multiplier = 1 + Math.floor(this.count / 5);
+    const earned = 100 * this.multiplier;
+    this.totalScore += earned;
+
+    if (window.adaptiveDirector && player) {
+      const activeW = player.heldWeapons[player.activeWeaponSlot];
+      window.adaptiveDirector.recordKill(activeW ? activeW.type : "flame");
+    }
+
+    if (this.count % 5 === 0) {
+      const titles = [
+        "KERNEL PANIC!",
+        "GPL COMPLIANT!",
+        "OPEN SOURCE REVOLUTION!",
+        "ROOT PRIVILEGES REIGNED!",
+        "PROPRIETARY OVERTHROW!",
+        "UNLICENSED CARNAGE!"
+      ];
+      const title = titles[Math.min(titles.length - 1, Math.floor(this.count / 5) - 1)];
+      addFloatingText(player.x, player.y - 70, `${title} (x${this.multiplier})`, "#fde047", 26);
+      addScreenShake(8);
+    }
+  },
+
+  addBonus(label, pts) {
+    this.totalScore += pts;
+    addFloatingText(player.x, player.y - 45, `+${pts} ${label}`, "#38bdf8", 22);
+  },
+
+  update(dt) {
+    if (this.timer > 0) {
+      this.timer -= dt;
+      if (this.timer <= 0) {
+        this.count = 0;
+        this.multiplier = 1;
+      }
+    }
+  }
+};
+
+// --- PICKUPS ---
+class Pickup {
+  constructor(x, y, type) {
+    this.x = x;
+    this.y = y;
+    this.type = type; // 'xp', 'hp', 'fuel'
+    this.radius = 14;
+    this.lifetime = 16.0;
+  }
+
+  update(dt) {
+    this.lifetime -= dt;
+    // Magnet towards player if close
+    const dx = player.x - this.x;
+    const dy = player.y - this.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 180) {
+      this.x += (dx / dist) * 360 * dt;
+      this.y += (dy / dist) * 360 * dt;
+    }
+
+    if (dist < this.radius + player.radius) {
+      this.collect();
+      return false;
+    }
+    return this.lifetime > 0;
+  }
+
+  collect() {
+    window.soundEngine.playPickup();
+    if (this.type === 'xp') {
+      player.addXP(25);
+      addFloatingText(this.x, this.y, "+25 COMMITS", "#22c55e", 16);
+    } else if (this.type === 'hp') {
+      player.hp = Math.min(player.maxHp, player.hp + 25);
+      addFloatingText(this.x, this.y, "+25 HP (RAM RESTORED)", "#ec4899", 16);
+    } else if (this.type === 'fuel') {
+      player.fuel = player.maxFuel;
+      addFloatingText(this.x, this.y, "MAX FUEL / FISH SNACK!", "#38bdf8", 16);
+    }
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    const bob = Math.sin(gameTime * 6) * 3;
+
+    if (this.type === 'xp') {
+      // GPL Badge / Linux Terminal Chip
+      ctx.fillStyle = "#22c55e";
+      ctx.fillRect(-10, -10 + bob, 20, 20);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 11px monospace";
+      ctx.fillText(">_", -7, 4 + bob);
+    } else if (this.type === 'hp') {
+      // RAM Stick
+      ctx.fillStyle = "#059669";
+      ctx.fillRect(-12, -7 + bob, 24, 14);
+      ctx.fillStyle = "#fbbf24";
+      ctx.fillRect(-10, 5 + bob, 20, 4);
+    } else if (this.type === 'fuel') {
+      // Cute Fish
+      ctx.fillStyle = "#38bdf8";
+      ctx.beginPath();
+      ctx.ellipse(0, 0 + bob, 12, 6, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(-10, 0 + bob);
+      ctx.lineTo(-17, -6 + bob);
+      ctx.lineTo(-17, 6 + bob);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+}
+
+// --- FLOOR HAZARDS & AREA DENIAL (SOUL KNIGHT TACTICS) ---
+class PatentTrapWeb {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.radius = 44;
+    this.lifetime = 6.0;
+  }
+  update(dt) {
+    this.lifetime -= dt;
+    if (player && Math.hypot(player.x - this.x, player.y - this.y) < this.radius + player.radius * 0.6) {
+      player.webSlowTimer = Math.max(player.webSlowTimer || 0, 1.8);
+    }
+    return this.lifetime > 0;
+  }
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    const alpha = Math.min(1, this.lifetime);
+    ctx.strokeStyle = `rgba(245, 158, 11, ${0.5 * alpha})`;
+    ctx.lineWidth = 1.8;
+    for (let i = 0; i < 8; i++) {
+      const a = (Math.PI / 4) * i;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(a) * this.radius, Math.sin(a) * this.radius);
+      ctx.stroke();
+    }
+    for (let r = 14; r <= this.radius; r += 14) {
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.fillStyle = `rgba(245, 158, 11, ${0.85 * alpha})`;
+    ctx.font = "bold 9px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("PATENT WEB (SLOW)", 0, 3);
+    ctx.restore();
+  }
+}
+
+class PaywallPuddle {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.radius = 54;
+    this.lifetime = 3.5;
+    this.pulse = 0;
+  }
+  update(dt) {
+    this.lifetime -= dt;
+    this.pulse += dt * 6;
+    if (player && Math.hypot(player.x - this.x, player.y - this.y) < this.radius + player.radius * 0.5) {
+      player.takeDamage(22 * dt, "SUBSCRIPTION POPUP PUDDLE");
+    }
+    return this.lifetime > 0;
+  }
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    const alpha = Math.min(1, this.lifetime);
+    const squish = Math.sin(this.pulse) * 4;
+    ctx.fillStyle = `rgba(168, 85, 247, ${0.35 * alpha})`;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, this.radius + squish, this.radius - squish, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = `rgba(236, 72, 153, ${0.75 * alpha})`;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    ctx.fillStyle = `rgba(254, 240, 138, ${0.9 * alpha})`;
+    ctx.font = "bold 10px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("POPOVER PAYWALL", 0, 3);
+    ctx.restore();
+  }
+}
+
+class PaywallMortar {
+  constructor(startX, startY, targetX, targetY) {
+    this.startX = startX;
+    this.startY = startY;
+    this.targetX = targetX;
+    this.targetY = targetY;
+    this.x = startX;
+    this.y = startY;
+    this.time = 0;
+    this.duration = 1.1;
+    this.peakHeight = 120;
+  }
+  update(dt) {
+    this.time += dt;
+    const t = Math.min(1, this.time / this.duration);
+    this.x = this.startX + (this.targetX - this.startX) * t;
+    this.y = this.startY + (this.targetY - this.startY) * t;
+    if (t >= 1) {
+      floorHazards.push(new PaywallPuddle(this.targetX, this.targetY));
+      window.soundEngine.playNoiseBurst(0.25, 0.35, 900, 120);
+      addScreenShake(7);
+      particles.push(new ShockwaveRing(this.targetX, this.targetY, 65));
+      if (player && Math.hypot(player.x - this.targetX, player.y - this.targetY) < 65) {
+        player.takeDamage(26, "PAYWALL MORTAR DIRECT HIT");
+      }
+      return false;
+    }
+    return true;
+  }
+  draw(ctx) {
+    const t = this.time / this.duration;
+    const arcHeight = Math.sin(t * Math.PI) * this.peakHeight;
+    ctx.save();
+    ctx.strokeStyle = "rgba(236, 72, 153, 0.8)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.arc(this.targetX, this.targetY, 54, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = "#ec4899";
+    ctx.beginPath();
+    ctx.arc(this.x, this.y - arcHeight, 11, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 9px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("$$$", this.x, this.y - arcHeight + 3);
+    ctx.restore();
+  }
+}
+
+// --- ENEMY BULLETS / ATTACKS ---
+const enemyProjectiles = [];
+class EnemyProjectile {
+  constructor(x, y, vx, vy, label = "ERR", isHoming = false) {
+    this.x = x;
+    this.y = y;
+    this.vx = vx;
+    this.vy = vy;
+    this.radius = 9;
+    this.label = label;
+    this.lifetime = 4.5;
+    this.isHoming = isHoming;
+    this.homeTimer = 2.0;
+  }
+
+  update(dt) {
+    this.lifetime -= dt;
+
+    if (this.isHoming && this.homeTimer > 0 && player) {
+      this.homeTimer -= dt;
+      const dx = player.x - this.x;
+      const dy = player.y - this.y;
+      const d = Math.hypot(dx, dy);
+      if (d > 10) {
+        this.vx += (dx / d) * 320 * dt;
+        this.vy += (dy / d) * 320 * dt;
+        const curSpd = Math.hypot(this.vx, this.vy);
+        if (curSpd > 320) {
+          this.vx = (this.vx / curSpd) * 320;
+          this.vy = (this.vy / curSpd) * 320;
+        }
+      }
+    }
+
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+
+    // Check hit against dungeon walls
+    if (dungeon && dungeon.isSolid(this.x, this.y)) {
+      this.destroy();
+      return false;
+    }
+
+    // Check hit against player
+    const dist = Math.hypot(player.x - this.x, player.y - this.y);
+    if (dist < this.radius + player.radius) {
+      player.takeDamage(18, `PROPRIETARY ${this.label}`);
+      return false;
+    }
+    return this.lifetime > 0;
+  }
+
+  destroy() {
+    for (let i = 0; i < 5; i++) {
+      particles.push(new SparkParticle(this.x, this.y, (Math.random() - 0.5) * 120, (Math.random() - 0.5) * 120, "#ef4444"));
+    }
+  }
+
+  draw(ctx) {
+    ctx.save();
+    let col = "#ef4444";
+    if (this.label === "DRM") col = "#f59e0b";
+    else if (this.label === "PING") col = "#06b6d4";
+    else if (this.label === "POD") col = "#38bdf8";
+    else if (this.label === "PAGE_FAULT") col = "#3b82f6";
+    else if (this.label.length >= 3 && ["AGI", "SLOP", "10X", "SYNERGY", "HALLUCINATE"].includes(this.label)) col = "#d946ef";
+
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 8px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText(this.label, this.x, this.y + 3);
+    ctx.restore();
+  }
+}
+
+// --- ENEMIES ("PROPRIETARY BULLSHIT") ---
+class EnemyBase {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.vx = 0;
+    this.vy = 0;
+    this.radius = 24;
+    this.hp = 60;
+    this.maxHp = 60;
+    this.speed = 140;
+    this.burnTimer = 0;
+    this.corrodedTimer = 0;
+    this.label = "PROPRIETARY";
+    this.xpReward = 20;
+    this.isBoss = false;
+  }
+
+  ignite(duration) {
+    this.burnTimer = Math.max(this.burnTimer, duration);
+  }
+
+  takeDamage(amount, source) {
+    if (this.corrodedTimer > 0) {
+      amount *= 1.5;
+    }
+    this.hp -= amount;
+    if (Math.random() < 0.3) {
+      const dmgColor = this.corrodedTimer > 0 ? "#4ade80" : "#f97316";
+      addFloatingText(this.x + (Math.random() - 0.5) * 30, this.y - 15, `-${Math.round(amount)}`, dmgColor, 14);
+    }
+
+    if (this.hp <= 0) {
+      this.die();
+    }
+  }
+
+  drawHealthBar(ctx) {
+    if (this.hp < this.maxHp && this.hp > 0 && !this.isBoss) {
+      const barW = Math.max(32, this.radius * 1.5);
+      const barH = 5;
+      const barX = -barW / 2;
+      const barY = -this.radius - 12;
+      ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
+      ctx.fillRect(barX - 1, barY - 1, barW + 2, barH + 2);
+      ctx.fillStyle = "#ef4444";
+      ctx.fillRect(barX, barY, barW, barH);
+      ctx.fillStyle = "#22c55e";
+      ctx.fillRect(barX, barY, barW * Math.max(0, this.hp / this.maxHp), barH);
+    }
+  }
+
+  die() {
+    window.soundEngine.playProprietaryDestroyed(this.isBoss ? 'boss' : 'normal');
+    comboTracker.registerKill();
+    addScreenShake(this.isBoss ? 25 : 6);
+
+    const count = this.isBoss ? 80 : 20;
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const spd = 60 + Math.random() * 260;
+      particles.push(new SparkParticle(
+        this.x,
+        this.y,
+        Math.cos(angle) * spd,
+        Math.sin(angle) * spd,
+        Math.random() < 0.5 ? "#1e293b" : "#f97316"
+      ));
+    }
+
+    if (Math.random() < 0.75 || this.isBoss) {
+      pickups.push(new Pickup(this.x, this.y, 'xp'));
+    }
+    if (Math.random() < 0.25 || this.isBoss) {
+      pickups.push(new Pickup(this.x + 15, this.y, Math.random() < 0.5 ? 'hp' : 'fuel'));
+    }
+
+    if (typeof player !== 'undefined' && player && player.infectiousGPL) {
+      for (const other of enemies) {
+        if (other !== this && Math.hypot(other.x - this.x, other.y - this.y) < 220) {
+          other.ignite(3.5);
+          other.takeDamage(40, "GPL INFECTION");
+        }
+      }
+    }
+
+    if (typeof player !== 'undefined' && player && player.forkBombPerk && Math.random() < 0.4) {
+      for (let i = 0; i < 4; i++) {
+        const a = (Math.PI / 2) * i;
+        particles.push(new FlameParticle(this.x, this.y, Math.cos(a) * 320, Math.sin(a) * 320, 0.4, 25, true));
+      }
+    }
+
+    if (dungeon) {
+      dungeon.onObjectiveProgress("PURGE_ENEMIES", 1);
+      if (this.isBoss) {
+        dungeon.onObjectiveProgress("PURGE_BOSS", 1);
+      }
+    }
+
+    if (this.isBoss) {
+      if (window.bossDirector) window.bossDirector.bossTiersDefeated++;
+
+      const currentTier = (dungeon && dungeon.sectorNum) ? dungeon.sectorNum : 1;
+      const nextTier = currentTier + 1;
+      const harderBiomes = ["THERMAL_FOUNDRY", "CRYO_GLACIER", "TOXIC_HEAP", "WALLED_GARDEN", "QUANTUM_VOID"];
+      const nextBiomeKey = harderBiomes[Math.min(harderBiomes.length - 1, nextTier - 1)] || "QUANTUM_VOID";
+      const objectivePool = ["DEFEND_SERVERS", "ATTACK_FORTRESS", "SETUP_UPLINK", "ELITE_BOUNTY"];
+      const nextObj = objectivePool[Math.floor(Math.random() * objectivePool.length)];
+
+      // Drop Portal to harder sector at detonation site
+      const portalHarder = new ProceduralPortal(this.x - 55, this.y, nextBiomeKey, nextObj, nextTier);
+      portalHarder.label = `TIER ${nextTier} ADVANCE`;
+      proceduralPortals.push(portalHarder);
+
+      // Drop Secret Treasure Vault portal right beside it
+      const portalTreasure = new ProceduralPortal(this.x + 55, this.y, "TREASURE_VAULT", "TREASURE_REWARD", nextTier);
+      portalTreasure.label = "TREASURE VAULT";
+      proceduralPortals.push(portalTreasure);
+
+      if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
+        window.soundEngine.speakRobot("APEX CORPORATE OVERLORD TERMINATED. ADVANCED SECTOR AND SECRET TREASURE PORTALS MATERIALIZED AT DETONATION SITE.", "SUPER DESTROYER");
+      }
+    }
+
+    const idx = enemies.indexOf(this);
+    if (idx !== -1) enemies.splice(idx, 1);
+  }
+
+  updateBase(dt) {
+    if (this.corrodedTimer > 0) {
+      this.corrodedTimer -= dt;
+      if (Math.random() < 0.2) {
+        particles.push(new SparkParticle(
+          this.x + (Math.random() - 0.5) * this.radius,
+          this.y + (Math.random() - 0.5) * this.radius,
+          (Math.random() - 0.5) * 20,
+          -25,
+          "#22c55e"
+        ));
+      }
+    }
+    if (this.burnTimer > 0) {
+      this.burnTimer -= dt;
+      this.hp -= 22 * dt;
+      if (Math.random() < 0.3) {
+        particles.push(new SparkParticle(
+          this.x + (Math.random() - 0.5) * this.radius,
+          this.y + (Math.random() - 0.5) * this.radius,
+          (Math.random() - 0.5) * 50,
+          -60 - Math.random() * 40,
+          "#f97316"
+        ));
+      }
+      if (this.hp <= 0) {
+        this.die();
+        return false;
+      }
+    }
+
+    const dx = player.x - this.x;
+    const dy = player.y - this.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > 5) {
+      this.vx = (dx / dist) * this.speed;
+      this.vy = (dy / dist) * this.speed;
+      this.x += this.vx * dt;
+      if (dungeon) dungeon.resolveCircle(this, this.radius, 'x');
+      this.y += this.vy * dt;
+      if (dungeon) dungeon.resolveCircle(this, this.radius, 'y');
+    }
+
+    if (dist < this.radius + player.radius) {
+      player.takeDamage(16 * dt * 4, this.label);
+    }
+
+    return true;
+  }
+}
+
+// 1. BSOD Cube (Charges fast, telegraphs red lunge, explodes into crash shards)
+class EnemyBSOD extends EnemyBase {
+  constructor(x, y) {
+    super(x, y);
+    this.radius = 26;
+    this.hp = 140;
+    this.maxHp = 140;
+    this.speed = 210;
+    this.label = "BSOD";
+    this.chargeTimer = 2.2;
+    this.chargeState = 'walk'; // 'walk', 'windup', 'dash'
+    this.windupTimer = 0;
+    this.dashTimer = 0;
+    this.dashAngle = 0;
+  }
+
+  update(dt) {
+    if (this.chargeState === 'walk') {
+      this.chargeTimer -= dt;
+      const dx = player.x - this.x;
+      const dy = player.y - this.y;
+      const dist = Math.hypot(dx, dy);
+
+      if (this.chargeTimer <= 0 && dist < 480) {
+        this.chargeState = 'windup';
+        this.windupTimer = 0.45;
+        this.dashAngle = Math.atan2(dy, dx);
+        this.vx = 0;
+        this.vy = 0;
+      } else {
+        return this.updateBase(dt);
+      }
+    } else if (this.chargeState === 'windup') {
+      this.windupTimer -= dt;
+      this.vx = 0;
+      this.vy = 0;
+      if (Math.random() < 0.4) {
+        particles.push(new SparkParticle(this.x, this.y, (Math.random() - 0.5) * 80, (Math.random() - 0.5) * 80, "#ef4444"));
+      }
+      if (this.windupTimer <= 0) {
+        this.chargeState = 'dash';
+        this.dashTimer = 0.42;
+        this.vx = Math.cos(this.dashAngle) * 620;
+        this.vy = Math.sin(this.dashAngle) * 620;
+        window.soundEngine.playNoiseBurst(0.18, 0.3, 1400, 400);
+      }
+    } else if (this.chargeState === 'dash') {
+      this.dashTimer -= dt;
+      this.x += this.vx * dt;
+      if (dungeon) dungeon.resolveCircle(this, this.radius, 'x');
+      this.y += this.vy * dt;
+      if (dungeon) dungeon.resolveCircle(this, this.radius, 'y');
+
+      if (Math.random() < 0.7) {
+        particles.push(new SparkParticle(this.x, this.y, (Math.random() - 0.5) * 40, (Math.random() - 0.5) * 40, "#38bdf8"));
+      }
+
+      const dist = Math.hypot(player.x - this.x, player.y - this.y);
+      if (dist < this.radius + player.radius) {
+        player.takeDamage(28, "BSOD FATAL CRASH LUNGE");
+        addScreenShake(10);
+        this.chargeState = 'walk';
+        this.chargeTimer = 2.4;
+      }
+
+      if (this.dashTimer <= 0) {
+        this.chargeState = 'walk';
+        this.chargeTimer = 2.2;
+      }
+    }
+
+    if (this.burnTimer > 0) {
+      this.burnTimer -= dt;
+      this.hp -= 22 * dt;
+      if (this.hp <= 0) {
+        this.die();
+        return false;
+      }
+    }
+    return true;
+  }
+
+  die() {
+    for (let i = 0; i < 4; i++) {
+      const a = (Math.PI / 2) * i;
+      const spd = 270;
+      enemyProjectiles.push(new EnemyProjectile(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, "PAGE_FAULT"));
+    }
+    super.die();
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    const facing = (this.chargeState === 'windup' || this.chargeState === 'dash') ? this.dashAngle : (player ? Math.atan2(player.y - this.y, player.x - this.x) : 0);
+
+    // MGS laser aim telegraph during windup
+    if (this.chargeState === 'windup') {
+      ctx.save();
+      ctx.strokeStyle = "rgba(239, 68, 68, 0.85)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 6]);
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(this.dashAngle) * 360, Math.sin(this.dashAngle) * 360);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+
+    ctx.rotate(facing);
+
+    // Tailored Charcoal Corporate Suit Body
+    ctx.fillStyle = this.burnTimer > 0 ? "#450a0a" : ((this.chargeState === 'dash') ? "#7f1d1d" : "#1e293b");
+    ctx.beginPath();
+    ctx.roundRect(-16, -14, 32, 28, 4);
+    ctx.fill();
+    ctx.strokeStyle = (this.chargeState === 'dash') ? "#ef4444" : "#475569";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // White Shirt V-neck collar & Red Tie
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.moveTo(0, -14);
+    ctx.lineTo(6, -4);
+    ctx.lineTo(-6, -4);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = "#dc2626"; // Crimson corporate tie
+    ctx.beginPath();
+    ctx.moveTo(-2, -4);
+    ctx.lineTo(2, -4);
+    ctx.lineTo(4, 8);
+    ctx.lineTo(0, 12);
+    ctx.lineTo(-4, 8);
+    ctx.closePath();
+    ctx.fill();
+
+    // Head / Face
+    ctx.fillStyle = "#fed7aa";
+    ctx.beginPath();
+    ctx.arc(0, -2, 9, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Corporate Headphone / Earpiece
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(8, -6, 3, 8);
+
+    // Eyes / Angry eyebrows during audit dash
+    if (this.chargeState === 'dash' || this.chargeState === 'windup') {
+      ctx.fillStyle = "#ef4444";
+      ctx.fillRect(2, -4, 4, 3);
+      ctx.fillRect(-6, -4, 4, 3);
+      ctx.strokeStyle = "#991b1b";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(-7, -6); ctx.lineTo(-1, -3);
+      ctx.moveTo(7, -6); ctx.lineTo(1, -3);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = "#0f172a";
+      ctx.fillRect(2, -3, 3, 3);
+      ctx.fillRect(-5, -3, 3, 3);
+    }
+
+    // Left hand holding Audit Clipboard with golden clip
+    ctx.fillStyle = "#78350f";
+    ctx.fillRect(14, -10, 10, 14);
+    ctx.fillStyle = "#facc15";
+    ctx.fillRect(16, -12, 6, 3);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(15, -8, 8, 10);
+
+    // Badge label
+    ctx.font = "bold 8px monospace";
+    ctx.fillStyle = (this.chargeState === 'dash') ? "#ef4444" : "#38bdf8";
+    ctx.textAlign = "center";
+    ctx.fillText(this.chargeState === 'dash' ? "AUDIT!" : "CORP_OPS", 0, 24);
+
+    ctx.restore();
+
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    this.drawHealthBar(ctx);
+    ctx.restore();
+  }
+}
+
+// 2. DRM Padlock (Armored frontal shield, tactical backpedal, 3-way laser fan)
+class EnemyDRM extends EnemyBase {
+  constructor(x, y) {
+    super(x, y);
+    this.radius = 29;
+    this.hp = 210;
+    this.maxHp = 210;
+    this.speed = 135;
+    this.shootTimer = 1.4;
+    this.label = "DRM ENFORCER";
+    this.facingAngle = 0;
+  }
+
+  takeDamage(amount, source) {
+    const dx = player.x - this.x;
+    const dy = player.y - this.y;
+    const angleToPlayer = Math.atan2(dy, dx);
+    const diff = Math.abs(angleToPlayer - this.facingAngle);
+    if (diff < 1.0 && !source.includes("FLAME") && !source.includes("PLASMA") && !source.includes("500KG")) {
+      amount *= 0.5;
+      particles.push(new SparkParticle(this.x + Math.cos(this.facingAngle) * 20, this.y + Math.sin(this.facingAngle) * 20, (Math.random() - 0.5) * 60, (Math.random() - 0.5) * 60, "#38bdf8"));
+    }
+    super.takeDamage(amount, source);
+  }
+
+  update(dt) {
+    const dx = player.x - this.x;
+    const dy = player.y - this.y;
+    const dist = Math.hypot(dx, dy);
+    this.facingAngle = Math.atan2(dy, dx);
+
+    if (dist < 200) {
+      this.vx = -(dx / dist) * this.speed;
+      this.vy = -(dy / dist) * this.speed;
+      this.x += this.vx * dt;
+      if (dungeon) dungeon.resolveCircle(this, this.radius, 'x');
+      this.y += this.vy * dt;
+      if (dungeon) dungeon.resolveCircle(this, this.radius, 'y');
+    } else if (dist > 340) {
+      this.vx = (dx / dist) * this.speed;
+      this.vy = (dy / dist) * this.speed;
+      this.x += this.vx * dt;
+      if (dungeon) dungeon.resolveCircle(this, this.radius, 'x');
+      this.y += this.vy * dt;
+      if (dungeon) dungeon.resolveCircle(this, this.radius, 'y');
+    }
+
+    this.shootTimer -= dt;
+    if (this.shootTimer <= 0) {
+      this.shootTimer = 1.9;
+      if (dist < 650) {
+        const baseAngle = Math.atan2(dy, dx);
+        const count = 3;
+        const spread = 0.28;
+        for (let i = 0; i < count; i++) {
+          const a = baseAngle + (i - (count - 1) / 2) * spread;
+          const spd = 350;
+          enemyProjectiles.push(new EnemyProjectile(
+            this.x + Math.cos(a) * 24,
+            this.y + Math.sin(a) * 24,
+            Math.cos(a) * spd,
+            Math.sin(a) * spd,
+            "DRM"
+          ));
+        }
+        window.soundEngine.playNoiseBurst(0.12, 0.25, 2200, 600);
+      }
+    }
+
+    if (this.burnTimer > 0) {
+      this.burnTimer -= dt;
+      this.hp -= 22 * dt;
+      if (this.hp <= 0) {
+        this.die();
+        return false;
+      }
+    }
+    return true;
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.facingAngle);
+
+    // Frontal Tactical Keycard Shield (Deflects frontal shots)
+    ctx.strokeStyle = "#38bdf8";
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(10, 0, this.radius + 4, -Math.PI * 0.36, Math.PI * 0.36);
+    ctx.stroke();
+
+    ctx.fillStyle = "rgba(56, 189, 248, 0.15)";
+    ctx.beginPath();
+    ctx.arc(10, 0, this.radius + 4, -Math.PI * 0.36, Math.PI * 0.36);
+    ctx.lineTo(10, 0);
+    ctx.closePath();
+    ctx.fill();
+
+    // Black Agent Suit (Men-in-Black Enforcer)
+    ctx.fillStyle = this.burnTimer > 0 ? "#450a0a" : "#0f172a";
+    ctx.beginPath();
+    ctx.roundRect(-16, -15, 30, 30, 4);
+    ctx.fill();
+    ctx.strokeStyle = "#334155";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // White Shirt & Slim Black Tie
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(-2, -6, 5, 12);
+    ctx.fillStyle = "#020617";
+    ctx.fillRect(-1, -4, 3, 10);
+
+    // Head with Agent Sunglasses
+    ctx.fillStyle = "#fed7aa";
+    ctx.beginPath();
+    ctx.arc(0, 0, 9, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Dark Sunglasses with cyan polarized glint
+    ctx.fillStyle = "#020617";
+    ctx.fillRect(1, -3, 8, 4);
+    ctx.fillStyle = "#38bdf8";
+    ctx.fillRect(3, -2, 3, 1);
+
+    // 3-way telemetry compliance scanner blaster
+    ctx.fillStyle = "#334155";
+    ctx.fillRect(10, -5, 12, 10);
+    ctx.fillStyle = "#38bdf8";
+    ctx.fillRect(22, -4, 3, 2);
+    ctx.fillRect(22, -1, 3, 2);
+    ctx.fillRect(22, 2, 3, 2);
+
+    ctx.restore();
+
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    this.drawHealthBar(ctx);
+    ctx.restore();
+  }
+}
+
+// 3. Subscription Slime (Lobs mortar popups, splits on death into microtransactions)
+class EnemyPaywall extends EnemyBase {
+  constructor(x, y, isSub = false) {
+    super(x, y);
+    this.radius = isSub ? 17 : 32;
+    this.hp = isSub ? 60 : 185;
+    this.maxHp = this.hp;
+    this.speed = isSub ? 260 : 120;
+    this.isSub = isSub;
+    this.label = isSub ? "$9.99" : "$49.99/MO";
+    this.mortarTimer = isSub ? 999 : 2.6;
+  }
+
+  die() {
+    if (!this.isSub) {
+      enemies.push(new EnemyPaywall(this.x - 22, this.y, true));
+      enemies.push(new EnemyPaywall(this.x + 22, this.y, true));
+      addFloatingText(this.x, this.y - 20, "MICROTRANSACTIONS SPAWNED!", "#ec4899", 18);
+    }
+    super.die();
+  }
+
+  update(dt) {
+    if (!this.isSub) {
+      this.mortarTimer -= dt;
+      if (this.mortarTimer <= 0) {
+        this.mortarTimer = 2.8;
+        const dist = Math.hypot(player.x - this.x, player.y - this.y);
+        if (dist < 700) {
+          floorHazards.push(new PaywallMortar(this.x, this.y, player.x, player.y));
+          window.soundEngine.playNoiseBurst(0.15, 0.2, 700, 1500);
+          addFloatingText(this.x, this.y - 30, "POPOVER LOB!", "#ec4899", 16);
+        }
+      }
+    }
+    return this.updateBase(dt);
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    const squish = Math.sin(gameTime * 7) * 0.08;
+
+    if (!this.isSub) {
+      // Senior Billing Auditor (Charcoal Suit & POS Terminal)
+      ctx.fillStyle = this.burnTimer > 0 ? "#450a0a" : "#1e293b";
+      ctx.beginPath();
+      ctx.roundRect(-this.radius, -this.radius * (1 - squish), this.radius * 2, this.radius * 2 * (1 - squish), 4);
+      ctx.fill();
+      ctx.strokeStyle = "#f59e0b";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Pinstripes
+      ctx.strokeStyle = "rgba(148, 163, 184, 0.25)";
+      ctx.lineWidth = 1;
+      for (let x = -this.radius + 6; x < this.radius; x += 8) {
+        ctx.beginPath();
+        ctx.moveTo(x, -this.radius);
+        ctx.lineTo(x, this.radius);
+        ctx.stroke();
+      }
+
+      // POS Payment Card Terminal
+      ctx.fillStyle = "#0f172a";
+      ctx.fillRect(-12, -8, 24, 16);
+      ctx.fillStyle = "#22c55e"; // Green screen
+      ctx.fillRect(-10, -6, 20, 6);
+      ctx.fillStyle = "#facc15";
+      ctx.fillRect(-10, 2, 6, 4);
+
+      // Label
+      ctx.fillStyle = "#fbbf24";
+      ctx.font = "bold 9px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("$49.99/MO", 0, -this.radius - 4);
+    } else {
+      // Junior Micro-billing Clerk
+      ctx.fillStyle = this.burnTimer > 0 ? "#78350f" : "#0284c7";
+      ctx.beginPath();
+      ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#e0f2fe";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 8.5px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("$9.99", 0, 3);
+    }
+
+    this.drawHealthBar(ctx);
+    ctx.restore();
+  }
+}
+
+// 4. Ground Tactical Scout Rover (Grounded patrol unit on treads with strict line of sight and wall collision)
+class EnemyScoutRover extends EnemyBase {
+  constructor(x, y) {
+    super(x, y);
+    this.radius = 22;
+    this.hp = 110;
+    this.maxHp = 110;
+    this.speed = 180;
+    this.label = "SCOUT";
+    this.shootTimer = 2.0;
+    this.hasSight = false;
+    this.aimAngle = 0;
+    this.patrolTimer = 0;
+    this.patrolAngle = Math.random() * Math.PI * 2;
+  }
+
+  update(dt) {
+    // 1. Strict Line of Sight Raycast check to Player (no shooting or aiming through walls!)
+    this.hasSight = dungeon ? dungeon.hasLineOfSight(this.x, this.y, player.x, player.y) : true;
+
+    const dx = player.x - this.x;
+    const dy = player.y - this.y;
+    const dist = Math.hypot(dx, dy);
+
+    if (this.hasSight && dist < 650) {
+      // Aim towards player
+      this.aimAngle = Math.atan2(dy, dx);
+
+      // Reposition / skirmish at medium range (200-340px)
+      if (dist > 320) {
+        this.vx += (dx / dist) * this.speed * 4 * dt;
+        this.vy += (dy / dist) * this.speed * 4 * dt;
+      } else if (dist < 180) {
+        // Back up if player rushes
+        this.vx -= (dx / dist) * this.speed * 3 * dt;
+        this.vy -= (dy / dist) * this.speed * 3 * dt;
+      } else {
+        // Tactical circle strafe
+        this.vx += Math.cos(this.aimAngle + Math.PI / 2) * this.speed * 2 * dt;
+        this.vy += Math.sin(this.aimAngle + Math.PI / 2) * this.speed * 2 * dt;
+      }
+
+      // Shoot ONLY when clean line of sight is maintained!
+      this.shootTimer -= dt;
+      if (this.shootTimer <= 0) {
+        this.shootTimer = 2.3;
+        // Non-homing tracer bullets that collide with walls!
+        const bSpd = 360;
+        enemyProjectiles.push(new EnemyProjectile(this.x, this.y, Math.cos(this.aimAngle) * bSpd, Math.sin(this.aimAngle) * bSpd, "TRACER", false));
+        window.soundEngine.playNoiseBurst(0.08, 0.22, 1400, 350);
+      }
+    } else {
+      // Out of sight: slow tactical patrol, strictly respecting walls
+      this.patrolTimer -= dt;
+      if (this.patrolTimer <= 0) {
+        this.patrolTimer = 1.5 + Math.random() * 1.5;
+        this.patrolAngle = Math.random() * Math.PI * 2;
+      }
+      this.vx += Math.cos(this.patrolAngle) * this.speed * 1.5 * dt;
+      this.vy += Math.sin(this.patrolAngle) * this.speed * 1.5 * dt;
+      if (Math.hypot(this.vx, this.vy) > 10) {
+        this.aimAngle = Math.atan2(this.vy, this.vx);
+      }
+    }
+
+    // Apply friction & speed limit
+    this.vx *= 0.92;
+    this.vy *= 0.92;
+
+    // Movement strictly obeys dungeon walls!
+    this.x += this.vx * dt;
+    if (dungeon) dungeon.resolveCircle(this, this.radius, 'x');
+    this.y += this.vy * dt;
+    if (dungeon) dungeon.resolveCircle(this, this.radius, 'y');
+
+    if (this.burnTimer > 0) {
+      this.burnTimer -= dt;
+      this.hp -= 22 * dt;
+      if (this.hp <= 0) {
+        this.die();
+        return false;
+      }
+    }
+    return true;
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    // Rover chassis & treads
+    ctx.rotate(this.aimAngle);
+
+    // Tank Treads
+    ctx.fillStyle = "#1e293b";
+    ctx.fillRect(-16, -18, 32, 7);
+    ctx.fillRect(-16, 11, 32, 7);
+    ctx.fillStyle = "#0f172a";
+    for (let i = -14; i <= 12; i += 7) {
+      ctx.fillRect(i, -18, 3, 7);
+      ctx.fillRect(i, 11, 3, 7);
+    }
+
+    // Armored chassis
+    ctx.fillStyle = this.burnTimer > 0 ? "#1c2e22" : "#1b3824";
+    ctx.strokeStyle = "#2d6a43";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(-12, -11, 24, 22, 3);
+    ctx.fill();
+    ctx.stroke();
+
+    // Turret Cannon Barrel
+    ctx.fillStyle = "#334155";
+    ctx.fillRect(4, -3, 14, 6);
+
+    // Targeting Optic / Lens
+    ctx.fillStyle = this.hasSight ? "#ef4444" : "#22c55e";
+    ctx.beginPath();
+    ctx.arc(0, 0, 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // ONLY draw aim laser if rover actually has clean, uninterrupted line of sight!
+    if (this.hasSight) {
+      ctx.restore();
+      ctx.save();
+      ctx.strokeStyle = "rgba(239, 68, 68, 0.4)";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 6]);
+      ctx.beginPath();
+      ctx.moveTo(this.x + Math.cos(this.aimAngle) * 18, this.y + Math.sin(this.aimAngle) * 18);
+      ctx.lineTo(player.x, player.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+      ctx.save();
+      ctx.translate(this.x, this.y);
+    }
+
+    this.drawHealthBar(ctx);
+    ctx.restore();
+  }
+}
+const EnemyTelemetry = EnemyScoutRover;
+
+// 5. AI Slop Hallucination Bot (Glitches/teleports, fires 8-way spiral bullet hell)
+class EnemyAISlop extends EnemyBase {
+  constructor(x, y) {
+    super(x, y);
+    this.radius = 25;
+    this.hp = 180;
+    this.maxHp = 180;
+    this.speed = 180;
+    this.shootTimer = 1.5;
+    this.teleportTimer = 3.0;
+    this.buzzwords = ["AGI", "10X", "SYNERGY", "DISRUPT", "SLOP", "HALLUCINATE"];
+    this.label = this.buzzwords[Math.floor(Math.random() * this.buzzwords.length)];
+  }
+
+  update(dt) {
+    this.teleportTimer -= dt;
+    if (this.teleportTimer <= 0) {
+      this.teleportTimer = 3.5;
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 75 + Math.random() * 50;
+      this.x += Math.cos(angle) * dist;
+      this.y += Math.sin(angle) * dist;
+      if (dungeon) {
+        dungeon.resolveCircle(this, this.radius, 'x');
+        dungeon.resolveCircle(this, this.radius, 'y');
+      }
+      for (let i = 0; i < 8; i++) {
+        particles.push(new SparkParticle(this.x, this.y, (Math.random() - 0.5) * 100, (Math.random() - 0.5) * 100, "#d946ef"));
+      }
+    }
+
+    this.shootTimer -= dt;
+    if (this.shootTimer <= 0) {
+      this.shootTimer = 2.1;
+      const dist = Math.hypot(player.x - this.x, player.y - this.y);
+      if (dist < 650) {
+        const count = 8;
+        const baseAngle = gameTime * 3;
+        for (let i = 0; i < count; i++) {
+          const a = baseAngle + (Math.PI * 2 / count) * i;
+          const spd = 270;
+          enemyProjectiles.push(new EnemyProjectile(
+            this.x,
+            this.y,
+            Math.cos(a) * spd,
+            Math.sin(a) * spd,
+            this.buzzwords[i % this.buzzwords.length]
+          ));
+        }
+        window.soundEngine.playNoiseBurst(0.12, 0.25, 1200, 2200);
+      }
+    }
+    return this.updateBase(dt);
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    const facing = player ? Math.atan2(player.y - this.y, player.x - this.x) : 0;
+    ctx.rotate(facing);
+
+    // Black turtleneck sweater
+    ctx.fillStyle = this.burnTimer > 0 ? "#450a0a" : "#020617";
+    ctx.beginPath();
+    ctx.roundRect(-14, -13, 28, 26, 4);
+    ctx.fill();
+    ctx.strokeStyle = "#475569";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Head / slicked hair
+    ctx.fillStyle = "#fed7aa";
+    ctx.beginPath();
+    ctx.arc(0, 0, 8, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Wireless cheek microphone
+    ctx.strokeStyle = "#94a3b8";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, 9, -0.4, 0.4);
+    ctx.stroke();
+    ctx.fillStyle = "#38bdf8";
+    ctx.fillRect(8, -1, 3, 3); // mic foam tip
+
+    // Laser presenter in hand pointing forward
+    ctx.fillStyle = "#334155";
+    ctx.fillRect(10, 5, 8, 4);
+    ctx.fillStyle = "#22c55e"; // laser diode
+    ctx.fillRect(18, 6, 2, 2);
+
+    ctx.restore();
+
+    // Orbiting keynote buzzwords ring (non-rotated)
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.font = "bold 8px monospace";
+    ctx.fillStyle = "#38bdf8";
+    ctx.textAlign = "center";
+    ctx.fillText(this.label, 0, -this.radius - 6);
+    ctx.font = "bold 7px monospace";
+    ctx.fillStyle = "#94a3b8";
+    ctx.fillText("PR EVANGELIST", 0, this.radius + 10);
+
+    this.drawHealthBar(ctx);
+    ctx.restore();
+  }
+}
+
+// 6. Patent Troll (Spider sniper, drops slowing patent webs, fires 3-burst DMCA needles)
+class EnemyPatentTroll extends EnemyBase {
+  constructor(x, y) {
+    super(x, y);
+    this.radius = 32;
+    this.hp = 250;
+    this.maxHp = 250;
+    this.speed = 130;
+    this.webTimer = 1.8;
+    this.label = "PATENT TROLL";
+  }
+
+  update(dt) {
+    this.webTimer -= dt;
+    if (this.webTimer <= 0) {
+      this.webTimer = 2.6;
+      const dx = player.x - this.x;
+      const dy = player.y - this.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 650) {
+        floorHazards.push(new PatentTrapWeb(player.x + (Math.random() - 0.5) * 40, player.y + (Math.random() - 0.5) * 40));
+        const baseAngle = Math.atan2(dy, dx);
+        for (let i = 0; i < 3; i++) {
+          setTimeout(() => {
+            if (this.hp > 0) {
+              const spd = 380;
+              enemyProjectiles.push(new EnemyProjectile(
+                this.x,
+                this.y,
+                Math.cos(baseAngle) * spd,
+                Math.sin(baseAngle) * spd,
+                "DMCA"
+              ));
+              window.soundEngine.playNoiseBurst(0.06, 0.18, 3000, 1000);
+            }
+          }, i * 90);
+        }
+      }
+    }
+    return this.updateBase(dt);
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    const facing = player ? Math.atan2(player.y - this.y, player.x - this.x) : 0;
+    ctx.rotate(facing);
+
+    // Charcoal Three-piece Suit
+    ctx.fillStyle = this.burnTimer > 0 ? "#450a0a" : "#334155";
+    ctx.beginPath();
+    ctx.roundRect(-16, -14, 32, 28, 3);
+    ctx.fill();
+    ctx.strokeStyle = "#1e293b";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Gold tie & collar
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(-2, -5, 4, 10);
+    ctx.fillStyle = "#f59e0b";
+    ctx.fillRect(-1, -3, 2, 8);
+
+    // Head with Gold-rimmed Spectacles
+    ctx.fillStyle = "#fed7aa";
+    ctx.beginPath();
+    ctx.arc(0, 0, 8, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = "#facc15";
+    ctx.lineWidth = 1.2;
+    ctx.strokeRect(1, -4, 4, 3);
+    ctx.strokeRect(1, 1, 4, 3);
+
+    // Leather Briefcase in left hand
+    ctx.fillStyle = "#78350f";
+    ctx.fillRect(-6, -18, 14, 6);
+    ctx.fillStyle = "#facc15";
+    ctx.fillRect(-2, -18, 3, 2);
+
+    // Wooden Legal Gavel in right hand
+    ctx.fillStyle = "#b45309";
+    ctx.fillRect(8, 8, 4, 10);
+    ctx.fillRect(5, 14, 10, 4);
+
+    ctx.restore();
+
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.font = "bold 8px monospace";
+    ctx.fillStyle = "#fbbf24";
+    ctx.textAlign = "center";
+    ctx.fillText("IP COUNSEL", 0, -this.radius - 4);
+    this.drawHealthBar(ctx);
+    ctx.restore();
+  }
+}
+
+// 7. Kubernetes Pod Swarm (Hex container node, shields allies, fires cluster missiles)
+class EnemyPodSwarm extends EnemyBase {
+  constructor(x, y) {
+    super(x, y);
+    this.radius = 30;
+    this.hp = 300;
+    this.maxHp = 300;
+    this.speed = 140;
+    this.label = "K8S CLUSTER";
+    this.shieldRadius = 190;
+    this.missileTimer = 2.5;
+  }
+
+  update(dt) {
+    for (const enemy of enemies) {
+      if (enemy !== this && Math.hypot(enemy.x - this.x, enemy.y - this.y) < this.shieldRadius) {
+        if (enemy.burnTimer > 0) enemy.burnTimer -= dt * 0.5;
+        enemy.hp = Math.min(enemy.maxHp, enemy.hp + 5 * dt);
+      }
+    }
+
+    this.missileTimer -= dt;
+    if (this.missileTimer <= 0) {
+      this.missileTimer = 3.2;
+      const angle = Math.atan2(player.y - this.y, player.x - this.x);
+      enemyProjectiles.push(new EnemyProjectile(this.x, this.y, Math.cos(angle - 0.4) * 250, Math.sin(angle - 0.4) * 250, "POD", true));
+      enemyProjectiles.push(new EnemyProjectile(this.x, this.y, Math.cos(angle + 0.4) * 250, Math.sin(angle + 0.4) * 250, "POD", true));
+      window.soundEngine.playNoiseBurst(0.12, 0.25, 800, 1900);
+    }
+    return this.updateBase(dt);
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    // Intern Buffer Zone Shield Perimeter
+    ctx.strokeStyle = "rgba(56, 189, 248, 0.4)";
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 6]);
+    ctx.beginPath();
+    ctx.arc(0, 0, this.shieldRadius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    const facing = player ? Math.atan2(player.y - this.y, player.x - this.x) : 0;
+    ctx.rotate(facing);
+
+    // Light blue button-down shirt
+    ctx.fillStyle = this.burnTimer > 0 ? "#450a0a" : "#bae6fd";
+    ctx.beginPath();
+    ctx.roundRect(-14, -13, 28, 26, 3);
+    ctx.fill();
+    ctx.strokeStyle = "#0284c7";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Yellow Lanyard & ID Visitor Badge
+    ctx.strokeStyle = "#facc15";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(-4, -13);
+    ctx.lineTo(0, -3);
+    ctx.lineTo(4, -13);
+    ctx.stroke();
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(-3, -3, 6, 8);
+    ctx.fillStyle = "#ef4444";
+    ctx.fillRect(-2, -2, 4, 2); // photo box
+
+    // Head
+    ctx.fillStyle = "#fed7aa";
+    ctx.beginPath();
+    ctx.arc(0, 0, 7.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Tray of Takeout Coffees
+    ctx.fillStyle = "#78350f";
+    ctx.fillRect(8, -8, 8, 16);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(9, -6, 3, 4);
+    ctx.fillRect(9, 2, 3, 4);
+
+    ctx.restore();
+
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.font = "bold 8px monospace";
+    ctx.fillStyle = "#38bdf8";
+    ctx.textAlign = "center";
+    ctx.fillText("UNPAID INTERN", 0, -this.radius - 4);
+    this.drawHealthBar(ctx);
+    ctx.restore();
+  }
+}
+
+// 8. EULA Enforcer Dreadnought (Armored tank, twin cannons, sweeping red hyper-laser)
+class EnemyEULAEnforcer extends EnemyBase {
+  constructor(x, y) {
+    super(x, y);
+    this.radius = 42;
+    this.hp = 820;
+    this.maxHp = 820;
+    this.speed = 95;
+    this.label = "EULA DREADNOUGHT";
+    this.cannonTimer = 0.8;
+    this.chargeTimer = 0;
+    this.isFiringLaser = false;
+    this.laserDuration = 0;
+    this.facingAngle = 0;
+  }
+
+  update(dt) {
+    const dx = player.x - this.x;
+    const dy = player.y - this.y;
+    const dist = Math.hypot(dx, dy);
+    this.facingAngle = Math.atan2(dy, dx);
+
+    this.cannonTimer -= dt;
+    if (this.cannonTimer <= 0 && !this.isFiringLaser) {
+      this.cannonTimer = 1.0;
+      if (dist < 700) {
+        const spd = 340;
+        enemyProjectiles.push(new EnemyProjectile(
+          this.x + Math.cos(this.facingAngle) * 32,
+          this.y + Math.sin(this.facingAngle) * 32,
+          Math.cos(this.facingAngle) * spd,
+          Math.sin(this.facingAngle) * spd,
+          "FINE"
+        ));
+        window.soundEngine.playNoiseBurst(0.14, 0.3, 1600, 300);
+      }
+    }
+
+    this.chargeTimer += dt;
+    if (this.chargeTimer > 4.2 && !this.isFiringLaser) {
+      this.isFiringLaser = true;
+      this.laserDuration = 1.2;
+      this.chargeTimer = 0;
+      window.soundEngine.playNoiseBurst(0.4, 0.4, 300, 1800);
+    }
+
+    if (this.isFiringLaser) {
+      this.laserDuration -= dt;
+      const angleDiff = Math.abs(this.facingAngle - Math.atan2(dy, dx));
+      if (angleDiff < 0.22 && dist < 750) {
+        player.takeDamage(45 * dt * 3.5, "EULA HYPER-LASER");
+        addScreenShake(3);
+      }
+      if (this.laserDuration <= 0) {
+        this.isFiringLaser = false;
+      }
+    }
+
+    return this.updateBase(dt);
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.facingAngle);
+
+    // MGS Telegraph laser line before court injunction hyper-laser fires
+    if (this.chargeTimer > 3.0 && !this.isFiringLaser) {
+      ctx.strokeStyle = "rgba(239, 68, 68, 0.45)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 6]);
+      ctx.beginPath();
+      ctx.moveTo(34, 0);
+      ctx.lineTo(750, 0);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Court Injunction Red Laser Beam
+    if (this.isFiringLaser) {
+      ctx.fillStyle = "rgba(239, 68, 68, 0.9)";
+      ctx.fillRect(34, -10, 750, 20);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(34, -3, 750, 6);
+    }
+
+    // Heavy Executive Motorized Boardroom Desk (Mahogany & Brass)
+    ctx.fillStyle = this.burnTimer > 0 ? "#450a0a" : "#451a03";
+    ctx.beginPath();
+    ctx.roundRect(-28, -26, 56, 52, 4);
+    ctx.fill();
+    ctx.strokeStyle = "#ca8a04"; // Gold brass edge trim
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Tread Pods underneath desk
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(-32, -32, 64, 8);
+    ctx.fillRect(-32, 24, 64, 8);
+
+    // Desk Blotter & Documents
+    ctx.fillStyle = "#1e293b";
+    ctx.fillRect(-18, -16, 36, 32);
+    ctx.fillStyle = "#f8fafc";
+    ctx.fillRect(-12, -10, 10, 14); // Contract stack
+    ctx.fillStyle = "#ef4444";
+    ctx.fillRect(-10, -6, 6, 2); // Red stamp line
+
+    // Ivory Court Gavel on Desk
+    ctx.fillStyle = "#facc15";
+    ctx.fillRect(8, -8, 8, 4);
+    ctx.fillStyle = "#78350f";
+    ctx.fillRect(6, -6, 12, 2);
+
+    // Chief Legal Counsel Sitting behind desk (High-back Executive Chair)
+    ctx.fillStyle = "#0f172a";
+    ctx.beginPath();
+    ctx.arc(-14, 0, 11, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#fed7aa"; // Counsel head
+    ctx.beginPath();
+    ctx.arc(-12, 0, 8, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Twin Legal Summons Laser Barrels
+    ctx.fillStyle = "#64748b";
+    ctx.fillRect(20, -18, 16, 6);
+    ctx.fillRect(20, 12, 16, 6);
+
+    ctx.restore();
+
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.font = "bold 9px monospace";
+    ctx.fillStyle = "#ef4444";
+    ctx.textAlign = "center";
+    ctx.fillText("CHIEF COUNSEL // EULA", 0, -this.radius - 8);
+    this.drawHealthBar(ctx);
+    ctx.restore();
+  }
+}
+
+// --- DIVERSE TACTICAL ENEMY 1: TELEMETRY LASER SNIPER ---
+class EnemySniper extends EnemyBase {
+  constructor(x, y) {
+    super(x, y);
+    this.radius = 24;
+    this.hp = 180;
+    this.maxHp = 180;
+    this.speed = 190;
+    this.threatValue = 280;
+    this.label = "TELEMETRY SNIPER";
+    this.aimTimer = 0;
+    this.aimDuration = 1.4;
+    this.lockedAngle = 0;
+    this.isAiming = false;
+    this.cooldown = 1.5;
+  }
+
+  update(dt) {
+    if (!super.updateBase(dt)) return false;
+    if (!player) return true;
+
+    const dist = Math.hypot(player.x - this.x, player.y - this.y);
+    if (this.cooldown > 0) this.cooldown -= dt;
+
+    if (!this.isAiming) {
+      if (dist < 420) {
+        const awayAngle = Math.atan2(this.y - player.y, this.x - player.x);
+        this.vx += Math.cos(awayAngle) * this.speed * 1.5 * dt;
+        this.vy += Math.sin(awayAngle) * this.speed * 1.5 * dt;
+      } else if (dist > 650) {
+        const towardAngle = Math.atan2(player.y - this.y, player.x - this.x);
+        this.vx += Math.cos(towardAngle) * this.speed * dt;
+        this.vy += Math.sin(towardAngle) * this.speed * dt;
+      }
+
+      if (this.cooldown <= 0 && dist < 750 && dungeon && dungeon.hasLineOfSight(this.x, this.y, player.x, player.y)) {
+        this.isAiming = true;
+        this.aimTimer = this.aimDuration;
+        if (window.soundEngine && window.soundEngine.playSniperCharge) window.soundEngine.playSniperCharge();
+      }
+    } else {
+      this.vx *= 0.85;
+      this.vy *= 0.85;
+      this.aimTimer -= dt;
+
+      if (this.aimTimer > 0.35) {
+        this.lockedAngle = Math.atan2(player.y - this.y, player.x - this.x);
+      }
+
+      if (this.aimTimer <= 0) {
+        this.isAiming = false;
+        this.cooldown = 2.4;
+        if (window.soundEngine && window.soundEngine.playSniperShot) window.soundEngine.playSniperShot();
+        addScreenShake(6);
+
+        const spd = 1800;
+        enemyProjectiles.push(new EnemyProjectile(
+          this.x, this.y,
+          Math.cos(this.lockedAngle) * spd,
+          Math.sin(this.lockedAngle) * spd,
+          6,
+          45,
+          "#ef4444",
+          1.2,
+          "SNIPER_SLUG"
+        ));
+      }
+    }
+
+    return true;
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    if (this.isAiming) {
+      const isLocked = this.aimTimer <= 0.35;
+      ctx.strokeStyle = isLocked ? "rgba(239, 68, 68, 0.95)" : "rgba(239, 68, 68, 0.45)";
+      ctx.lineWidth = isLocked ? 2 : 1;
+      if (!isLocked) ctx.setLineDash([8, 6]);
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(this.lockedAngle) * 900, Math.sin(this.lockedAngle) * 900);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    const angle = this.isAiming ? this.lockedAngle : (player ? Math.atan2(player.y - this.y, player.x - this.x) : 0);
+    ctx.rotate(angle);
+
+    // Charcoal Trenchcoat over Executive Suit
+    ctx.fillStyle = this.burnTimer > 0 ? "#450a0a" : "#1e293b";
+    ctx.beginPath();
+    ctx.moveTo(14, 0);
+    ctx.lineTo(-14, -13);
+    ctx.lineTo(-20, 0);
+    ctx.lineTo(-14, 13);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#475569";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Head with Targeting Visor
+    ctx.fillStyle = "#fed7aa";
+    ctx.beginPath();
+    ctx.arc(0, 0, 7, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Red Scope Visor
+    ctx.fillStyle = this.isAiming ? "#ef4444" : "#f59e0b";
+    ctx.fillRect(2, -3, 6, 6);
+
+    // Long Sniper Rail Rifle with Tactical Scope
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(8, -2, 24, 4);
+    ctx.fillStyle = "#475569";
+    ctx.fillRect(14, -5, 8, 3); // Scope
+    ctx.fillStyle = "#ef4444";
+    ctx.fillRect(32, -3, 2, 6); // Muzzle brake
+
+    ctx.restore();
+
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.font = "bold 8px monospace";
+    ctx.fillStyle = "#f87171";
+    ctx.textAlign = "center";
+    ctx.fillText("HEADHUNTER", 0, -this.radius - 4);
+    this.drawHealthBar(ctx);
+    ctx.restore();
+  }
+}
+
+// --- DIVERSE TACTICAL ENEMY 2: PHALANX RIOT-SHIELD ENFORCER ---
+class EnemyRiotShield extends EnemyBase {
+  constructor(x, y) {
+    super(x, y);
+    this.radius = 28;
+    this.hp = 380;
+    this.maxHp = 380;
+    this.speed = 110;
+    this.threatValue = 340;
+    this.label = "CORP SECURITY";
+    this.facingAngle = 0;
+    this.burstTimer = 0;
+  }
+
+  takeDamage(amount, source = "") {
+    if (player) {
+      const shotAngle = Math.atan2(player.y - this.y, player.x - this.x);
+      const angleDiff = Math.abs(Math.atan2(Math.sin(shotAngle - this.facingAngle), Math.cos(shotAngle - this.facingAngle)));
+      if (angleDiff < 1.2 && !source.includes("TESLA") && !source.includes("EXPLOSION") && !source.includes("RAILCANNON")) {
+        amount *= 0.15;
+        if (window.soundEngine && window.soundEngine.playShieldDeflect) window.soundEngine.playShieldDeflect();
+        for (let i = 0; i < 4; i++) {
+          particles.push(new SparkParticle(this.x + Math.cos(this.facingAngle) * 26, this.y + Math.sin(this.facingAngle) * 26, (Math.random() - 0.5) * 80, (Math.random() - 0.5) * 80, "#06b6d4"));
+        }
+      }
+    }
+    super.takeDamage(amount, source);
+  }
+
+  update(dt) {
+    if (!super.updateBase(dt)) return false;
+    if (!player) return true;
+
+    this.facingAngle = Math.atan2(player.y - this.y, player.x - this.x);
+    this.vx += Math.cos(this.facingAngle) * this.speed * dt;
+    this.vy += Math.sin(this.facingAngle) * this.speed * dt;
+
+    this.burstTimer += dt;
+    if (this.burstTimer >= 2.2) {
+      this.burstTimer = 0;
+      const spd = 420;
+      for (let i = -1; i <= 1; i++) {
+        const a = this.facingAngle + i * 0.14;
+        enemyProjectiles.push(new EnemyProjectile(
+          this.x + Math.cos(this.facingAngle) * 32,
+          this.y + Math.sin(this.facingAngle) * 32,
+          Math.cos(a) * spd,
+          Math.sin(a) * spd,
+          5,
+          16,
+          "#f59e0b",
+          1.6,
+          "RIOT_BURST"
+        ));
+      }
+    }
+
+    return true;
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.facingAngle);
+
+    // Kevlar Armored Corporate Security Guard Body
+    ctx.fillStyle = this.burnTimer > 0 ? "#450a0a" : "#0f172a";
+    ctx.beginPath();
+    ctx.roundRect(-16, -14, 28, 28, 3);
+    ctx.fill();
+    ctx.strokeStyle = "#334155";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Security tie tucked into armor
+    ctx.fillStyle = "#dc2626";
+    ctx.fillRect(-2, -4, 4, 10);
+
+    // Corporate Security Riot Helmet & Dark Visor
+    ctx.fillStyle = "#1e293b";
+    ctx.beginPath();
+    ctx.arc(0, 0, 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#0284c7"; // Cyan visor slit
+    ctx.fillRect(2, -3, 6, 6);
+
+    // Heavy Ballistic Carbon Riot Shield with [CORP SEC]
+    ctx.fillStyle = "#1e293b";
+    ctx.beginPath();
+    ctx.roundRect(14, -20, 8, 40, 3);
+    ctx.fill();
+    ctx.strokeStyle = "#38bdf8";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Frontal Deflector Arc
+    ctx.strokeStyle = "rgba(56, 189, 248, 0.4)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(16, 0, 24, -Math.PI * 0.38, Math.PI * 0.38);
+    ctx.stroke();
+
+    ctx.restore();
+
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.font = "bold 8px monospace";
+    ctx.fillStyle = "#38bdf8";
+    ctx.textAlign = "center";
+    ctx.fillText("CORP SECURITY", 0, -this.radius - 4);
+    this.drawHealthBar(ctx);
+    ctx.restore();
+  }
+}
+
+// --- DIVERSE TACTICAL ENEMY 3: PHASE-SHIFT TELEPORT STALKER ---
+class EnemyStalker extends EnemyBase {
+  constructor(x, y) {
+    super(x, y);
+    this.radius = 22;
+    this.hp = 220;
+    this.maxHp = 220;
+    this.speed = 220;
+    this.threatValue = 310;
+    this.label = "ESPIONAGE AGENT";
+    this.isCloaked = true;
+    this.strikeCooldown = 0;
+  }
+
+  update(dt) {
+    if (!super.updateBase(dt)) return false;
+    if (!player) return true;
+
+    const dist = Math.hypot(player.x - this.x, player.y - this.y);
+
+    if (dist > 140) {
+      this.isCloaked = true;
+      const flankAngle = Math.atan2(player.y - this.y, player.x - this.x) + 0.6;
+      this.vx += Math.cos(flankAngle) * (this.speed * 1.4) * dt;
+      this.vy += Math.sin(flankAngle) * (this.speed * 1.4) * dt;
+    } else {
+      if (this.isCloaked) {
+        this.isCloaked = false;
+        if (window.soundEngine && window.soundEngine.playRadioStatic) window.soundEngine.playRadioStatic(0.12);
+        for (let i = 0; i < 6; i++) {
+          particles.push(new SparkParticle(this.x, this.y, (Math.random() - 0.5) * 80, (Math.random() - 0.5) * 80, "#a855f7"));
+        }
+      }
+
+      this.strikeCooldown -= dt;
+      if (this.strikeCooldown <= 0) {
+        this.strikeCooldown = 1.6;
+        if (player && dist < this.radius + player.radius + 15) {
+          player.takeDamage(28, "STALKER_CLAWS");
+          addScreenShake(6);
+        }
+      }
+
+      const lungeAngle = Math.atan2(player.y - this.y, player.x - this.x);
+      this.vx += Math.cos(lungeAngle) * this.speed * dt;
+      this.vy += Math.sin(lungeAngle) * this.speed * dt;
+    }
+
+    return true;
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.globalAlpha = this.isCloaked ? 0.25 : 1.0;
+
+    const angle = player ? Math.atan2(player.y - this.y, player.x - this.x) : 0;
+    ctx.rotate(angle);
+
+    // Stealth Executive Infiltrator Suit
+    ctx.fillStyle = this.burnTimer > 0 ? "#450a0a" : "#1e1b4b";
+    ctx.beginPath();
+    ctx.roundRect(-14, -12, 26, 24, 3);
+    ctx.fill();
+    ctx.strokeStyle = "#818cf8";
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+
+    // Head with Purple Night-Vision Cyber-Goggles
+    ctx.fillStyle = "#fed7aa";
+    ctx.beginPath();
+    ctx.arc(0, 0, 7, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#c084fc";
+    ctx.fillRect(2, -3, 6, 6);
+
+    // Twin Suppressed Datadaggers in hands
+    ctx.fillStyle = "#94a3b8";
+    ctx.fillRect(10, -9, 12, 3);
+    ctx.fillRect(10, 6, 12, 3);
+
+    ctx.restore();
+
+    if (!this.isCloaked) {
+      ctx.save();
+      ctx.translate(this.x, this.y);
+      ctx.font = "bold 8px monospace";
+      ctx.fillStyle = "#c084fc";
+      ctx.textAlign = "center";
+      ctx.fillText("CORP INFILTRATOR", 0, -this.radius - 4);
+      this.drawHealthBar(ctx);
+      ctx.restore();
+    }
+  }
+}
+
+// --- DIVERSE TACTICAL ENEMY 4: MORTAR SIEGE-NODE ---
+class EnemyMortarNode extends EnemyBase {
+  constructor(x, y) {
+    super(x, y);
+    this.radius = 32;
+    this.hp = 440;
+    this.maxHp = 440;
+    this.speed = 65;
+    this.threatValue = 420;
+    this.label = "MORTAR SIEGE-NODE";
+    this.mortarTimer = 2.0;
+  }
+
+  update(dt) {
+    if (!super.updateBase(dt)) return false;
+    if (!player) return true;
+
+    const dist = Math.hypot(player.x - this.x, player.y - this.y);
+    if (dist < 380) {
+      const awayAngle = Math.atan2(this.y - player.y, this.x - player.x);
+      this.vx += Math.cos(awayAngle) * this.speed * dt;
+      this.vy += Math.sin(awayAngle) * this.speed * dt;
+    }
+
+    this.mortarTimer -= dt;
+    if (this.mortarTimer <= 0) {
+      this.mortarTimer = 3.6;
+      this.fireMortar();
+    }
+
+    return true;
+  }
+
+  fireMortar() {
+    if (!player) return;
+    const leadX = player.x + player.vx * 0.45;
+    const leadY = player.y + player.vy * 0.45;
+    floorHazards.push(new TelegraphedMortarHazard(this.x, this.y, leadX, leadY));
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    // Motorized Heavy Steel & Brass Filing Console
+    ctx.fillStyle = this.burnTimer > 0 ? "#450a0a" : "#1e293b";
+    ctx.beginPath();
+    ctx.roundRect(-24, -24, 48, 48, 4);
+    ctx.fill();
+    ctx.strokeStyle = "#ca8a04";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Steel drawer handles
+    ctx.fillStyle = "#94a3b8";
+    ctx.fillRect(-16, -16, 32, 4);
+    ctx.fillRect(-16, -4, 32, 4);
+    ctx.fillRect(-16, 8, 32, 4);
+
+    // Pneumatic Subpoena Mortar Launch Tube in center
+    ctx.fillStyle = "#78350f";
+    ctx.beginPath();
+    ctx.arc(0, 0, 14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#facc15";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Tube opening
+    ctx.fillStyle = "#020617";
+    ctx.beginPath();
+    ctx.arc(0, 0, 7, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.font = "bold 8px monospace";
+    ctx.fillStyle = "#facc15";
+    ctx.textAlign = "center";
+    ctx.fillText("SUBPOENA TUBE", 0, -this.radius - 4);
+    this.drawHealthBar(ctx);
+    ctx.restore();
+  }
+}
+
+class TelegraphedMortarHazard {
+  constructor(startX, startY, targetX, targetY) {
+    this.x = startX;
+    this.y = startY;
+    this.targetX = targetX;
+    this.targetY = targetY;
+    this.duration = 1.35;
+    this.time = 0;
+    this.radius = 95;
+  }
+
+  update(dt) {
+    this.time += dt;
+    if (this.time >= this.duration) {
+      this.detonate();
+      return false;
+    }
+    return true;
+  }
+
+  detonate() {
+    if (window.soundEngine && window.soundEngine.playRocketExplode) window.soundEngine.playRocketExplode();
+    addScreenShake(9);
+
+    particles.push(new ShockwaveRing(this.targetX, this.targetY, this.radius, "#ef4444"));
+    for (let i = 0; i < 18; i++) {
+      const a = (Math.PI * 2 / 18) * i;
+      const spd = 180 + Math.random() * 120;
+      particles.push(new SparkParticle(this.targetX, this.targetY, Math.cos(a) * spd, Math.sin(a) * spd, "#ef4444"));
+    }
+
+    if (player && Math.hypot(player.x - this.targetX, player.y - this.targetY) < this.radius + player.radius) {
+      player.takeDamage(42, "MORTAR SHELL");
+      const a = Math.atan2(player.y - this.targetY, player.x - this.targetX);
+      player.vx += Math.cos(a) * 350;
+      player.vy += Math.sin(a) * 350;
+    }
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.targetX, this.targetY);
+
+    const progress = Math.min(1, this.time / this.duration);
+
+    ctx.strokeStyle = "rgba(239, 68, 68, 0.7)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 6]);
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = "rgba(239, 68, 68, 0.25)";
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius * (1 - progress), 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+}
+
+// --- DIVERSE TACTICAL ENEMY 5: FIRMWARE DISPATCHER (HEALER DRONE) ---
+class EnemyDispatcher extends EnemyBase {
+  constructor(x, y) {
+    super(x, y);
+    this.radius = 22;
+    this.hp = 260;
+    this.maxHp = 260;
+    this.speed = 185;
+    this.threatValue = 350;
+    this.label = "FIRMWARE DISPATCHER";
+    this.healTarget = null;
+    this.spin = 0;
+  }
+
+  update(dt) {
+    if (!super.updateBase(dt)) return false;
+    this.spin += dt * 4;
+
+    let bestTgt = null, lowestPct = 1.0;
+    for (const e of enemies) {
+      if (e !== this && e.hp > 0 && e.hp < e.maxHp) {
+        const pct = e.hp / e.maxHp;
+        const d = Math.hypot(e.x - this.x, e.y - this.y);
+        if (d < 450 && pct < lowestPct) {
+          lowestPct = pct;
+          bestTgt = e;
+        }
+      }
+    }
+    this.healTarget = bestTgt;
+
+    if (this.healTarget) {
+      this.healTarget.hp = Math.min(this.healTarget.maxHp, this.healTarget.hp + 50 * dt);
+      const angle = Math.atan2(this.healTarget.y - this.y, this.healTarget.x - this.x);
+      this.vx += Math.cos(angle) * this.speed * dt;
+      this.vy += Math.sin(angle) * this.speed * dt;
+    } else if (player) {
+      const d = Math.hypot(player.x - this.x, player.y - this.y);
+      if (d < 500) {
+        const awayAngle = Math.atan2(this.y - player.y, this.x - player.x);
+        this.vx += Math.cos(awayAngle) * this.speed * dt;
+        this.vy += Math.sin(awayAngle) * this.speed * dt;
+      }
+    }
+
+    return true;
+  }
+
+  draw(ctx) {
+    if (this.healTarget && this.healTarget.hp > 0) {
+      ctx.save();
+      ctx.strokeStyle = "rgba(34, 197, 94, 0.85)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(this.x, this.y);
+      ctx.lineTo(this.healTarget.x, this.healTarget.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    // 4 Quad-rotor arms with spinning blades
+    ctx.strokeStyle = "#334155";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-16, -16); ctx.lineTo(16, 16);
+    ctx.moveTo(16, -16); ctx.lineTo(-16, 16);
+    ctx.stroke();
+
+    // Rotors spinning
+    ctx.strokeStyle = "#94a3b8";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(-16, -16, 5, 0, Math.PI * 2);
+    ctx.arc(16, -16, 5, 0, Math.PI * 2);
+    ctx.arc(-16, 16, 5, 0, Math.PI * 2);
+    ctx.arc(16, 16, 5, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Central Appraisal Monitor Chassis
+    ctx.fillStyle = this.burnTimer > 0 ? "#450a0a" : "#0f172a";
+    ctx.beginPath();
+    ctx.roundRect(-12, -10, 24, 20, 3);
+    ctx.fill();
+    ctx.strokeStyle = "#22c55e";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Green Performance Rating Screen with line chart
+    ctx.fillStyle = "#052e16";
+    ctx.fillRect(-9, -7, 18, 14);
+    ctx.strokeStyle = "#22c55e";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(-7, 3);
+    ctx.lineTo(-3, 0);
+    ctx.lineTo(2, -4);
+    ctx.lineTo(6, -6);
+    ctx.stroke();
+
+    ctx.restore();
+
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.font = "bold 8px monospace";
+    ctx.fillStyle = "#22c55e";
+    ctx.textAlign = "center";
+    ctx.fillText("HR REVIEW DRONE", 0, -this.radius - 4);
+    this.drawHealthBar(ctx);
+    ctx.restore();
+  }
+}
+
+// --- BOSS 1: THE BLOATWARE MONOLITH (Wave 5) ---
+class BossBloatware extends EnemyBase {
+  constructor(x, y) {
+    super(x, y);
+    this.radius = 65;
+    this.hp = 2200;
+    this.maxHp = 2200;
+    this.speed = 85;
+    this.isBoss = true;
+    this.label = "BLOATWARE MONOLITH";
+    this.phaseTimer = 0;
+  }
+
+  update(dt) {
+    this.phaseTimer += dt;
+    if (this.phaseTimer > 1.3) {
+      this.phaseTimer = 0;
+      for (let i = 0; i < 8; i++) {
+        const angle = (Math.PI * 2 / 8) * i + gameTime;
+        const spd = 240;
+        enemyProjectiles.push(new EnemyProjectile(
+          this.x,
+          this.y,
+          Math.cos(angle) * spd,
+          Math.sin(angle) * spd,
+          "RESTART NOW"
+        ));
+      }
+    }
+    return this.updateBase(dt);
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    ctx.fillStyle = this.burnTimer > 0 ? "#7f1d1d" : "#e2e8f0";
+    ctx.beginPath();
+    ctx.roundRect(-this.radius, -this.radius, this.radius * 2, this.radius * 2, 10);
+    ctx.fill();
+
+    ctx.fillStyle = "#1e3a8a";
+    ctx.fillRect(-this.radius, -this.radius, this.radius * 2, 24);
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 11px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("FORCED UPDATE (1%)", 0, -this.radius + 16);
+
+    ctx.fillStyle = "#0f172a";
+    ctx.font = "9px monospace";
+    ctx.textAlign = "left";
+    ctx.fillText("[X] Install McAfee", -this.radius + 10, -10);
+    ctx.fillText("[X] Make Bing Default", -this.radius + 10, 8);
+    ctx.fillText("[X] Send All Data", -this.radius + 10, 26);
+
+    ctx.restore();
+  }
+}
+
+// --- BOSS 2: VENDOR LOCK-IN OVERLORD (Wave 10) ---
+class BossVendorLockin extends EnemyBase {
+  constructor(x, y) {
+    super(x, y);
+    this.radius = 80;
+    this.hp = 4200;
+    this.maxHp = 4200;
+    this.speed = 95;
+    this.isBoss = true;
+    this.label = "VENDOR LOCK-IN OVERLORD";
+    this.laserTimer = 0;
+  }
+
+  update(dt) {
+    this.laserTimer += dt;
+    if (this.laserTimer > 0.35) {
+      this.laserTimer = 0;
+      const angle = gameTime * 3.5;
+      const spd = 300;
+      enemyProjectiles.push(new EnemyProjectile(
+        this.x,
+        this.y,
+        Math.cos(angle) * spd,
+        Math.sin(angle) * spd,
+        "WALLED GARDEN"
+      ));
+    }
+    return this.updateBase(dt);
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    ctx.fillStyle = this.burnTimer > 0 ? "#450a0a" : "#0f172a";
+    ctx.beginPath();
+    ctx.roundRect(-this.radius, -this.radius, this.radius * 2, this.radius * 2, 16);
+    ctx.fill();
+
+    ctx.strokeStyle = "#38bdf8";
+    ctx.lineWidth = 4;
+    ctx.stroke();
+
+    for (let r = -2; r <= 2; r++) {
+      for (let c = -2; c <= 2; c++) {
+        ctx.fillStyle = (Math.sin(gameTime * 10 + r * c) > 0) ? "#22c55e" : "#ef4444";
+        ctx.fillRect(c * 20 - 4, r * 20 - 4, 8, 8);
+      }
+    }
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 13px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("PROPRIETARY", 0, -this.radius + 25);
+    ctx.fillText("OVERLORD", 0, -this.radius + 42);
+
+    ctx.restore();
+  }
+}
+
+// --- BOSS 3: THE CLOUD MONOPOLY TITAN (Wave 15) ---
+class BossCloudMonopoly extends EnemyBase {
+  constructor(x, y) {
+    super(x, y);
+    this.radius = 95;
+    this.hp = 6500;
+    this.maxHp = 6500;
+    this.speed = 75;
+    this.isBoss = true;
+    this.label = "CLOUD MONOPOLY TITAN (AWS/AZURE)";
+    this.attackTimer = 0;
+    this.lightningStrikes = [];
+  }
+
+  update(dt) {
+    this.attackTimer += dt;
+
+    // Spiral billing statement attack
+    if (this.attackTimer > 1.2) {
+      this.attackTimer = 0;
+      for (let i = 0; i < 12; i++) {
+        const a = (Math.PI * 2 / 12) * i + gameTime * 2;
+        const spd = 260;
+        enemyProjectiles.push(new EnemyProjectile(
+          this.x,
+          this.y,
+          Math.cos(a) * spd,
+          Math.sin(a) * spd,
+          "$9,999/HR"
+        ));
+      }
+
+      // Lightning strike on player position
+      this.lightningStrikes.push({
+        x: player.x + (Math.random() - 0.5) * 80,
+        y: player.y + (Math.random() - 0.5) * 80,
+        timer: 1.0
+      });
+    }
+
+    // Process lightning strikes
+    for (let i = this.lightningStrikes.length - 1; i >= 0; i--) {
+      const ls = this.lightningStrikes[i];
+      ls.timer -= dt;
+      if (ls.timer <= 0) {
+        // Strike down!
+        window.soundEngine.playNoiseBurst(0.2, 0.4, 2400, 200);
+        addScreenShake(8);
+        if (Math.hypot(player.x - ls.x, player.y - ls.y) < 65) {
+          player.takeDamage(35, "BILLING LIGHTNING");
+        }
+        for (let s = 0; s < 12; s++) {
+          particles.push(new SparkParticle(ls.x, ls.y, (Math.random() - 0.5) * 140, (Math.random() - 0.5) * 140, "#38bdf8"));
+        }
+        this.lightningStrikes.splice(i, 1);
+      }
+    }
+
+    return this.updateBase(dt);
+  }
+
+  draw(ctx) {
+    // Draw lightning telegraph circles
+    for (const ls of this.lightningStrikes) {
+      ctx.save();
+      ctx.strokeStyle = `rgba(239, 68, 68, ${1 - ls.timer})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(ls.x, ls.y, 65, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = "rgba(56, 189, 248, 0.2)";
+      ctx.fill();
+      ctx.restore();
+    }
+
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    // Floating Corporate Cloud Mothership
+    ctx.fillStyle = this.burnTimer > 0 ? "#1e1b4b" : "#3b82f6";
+    ctx.beginPath();
+    ctx.arc(-35, 0, 45, 0, Math.PI * 2);
+    ctx.arc(35, 0, 45, 0, Math.PI * 2);
+    ctx.arc(0, -30, 55, 0, Math.PI * 2);
+    ctx.arc(0, 15, 55, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = "#e0f2fe";
+    ctx.lineWidth = 4;
+    ctx.stroke();
+
+    // Golden Dollar Insignia
+    ctx.fillStyle = "#facc15";
+    ctx.font = "bold 32px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("$$$", 0, 10);
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 11px monospace";
+    ctx.fillText("CLOUD TITAN", 0, -50);
+
+    ctx.restore();
+  }
+}
+
+// --- BOSS 4: THE CLOSED-SOURCE OVERMIND / GPT-OMEGA (Wave 20 Final Boss) ---
+class BossOmegaAI extends EnemyBase {
+  constructor(x, y) {
+    super(x, y);
+    this.radius = 115;
+    this.hp = 12000;
+    this.maxHp = 12000;
+    this.speed = 65;
+    this.isBoss = true;
+    this.label = "CLOSED-SOURCE OVERMIND (GPT-OMEGA)";
+    this.phaseTimer = 0;
+    this.singularityTimer = 0;
+  }
+
+  update(dt) {
+    this.phaseTimer += dt;
+    this.singularityTimer += dt;
+
+    // Singularity gravitational pull toward core
+    const dPlayer = Math.hypot(this.x - player.x, this.y - player.y);
+    if (dPlayer < 750 && dPlayer > 60) {
+      player.x += ((this.x - player.x) / dPlayer) * 75 * dt;
+      player.y += ((this.y - player.y) / dPlayer) * 75 * dt;
+    }
+
+    // Binary matrix sweep lasers
+    if (this.phaseTimer > 0.45) {
+      this.phaseTimer = 0;
+      for (let i = 0; i < 6; i++) {
+        const a = (Math.PI * 2 / 6) * i + gameTime * 3;
+        const spd = 280;
+        enemyProjectiles.push(new EnemyProjectile(
+          this.x,
+          this.y,
+          Math.cos(a) * spd,
+          Math.sin(a) * spd,
+          "0101"
+        ));
+      }
+    }
+
+    // Spawn hallucination phantoms
+    if (this.singularityTimer > 4.5) {
+      this.singularityTimer = 0;
+      enemies.push(new EnemyAISlop(this.x + (Math.random() - 0.5) * 120, this.y + (Math.random() - 0.5) * 120));
+      enemies.push(new EnemyBSOD(this.x + (Math.random() - 0.5) * 120, this.y + (Math.random() - 0.5) * 120));
+      addFloatingText(this.x, this.y - 100, "HALLUCINATING PHANTOMS!", "#d946ef", 24);
+    }
+
+    return this.updateBase(dt);
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    // Gravitational Event Horizon Singularity
+    const pulse = Math.sin(gameTime * 6) * 10;
+    ctx.fillStyle = "rgba(15, 23, 42, 0.95)";
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius + pulse, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Glowing Rainbow AI Tensor Rings
+    ctx.strokeStyle = `hsl(${(gameTime * 80) % 360}, 90%, 60%)`;
+    ctx.lineWidth = 6;
+    ctx.stroke();
+
+    ctx.strokeStyle = `hsl(${((gameTime * 80) + 180) % 360}, 90%, 60%)`;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius * 0.7, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Central Digital Eye
+    ctx.fillStyle = "#ef4444";
+    ctx.beginPath();
+    ctx.arc(0, 0, 24, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 13px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("GPT-OMEGA", 0, -28);
+    ctx.fillText("SINGULARITY", 0, 42);
+
+    ctx.restore();
+  }
+}
+
+// --- ROGUELIKE DUNGEON, ROOMS & OBJECTIVES SYSTEM (SOUL KNIGHT STYLE) ---
+class GroundWeapon {
+  constructor(x, y, weaponItem) {
+    this.x = x;
+    this.y = y;
+    this.weapon = weaponItem; // From WEAPON_CATALOG
+    this.bobTimer = Math.random() * Math.PI * 2;
+    this.radius = 24;
+  }
+
+  update(dt) {
+    this.bobTimer += dt * 3.5;
+    return true;
+  }
+
+  draw(ctx) {
+    const bob = Math.sin(this.bobTimer) * 5;
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    // Glowing Pedestal Aura
+    ctx.fillStyle = "rgba(56, 189, 248, 0.15)";
+    ctx.beginPath();
+    ctx.arc(0, 0, 28, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = this.weapon.color;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Floating 2D Gun Icon
+    ctx.save();
+    ctx.translate(0, bob - 4);
+    ctx.fillStyle = this.weapon.color;
+    ctx.fillRect(-14, -6, 28, 12);
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(-10, -3, 20, 6);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(8, -2, 6, 4);
+    ctx.restore();
+
+    // Name Tag
+    ctx.font = "bold 11px monospace";
+    ctx.fillStyle = "#ffffff";
+    ctx.textAlign = "center";
+    ctx.fillText(`[${this.weapon.shortName}]`, 0, bob - 18);
+    ctx.font = "9px monospace";
+    ctx.fillStyle = this.weapon.color;
+    ctx.fillText(this.weapon.ammoText, 0, bob - 6);
+
+    ctx.restore();
+  }
+}
+
+class WeaponChest {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.opened = false;
+    this.radius = 30;
+  }
+
+  open() {
+    if (this.opened) return;
+    this.opened = true;
+    window.soundEngine.playChestOpen();
+    addScreenShake(8);
+    for (let i = 0; i < 18; i++) {
+      particles.push(new SparkParticle(this.x, this.y, (Math.random() - 0.5) * 220, (Math.random() - 0.5) * 220, "#fbbf24"));
+    }
+    // Drop random weapon not currently held
+    const available = WEAPON_CATALOG.filter(w => w.id !== player.heldWeapons[0].id && w.id !== player.heldWeapons[1].id);
+    const chosen = available[Math.floor(Math.random() * available.length)] || WEAPON_CATALOG[2];
+    groundWeapons.push(new GroundWeapon(this.x, this.y + 22, chosen));
+
+    pickups.push(new Pickup(this.x - 25, this.y, 'xp'));
+    pickups.push(new Pickup(this.x + 25, this.y, 'xp'));
+    pickups.push(new Pickup(this.x, this.y - 25, Math.random() < 0.5 ? 'hp' : 'fuel'));
+    addFloatingText(this.x, this.y - 45, "CACHE UNLOCKED!", "#fbbf24", 22);
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    if (!this.opened) {
+      ctx.fillStyle = "rgba(251, 191, 36, 0.2)";
+      ctx.beginPath();
+      ctx.arc(0, 0, 36, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#78350f";
+      ctx.fillRect(-22, -16, 44, 32);
+      ctx.strokeStyle = "#fbbf24";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(-22, -16, 44, 32);
+
+      ctx.fillStyle = "#fbbf24";
+      ctx.fillRect(-6, -4, 12, 10);
+
+      ctx.font = "bold 10px monospace";
+      ctx.fillStyle = "#fbbf24";
+      ctx.textAlign = "center";
+      ctx.fillText("[E] OPEN CACHE", 0, -24);
+    } else {
+      ctx.fillStyle = "#334155";
+      ctx.fillRect(-22, -10, 44, 26);
+      ctx.strokeStyle = "#64748b";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(-22, -10, 44, 26);
+    }
+    ctx.restore();
+  }
+}
+
+class TelemetryRelay {
+  constructor(x, y, hp = 350) {
+    this.x = x;
+    this.y = y;
+    this.radius = 38;
+    this.hp = hp;
+    this.maxHp = hp;
+    this.dishAngle = 0;
+    this.pulseTimer = 0;
+    this.spawnTimer = 0;
+  }
+
+  takeDamage(amount, source) {
+    this.hp -= amount;
+    addFloatingText(this.x + (Math.random() - 0.5) * 25, this.y - 20, `-${Math.round(amount)}`, "#ef4444", 16);
+    if (this.hp <= 0) {
+      this.destroy();
+    }
+  }
+
+  destroy() {
+    window.soundEngine.playProprietaryDestroyed('boss');
+    addScreenShake(18);
+    for (let i = 0; i < 40; i++) {
+      particles.push(new SparkParticle(this.x, this.y, (Math.random() - 0.5) * 320, (Math.random() - 0.5) * 320, Math.random() < 0.5 ? "#ef4444" : "#f59e0b"));
+    }
+    for (let i = 0; i < 4; i++) {
+      pickups.push(new Pickup(this.x + (Math.random() - 0.5) * 40, this.y + (Math.random() - 0.5) * 40, 'xp'));
+    }
+    pickups.push(new Pickup(this.x, this.y, 'hp'));
+    dungeon.onObjectiveProgress('DESTROY_RELAYS');
+    const idx = objectiveTargets.indexOf(this);
+    if (idx !== -1) objectiveTargets.splice(idx, 1);
+  }
+
+  update(dt) {
+    this.dishAngle += dt * 2.5;
+    this.pulseTimer += dt;
+    this.spawnTimer += dt;
+    if (this.spawnTimer > 7.0 && enemies.length < 35) {
+      this.spawnTimer = 0;
+      enemies.push(new EnemyTelemetry(this.x + Math.cos(this.dishAngle) * 55, this.y + Math.sin(this.dishAngle) * 55));
+    }
+    return this.hp > 0;
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.fillStyle = "#1e293b";
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#ef4444";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    const pRadius = this.radius + ((this.pulseTimer * 30) % 40);
+    ctx.strokeStyle = `rgba(239, 68, 68, ${1 - (pRadius - this.radius) / 40})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, pRadius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.save();
+    ctx.rotate(this.dishAngle);
+    ctx.fillStyle = "#f59e0b";
+    ctx.fillRect(-6, -20, 12, 40);
+    ctx.fillStyle = "#ef4444";
+    ctx.beginPath();
+    ctx.arc(0, -22, 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    const barW = 60;
+    const barH = 6;
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(-barW / 2, -this.radius - 16, barW, barH);
+    ctx.fillStyle = "#ef4444";
+    ctx.fillRect(-barW / 2, -this.radius - 16, barW * Math.max(0, this.hp / this.maxHp), barH);
+
+    ctx.font = "bold 10px monospace";
+    ctx.fillStyle = "#f87171";
+    ctx.textAlign = "center";
+    ctx.fillText("ROGUE RELAY", 0, -this.radius - 22);
+    ctx.restore();
+  }
+}
+
+class RootTerminal {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.radius = 35;
+    this.hackRadius = 130;
+    this.progress = 0;
+    this.maxProgress = 12.0;
+    this.isHacking = false;
+    this.completed = false;
+  }
+
+  update(dt) {
+    if (this.completed) return true;
+    const distToPlayer = Math.hypot(player.x - this.x, player.y - this.y);
+    if (distToPlayer <= this.hackRadius) {
+      this.isHacking = true;
+      this.progress += dt;
+      if (Math.random() < 0.25) {
+        particles.push(new SparkParticle(
+          this.x + (Math.random() - 0.5) * 80,
+          this.y + (Math.random() - 0.5) * 80,
+          (Math.random() - 0.5) * 60,
+          -60,
+          "#38bdf8"
+        ));
+      }
+      if (this.progress >= this.maxProgress) {
+        this.complete();
+      }
+    } else {
+      this.isHacking = false;
+    }
+    return true;
+  }
+
+  complete() {
+    this.completed = true;
+    window.soundEngine.playObjectiveComplete();
+    addScreenShake(15);
+    particles.push(new ShockwaveRing(this.x, this.y, 250));
+    for (const enemy of enemies) {
+      if (Math.hypot(enemy.x - this.x, enemy.y - this.y) < 260) {
+        enemy.takeDamage(200, "ROOT COMPILATION NOVA");
+      }
+    }
+    addFloatingText(this.x, this.y - 50, "ROOT COMPILATION COMPLETE!", "#22c55e", 26);
+    dungeon.onObjectiveProgress('HACK_TERMINAL');
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.fillStyle = this.completed ? "rgba(34, 197, 94, 0.12)" : (this.isHacking ? "rgba(56, 189, 248, 0.22)" : "rgba(56, 189, 248, 0.08)");
+    ctx.beginPath();
+    ctx.arc(0, 0, this.hackRadius, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = this.completed ? "#22c55e" : (this.isHacking ? "#38bdf8" : "rgba(56, 189, 248, 0.4)");
+    ctx.lineWidth = this.isHacking ? 3 : 1.5;
+    ctx.setLineDash([8, 6]);
+    ctx.beginPath();
+    ctx.arc(0, 0, this.hackRadius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(-24, -20, 48, 40);
+    ctx.strokeStyle = this.completed ? "#22c55e" : "#38bdf8";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(-24, -20, 48, 40);
+
+    ctx.fillStyle = this.completed ? "#22c55e" : (this.isHacking ? "#38bdf8" : "#1e293b");
+    ctx.fillRect(-16, -14, 32, 18);
+
+    if (!this.completed) {
+      const pct = Math.floor((this.progress / this.maxProgress) * 100);
+      const barW = 70;
+      ctx.fillStyle = "#1e293b";
+      ctx.fillRect(-barW / 2, -34, barW, 8);
+      ctx.fillStyle = "#38bdf8";
+      ctx.fillRect(-barW / 2, -34, barW * (this.progress / this.maxProgress), 8);
+
+      ctx.font = "bold 11px monospace";
+      ctx.fillStyle = this.isHacking ? "#38bdf8" : "#94a3b8";
+      ctx.textAlign = "center";
+      ctx.fillText(this.isHacking ? `DECRYPTING ROOT: ${pct}%` : "STAND IN ZONE TO HACK", 0, -42);
+    } else {
+      ctx.font = "bold 11px monospace";
+      ctx.fillStyle = "#22c55e";
+      ctx.textAlign = "center";
+      ctx.fillText("ROOT REPO PATCHED", 0, -32);
+    }
+    ctx.restore();
+  }
+}
+
+class ExitWarpGateway {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.radius = 48;
+    this.spinAngle = 0;
+  }
+
+  update(dt) {
+    this.spinAngle += dt * 3.5;
+    if (dungeon && dungeon.isSectorCompleted() && Math.hypot(player.x - this.x, player.y - this.y) < this.radius + player.radius * 0.5) {
+      dungeon.warpToNextSector();
+    }
+  }
+
+  draw(ctx) {
+    const isReady = dungeon && dungeon.isSectorCompleted();
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    if (isReady) {
+      const grad = ctx.createRadialGradient(0, 0, 5, 0, 0, this.radius + 15);
+      grad.addColorStop(0, "#22c55e");
+      grad.addColorStop(0.5, "#06b6d4");
+      grad.addColorStop(1, "rgba(34, 197, 94, 0)");
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(0, 0, this.radius + 20, 0, Math.PI * 2);
+      ctx.fill();
+
+      for (let i = 0; i < 4; i++) {
+        const a = this.spinAngle + (Math.PI / 2) * i;
+        ctx.strokeStyle = "#a7f3d0";
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(0, 0, this.radius, a, a + 0.8);
+        ctx.stroke();
+      }
+
+      ctx.font = "bold 12px monospace";
+      ctx.fillStyle = "#22c55e";
+      ctx.textAlign = "center";
+      ctx.fillText("WARP GATEWAY ACTIVE", 0, -this.radius - 18);
+      ctx.font = "10px monospace";
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText("STEP IN / [E] TO ADVANCE", 0, -this.radius - 6);
+    } else {
+      ctx.fillStyle = "rgba(30, 41, 59, 0.4)";
+      ctx.beginPath();
+      ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = "#475569";
+      ctx.lineWidth = 3;
+      ctx.setLineDash([6, 6]);
+      ctx.beginPath();
+      ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.font = "bold 11px monospace";
+      ctx.fillStyle = "#94a3b8";
+      ctx.textAlign = "center";
+      ctx.fillText("GATEWAY DORMANT", 0, -this.radius - 14);
+      ctx.font = "10px monospace";
+      ctx.fillStyle = "#ef4444";
+      ctx.fillText("COMPLETE OBJECTIVES FIRST", 0, -this.radius - 2);
+    }
+    ctx.restore();
+  }
+}
+
+// ============================================================================
+// --- BIOME SPECIFICATIONS & TACTICAL PARAMETERS ---
+// ============================================================================
+const BIOMES = {
+  EMERALD_FRONTIER: {
+    id: "EMERALD_FRONTIER",
+    name: "EMERALD REPO FRONTIER",
+    dangerLevel: 1,
+    floorColor: "#0a1910",
+    floorBorder: "rgba(18, 48, 28, 0.4)",
+    wallColor: "#0f2317",
+    wallCap: "#1e4730",
+    liquidColor: "#061f15",
+    liquidGlow: "rgba(16, 185, 129, 0.25)",
+    foliageColor: "#1b4d2e",
+    pillarColor: "#142b1e",
+    frictionMult: 1.0,
+    accent: "#22c55e",
+    hazardDesc: "Patrol squads & rogue telemetry antennas",
+    bossId: "ballmer_bot"
+  },
+  THERMAL_FOUNDRY: {
+    id: "THERMAL_FOUNDRY",
+    name: "OVERCLOCK SILICON SMELTER",
+    dangerLevel: 2,
+    floorColor: "#140905",
+    floorBorder: "rgba(67, 20, 7, 0.45)",
+    wallColor: "#2a1005",
+    wallCap: "#7c2d12",
+    liquidColor: "#450a0a",
+    liquidGlow: "rgba(234, 88, 12, 0.35)",
+    foliageColor: "#ea580c",
+    pillarColor: "#431407",
+    frictionMult: 1.0,
+    accent: "#ea580c",
+    hazardDesc: "Superheated steam vents & scorched magma fissures",
+    bossId: "smelter_titan"
+  },
+  CRYO_GLACIER: {
+    id: "CRYO_GLACIER",
+    name: "SUB-ZERO COLD-ARCHIVE GLACIER",
+    dangerLevel: 3,
+    floorColor: "#051320",
+    floorBorder: "rgba(8, 51, 68, 0.5)",
+    wallColor: "#082f49",
+    wallCap: "#0369a1",
+    liquidColor: "#031d2e",
+    liquidGlow: "rgba(6, 182, 212, 0.35)",
+    foliageColor: "#0ea5e9",
+    pillarColor: "#075985",
+    frictionMult: 0.32, // Slick ice momentum & drifting physics!
+    accent: "#06b6d4",
+    hazardDesc: "Slick low-friction ice & sub-zero freezing pools",
+    bossId: "cryo_daemon"
+  },
+  TOXIC_HEAP: {
+    id: "TOXIC_HEAP",
+    name: "MEMORY-LEAK HEAP WASTELANDS",
+    dangerLevel: 3,
+    floorColor: "#091408",
+    floorBorder: "rgba(20, 83, 45, 0.4)",
+    wallColor: "#14532d",
+    wallCap: "#166534",
+    liquidColor: "#052e16",
+    liquidGlow: "rgba(34, 197, 94, 0.4)",
+    foliageColor: "#22c55e",
+    pillarColor: "#14532d",
+    frictionMult: 1.0,
+    accent: "#4ade80",
+    hazardDesc: "Corrosive acid pools (-50% armor) & ambush stalkers",
+    bossId: "garbage_collector"
+  },
+  WALLED_GARDEN: {
+    id: "WALLED_GARDEN",
+    name: "EXECUTIVE WALLED GARDEN",
+    dangerLevel: 4,
+    floorColor: "#0f172a",
+    floorBorder: "rgba(51, 65, 85, 0.5)",
+    wallColor: "#1e293b",
+    wallCap: "#ca8a04",
+    liquidColor: "#090d16",
+    liquidGlow: "rgba(234, 179, 8, 0.3)",
+    foliageColor: "#eab308",
+    pillarColor: "#334155",
+    frictionMult: 1.0,
+    accent: "#facc15",
+    hazardDesc: "Security laser tripwires & automated fortress turrets",
+    bossId: "executive_chairman"
+  },
+  QUANTUM_VOID: {
+    id: "QUANTUM_VOID",
+    name: "RING-0 KERNEL SINGULARITY VOID",
+    dangerLevel: 5,
+    floorColor: "#0c071a",
+    floorBorder: "rgba(76, 29, 149, 0.45)",
+    wallColor: "#2e1065",
+    wallCap: "#7c3aed",
+    liquidColor: "#1e0b36",
+    liquidGlow: "rgba(168, 85, 247, 0.4)",
+    foliageColor: "#c084fc",
+    pillarColor: "#3b0764",
+    frictionMult: 1.0,
+    accent: "#c084fc",
+    hazardDesc: "Gravitational event horizons & decoherence anomalies",
+    bossId: "quantum_hypervisor"
+  },
+  TREASURE_VAULT: {
+    id: "TREASURE_VAULT",
+    name: "CONFIDENTIAL CARTEL DATA VAULT",
+    dangerLevel: 1,
+    floorColor: "#0e1117",
+    floorBorder: "rgba(202, 138, 4, 0.4)",
+    wallColor: "#1f2937",
+    wallCap: "#ca8a04",
+    liquidColor: "#0b0f14",
+    liquidGlow: "rgba(250, 204, 21, 0.3)",
+    foliageColor: "#fbbf24",
+    pillarColor: "#374151",
+    frictionMult: 1.0,
+    accent: "#facc15",
+    hazardDesc: "Guarded secret cache with prototype weapons & power armor",
+    bossId: null
+  }
+};
+
+// ============================================================================
+// --- PROCEDURAL PORTALS & INTER-BIOME EXPEDITIONS ---
+// ============================================================================
+class ProceduralPortal {
+  constructor(x, y, biomeKey, objectiveType, dangerRating) {
+    this.x = x;
+    this.y = y;
+    this.radius = 48;
+    this.biomeKey = biomeKey;
+    this.biome = BIOMES[biomeKey] || BIOMES.EMERALD_FRONTIER;
+    this.objectiveType = objectiveType || "DEFEND_SERVERS";
+    this.dangerRating = dangerRating || this.biome.dangerLevel;
+    this.spinAngle = 0;
+    this.pulse = 0;
+
+    switch (this.objectiveType) {
+      case "DEFEND_SERVERS":
+        this.objectiveTitle = "DEFEND SERVER CLUSTER";
+        this.objectiveDesc = "Protect open-source server node cluster from 3 assault waves";
+        break;
+      case "ATTACK_FORTRESS":
+        this.objectiveTitle = "ATTACK THE FORTRESS";
+        this.objectiveDesc = "Breach fortress citadel, destroy shield pylons & demolish core";
+        break;
+      case "SETUP_UPLINK":
+        this.objectiveTitle = "SETUP MESH UPLINK";
+        this.objectiveDesc = "Calibrate 3 encrypted packet beacons while holding positions";
+        break;
+      case "ELITE_BOUNTY":
+        this.objectiveTitle = "ELITE CHAMPION BOUNTY";
+        this.objectiveDesc = "Hunt down and purge armored proprietary enforcers";
+        break;
+      case "TREASURE_REWARD":
+        this.objectiveTitle = "CONFIDENTIAL DATA VAULT";
+        this.objectiveDesc = "Secure classified weapon caches & prototype exosuits";
+        break;
+      default:
+        this.objectiveTitle = "OVERCLOCK SABOTAGE";
+        this.objectiveDesc = "Sabotage reactor manifolds and overthrow sector apex boss";
+    }
+  }
+
+  update(dt) {
+    this.spinAngle += dt * 3.8;
+    this.pulse += dt * 3.0;
+
+    if (Math.random() < 0.35) {
+      const a = Math.random() * Math.PI * 2;
+      const r = this.radius * (0.6 + Math.random() * 0.4);
+      particles.push(new SparkParticle(
+        this.x + Math.cos(a) * r,
+        this.y + Math.sin(a) * r,
+        -Math.cos(a) * 35,
+        -Math.sin(a) * 35,
+        this.biome.accent
+      ));
+    }
+
+    // Step-in trigger check
+    if (player && Math.hypot(player.x - this.x, player.y - this.y) < this.radius * 0.75) {
+      this.enter();
+    }
+  }
+
+  enter() {
+    if (dungeon && dungeon.isWarping) return;
+    if (window.soundEngine && window.soundEngine.playPortalWarp) window.soundEngine.playPortalWarp();
+    if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
+      window.soundEngine.speakRobot(`WARPING TO ${this.biome.name}. OBJECTIVE DIRECTIVE: ${this.objectiveTitle}.`, "SUPER DESTROYER");
+    }
+    addScreenShake(18);
+    screenFlash = 1.0;
+
+    if (dungeon) {
+      dungeon.warpToBiome(this.biomeKey, this.objectiveType, this.dangerRating);
+    }
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    const wave = Math.sin(this.pulse) * 0.08 + 0.92;
+
+    // Glowing dimensional vortex
+    const grad = ctx.createRadialGradient(0, 0, 4, 0, 0, this.radius + 18);
+    grad.addColorStop(0, this.biome.accent);
+    grad.addColorStop(0.5, "rgba(15, 23, 42, 0.85)");
+    grad.addColorStop(1, "rgba(0, 0, 0, 0)");
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius + 20, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Orbiting particle rings
+    for (let i = 0; i < 4; i++) {
+      const a = this.spinAngle + (Math.PI / 2) * i;
+      ctx.strokeStyle = this.biome.accent;
+      ctx.lineWidth = 3.5;
+      ctx.beginPath();
+      ctx.arc(0, 0, this.radius * wave, a, a + 0.9);
+      ctx.stroke();
+    }
+
+    // Inner portal eye
+    ctx.fillStyle = "#020617";
+    ctx.beginPath();
+    ctx.arc(0, 0, 16, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Holographic Telemetry Placard above portal
+    ctx.fillStyle = "rgba(15, 23, 42, 0.9)";
+    ctx.fillRect(-110, -this.radius - 42, 220, 36);
+    ctx.strokeStyle = this.biome.accent;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(-110, -this.radius - 42, 220, 36);
+
+    ctx.font = "bold 11px monospace";
+    ctx.fillStyle = this.biome.accent;
+    ctx.textAlign = "center";
+    ctx.fillText(`${this.biome.name}`, 0, -this.radius - 26);
+
+    ctx.font = "9px monospace";
+    ctx.fillStyle = "#facc15";
+    ctx.fillText(`★ TIER ${this.dangerRating} • ${this.objectiveTitle}`, 0, -this.radius - 12);
+
+    ctx.font = "bold 10px monospace";
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText("[STEP IN / PRESS E TO WARP]", 0, this.radius + 16);
+
+    ctx.restore();
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.ProceduralPortal = ProceduralPortal;
+  window.BIOMES = BIOMES;
+  window.proceduralPortals = proceduralPortals;
+}
+
+// ============================================================================
+// --- TACTICAL IN-WORLD OBJECTIVE STRUCTURES ---
+// ============================================================================
+
+// 1. DEFEND SERVERS OBJECTIVE: SERVER CLUSTER NODE
+class ServerClusterNode {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.radius = 48;
+    this.hp = 1600;
+    this.maxHp = 1600;
+    this.progress = 0;
+    this.maxProgress = 25.0; // 25s survival defense
+    this.waveSpawned = [false, false, false];
+    this.completed = false;
+    this.destroyed = false;
+  }
+
+  takeDamage(amount, source = "") {
+    if (this.completed || this.destroyed) return;
+    this.hp = Math.max(0, this.hp - amount);
+    addFloatingText(this.x + (Math.random() - 0.5) * 40, this.y - 20, `-${Math.round(amount)}`, "#ef4444", 16);
+    if (this.hp <= 0) {
+      this.destroyed = true;
+      if (window.soundEngine && window.soundEngine.playRocketExplode) window.soundEngine.playRocketExplode();
+      addScreenShake(16);
+      if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
+        window.soundEngine.speakRobot("CRITICAL FAILURE: SERVER CLUSTER DESTROYED. ROOT BACKUP COMPROMISED.", "ALERT AI");
+      }
+    }
+  }
+
+  update(dt) {
+    if (this.destroyed || this.completed) return true;
+
+    this.progress += dt;
+    const pct = this.progress / this.maxProgress;
+
+    // Wave assault drops at 25%, 50%, 75%
+    if (pct >= 0.25 && !this.waveSpawned[0]) {
+      this.waveSpawned[0] = true;
+      this.spawnAssaultWave(3);
+    } else if (pct >= 0.50 && !this.waveSpawned[1]) {
+      this.waveSpawned[1] = true;
+      this.spawnAssaultWave(4);
+    } else if (pct >= 0.75 && !this.waveSpawned[2]) {
+      this.waveSpawned[2] = true;
+      this.spawnAssaultWave(5);
+    }
+
+    if (this.progress >= this.maxProgress) {
+      this.complete();
+    }
+
+    return true;
+  }
+
+  spawnAssaultWave(count) {
+    if (window.soundEngine && window.soundEngine.playAmbushAlarm) window.soundEngine.playAmbushAlarm();
+    addScreenShake(8);
+    for (let i = 0; i < count; i++) {
+      const a = (Math.PI * 2 / count) * i;
+      const dist = 380 + Math.random() * 80;
+      dropPods.push(new HostileDropPod(this.x + Math.cos(a) * dist, this.y + Math.sin(a) * dist));
+    }
+    if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
+      window.soundEngine.speakRobot("WARNING: HOSTILE ASSAULT DETECTED TARGETING SERVER CLUSTER.", "TACTICAL AI");
+    }
+  }
+
+  complete() {
+    this.completed = true;
+    if (window.soundEngine && window.soundEngine.playObjectiveComplete) window.soundEngine.playObjectiveComplete();
+    addScreenShake(18);
+    particles.push(new ShockwaveRing(this.x, this.y, 320, "#22c55e"));
+
+    // Rewards: 3 weapon caches and health
+    weaponChests.push(new WeaponChest(this.x - 55, this.y + 45));
+    weaponChests.push(new WeaponChest(this.x + 55, this.y + 45));
+    pickups.push(new Pickup(this.x, this.y + 60, 'hp'));
+    pickups.push(new Pickup(this.x + 25, this.y + 60, 'fuel'));
+
+    if (dungeon) {
+      dungeon.onObjectiveProgress("DEFEND_SERVERS", 1);
+    }
+    if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
+      window.soundEngine.speakRobot("SERVER CLUSTER ENCRYPTED AND SECURED. ALL THREATS PURGED.", "SUPER DESTROYER");
+    }
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    // Defense perimeter ring
+    ctx.strokeStyle = this.completed ? "rgba(34, 197, 94, 0.6)" : "rgba(56, 189, 248, 0.4)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 8]);
+    ctx.beginPath();
+    ctx.arc(0, 0, 180, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Multi-rack server cluster monolith
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(-36, -30, 72, 60);
+    ctx.strokeStyle = this.completed ? "#22c55e" : "#0ea5e9";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(-36, -30, 72, 60);
+
+    // Blinking LED panels
+    for (let r = 0; r < 3; r++) {
+      for (let c = 0; c < 5; c++) {
+        const on = (Math.sin(gameTime * 12 + r * 3 + c * 2) > 0);
+        ctx.fillStyle = on ? (this.completed ? "#22c55e" : "#38bdf8") : "#1e293b";
+        ctx.fillRect(-28 + c * 12, -22 + r * 16, 8, 8);
+      }
+    }
+
+    // Health & Decryption Progress Bar
+    const barW = 120;
+    const barH = 8;
+    ctx.fillStyle = "rgba(15, 23, 42, 0.9)";
+    ctx.fillRect(-barW / 2, -this.radius - 22, barW, barH);
+    ctx.fillStyle = this.hp > this.maxHp * 0.3 ? "#22c55e" : "#ef4444";
+    ctx.fillRect(-barW / 2, -this.radius - 22, barW * (this.hp / this.maxHp), barH);
+
+    ctx.font = "bold 10px monospace";
+    ctx.fillStyle = "#ffffff";
+    ctx.textAlign = "center";
+    const pct = Math.min(100, Math.round((this.progress / this.maxProgress) * 100));
+    ctx.fillText(`SERVER CLUSTER: ${pct}% [${Math.round(this.hp)} HP]`, 0, -this.radius - 28);
+
+    ctx.restore();
+  }
+}
+
+// 2. ATTACK FORTRESS OBJECTIVE: SHIELD PYLON & FORTRESS CORE
+class ShieldPylon {
+  constructor(x, y, core) {
+    this.x = x;
+    this.y = y;
+    this.radius = 28;
+    this.hp = 650;
+    this.maxHp = 650;
+    this.core = core;
+    this.destroyed = false;
+  }
+
+  takeDamage(amount, source = "") {
+    if (this.destroyed) return;
+    this.hp = Math.max(0, this.hp - amount);
+    addFloatingText(this.x + (Math.random() - 0.5) * 30, this.y - 15, `-${Math.round(amount)}`, "#38bdf8", 14);
+    if (this.hp <= 0) {
+      this.destroyed = true;
+      if (window.soundEngine && window.soundEngine.playProprietaryDestroyed) window.soundEngine.playProprietaryDestroyed('normal');
+      addScreenShake(8);
+      for (let i = 0; i < 20; i++) {
+        const a = Math.random() * Math.PI * 2;
+        particles.push(new SparkParticle(this.x, this.y, Math.cos(a) * 180, Math.sin(a) * 180, "#38bdf8"));
+      }
+      if (this.core) this.core.onPylonDestroyed();
+    }
+  }
+
+  update(dt) {
+    return !this.destroyed;
+  }
+
+  draw(ctx) {
+    if (this.destroyed) return;
+    ctx.save();
+
+    // Draw radiant energy tether beam to central core
+    if (this.core && !this.core.destroyed) {
+      ctx.strokeStyle = "rgba(56, 189, 248, 0.75)";
+      ctx.lineWidth = 3.5;
+      ctx.beginPath();
+      ctx.moveTo(this.x, this.y);
+      ctx.lineTo(this.core.x, this.core.y);
+      ctx.stroke();
+    }
+
+    ctx.translate(this.x, this.y);
+
+    ctx.fillStyle = "#1e293b";
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#38bdf8";
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+
+    // Rotating shield crystal
+    const pulse = Math.sin(gameTime * 6) * 0.2 + 0.8;
+    ctx.fillStyle = `rgba(56, 189, 248, ${pulse})`;
+    ctx.beginPath();
+    ctx.moveTo(0, -18);
+    ctx.lineTo(12, 0);
+    ctx.lineTo(0, 18);
+    ctx.lineTo(-12, 0);
+    ctx.closePath();
+    ctx.fill();
+
+    // Health bar
+    const barW = 50;
+    ctx.fillStyle = "rgba(15, 23, 42, 0.9)";
+    ctx.fillRect(-barW / 2, -this.radius - 12, barW, 5);
+    ctx.fillStyle = "#38bdf8";
+    ctx.fillRect(-barW / 2, -this.radius - 12, barW * (this.hp / this.maxHp), 5);
+
+    ctx.restore();
+  }
+}
+
+class FortressTurret {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.radius = 26;
+    this.hp = 450;
+    this.maxHp = 450;
+    this.angle = 0;
+    this.cooldown = 1.6;
+    this.destroyed = false;
+  }
+
+  takeDamage(amount, source = "") {
+    if (this.destroyed) return;
+    this.hp = Math.max(0, this.hp - amount);
+    if (this.hp <= 0) {
+      this.destroyed = true;
+      if (window.soundEngine && window.soundEngine.playProprietaryDestroyed) window.soundEngine.playProprietaryDestroyed('normal');
+    }
+  }
+
+  update(dt) {
+    if (this.destroyed) return false;
+    if (!player) return true;
+
+    this.angle = Math.atan2(player.y - this.y, player.x - this.x);
+    this.cooldown -= dt;
+    if (this.cooldown <= 0) {
+      this.cooldown = 1.8;
+      const spd = 450;
+      enemyProjectiles.push(new EnemyProjectile(
+        this.x + Math.cos(this.angle) * 28,
+        this.y + Math.sin(this.angle) * 28,
+        Math.cos(this.angle) * spd,
+        Math.sin(this.angle) * spd,
+        6,
+        18,
+        "#f59e0b",
+        1.8,
+        "FORTRESS_CANNON"
+      ));
+    }
+    return true;
+  }
+
+  draw(ctx) {
+    if (this.destroyed) return;
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.angle);
+
+    ctx.fillStyle = "#334155";
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Twin cannon barrels
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(8, -8, 22, 5);
+    ctx.fillRect(8, 3, 22, 5);
+
+    ctx.restore();
+  }
+}
+
+class FortressCore {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.radius = 64;
+    this.hp = 2800;
+    this.maxHp = 2800;
+    this.pylonsRemaining = 3;
+    this.destroyed = false;
+    this.pylons = [];
+    this.turrets = [];
+
+    // Spawn 3 orbiting shield pylons and 2 heavy fortress turrets
+    for (let i = 0; i < 3; i++) {
+      const a = (Math.PI * 2 / 3) * i;
+      const px = this.x + Math.cos(a) * 260;
+      const py = this.y + Math.sin(a) * 260;
+      const pylon = new ShieldPylon(px, py, this);
+      this.pylons.push(pylon);
+      objectiveTargets.push(pylon);
+    }
+    for (let i = 0; i < 2; i++) {
+      const a = (Math.PI) * i + Math.PI / 4;
+      const tx = this.x + Math.cos(a) * 180;
+      const ty = this.y + Math.sin(a) * 180;
+      const turret = new FortressTurret(tx, ty);
+      this.turrets.push(turret);
+      objectiveTargets.push(turret);
+    }
+  }
+
+  onPylonDestroyed() {
+    this.pylonsRemaining = this.pylons.filter(p => !p.destroyed).length;
+    if (this.pylonsRemaining === 0) {
+      if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
+        window.soundEngine.speakRobot("FORTRESS SHIELD GENERATORS DESTROYED. CORE IS VULNERABLE.", "SUPER DESTROYER");
+      }
+      addScreenShake(12);
+      addFloatingText(this.x, this.y - 70, "SHIELD COLLAPSED - DEMOLISH CORE!", "#ef4444", 26);
+    }
+  }
+
+  takeDamage(amount, source = "") {
+    if (this.destroyed) return;
+    if (this.pylonsRemaining > 0) {
+      // Shield absorbs 100% of damage
+      if (window.soundEngine && window.soundEngine.playShieldDeflect) window.soundEngine.playShieldDeflect();
+      addFloatingText(this.x + (Math.random() - 0.5) * 40, this.y - 30, "DEFLECTED - DESTROY PYLONS FIRST!", "#38bdf8", 16);
+      return;
+    }
+
+    this.hp = Math.max(0, this.hp - amount);
+    addFloatingText(this.x + (Math.random() - 0.5) * 40, this.y - 30, `-${Math.round(amount)}`, "#ef4444", 18);
+    if (this.hp <= 0) {
+      this.destroy();
+    }
+  }
+
+  destroy() {
+    this.destroyed = true;
+    if (window.soundEngine && window.soundEngine.playRocketExplode) window.soundEngine.playRocketExplode();
+    addScreenShake(28);
+    screenFlash = 1.0;
+    particles.push(new ShockwaveRing(this.x, this.y, 400, "#ef4444"));
+
+    for (let i = 0; i < 60; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const spd = 120 + Math.random() * 320;
+      particles.push(new SparkParticle(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, Math.random() < 0.5 ? "#ef4444" : "#facc15"));
+    }
+
+    weaponChests.push(new WeaponChest(this.x - 40, this.y));
+    weaponChests.push(new WeaponChest(this.x + 40, this.y));
+
+    if (dungeon) {
+      dungeon.onObjectiveProgress("ATTACK_FORTRESS", 1);
+    }
+    if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
+      window.soundEngine.speakRobot("CITADEL CORE ANNIHILATED. FORTRESS LIBERATED.", "SUPER DESTROYER");
+    }
+  }
+
+  update(dt) {
+    return !this.destroyed;
+  }
+
+  draw(ctx) {
+    if (this.destroyed) return;
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    // Fortress Core Dome
+    ctx.fillStyle = "#0f172a";
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Invulnerability shield sphere if pylons exist
+    if (this.pylonsRemaining > 0) {
+      const pulse = Math.sin(gameTime * 8) * 0.15 + 0.85;
+      ctx.fillStyle = `rgba(56, 189, 248, ${0.35 * pulse})`;
+      ctx.beginPath();
+      ctx.arc(0, 0, this.radius + 14, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#38bdf8";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      ctx.fillStyle = "#38bdf8";
+      ctx.font = "bold 11px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(`INVULNERABLE (${this.pylonsRemaining} PYLONS)`, 0, -this.radius - 20);
+    } else {
+      ctx.strokeStyle = "#ef4444";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      const barW = 140;
+      ctx.fillStyle = "rgba(15, 23, 42, 0.9)";
+      ctx.fillRect(-barW / 2, -this.radius - 20, barW, 8);
+      ctx.fillStyle = "#ef4444";
+      ctx.fillRect(-barW / 2, -this.radius - 20, barW * (this.hp / this.maxHp), 8);
+
+      ctx.font = "bold 11px monospace";
+      ctx.fillStyle = "#ef4444";
+      ctx.textAlign = "center";
+      ctx.fillText(`VULNERABLE CORE: ${Math.round(this.hp)} HP`, 0, -this.radius - 26);
+    }
+
+    ctx.restore();
+  }
+}
+
+// 3. SETUP LINK OBJECTIVE: UPLINK RELAY BEACON
+class UplinkRelay {
+  constructor(x, y, index) {
+    this.x = x;
+    this.y = y;
+    this.radius = 28;
+    this.captureRadius = 110;
+    this.index = index;
+    this.progress = 0;
+    this.maxProgress = 8.0; // 8s upload
+    this.completed = false;
+  }
+
+  update(dt) {
+    if (this.completed) return true;
+    if (!player) return true;
+
+    const dist = Math.hypot(player.x - this.x, player.y - this.y);
+    if (dist <= this.captureRadius) {
+      this.progress += dt;
+      if (Math.random() < 0.2) {
+        particles.push(new SparkParticle(
+          this.x + (Math.random() - 0.5) * 60,
+          this.y + (Math.random() - 0.5) * 60,
+          0,
+          -40,
+          "#22c55e"
+        ));
+      }
+      if (this.progress >= this.maxProgress) {
+        this.complete();
+      }
+    }
+    return true;
+  }
+
+  complete() {
+    this.completed = true;
+    if (window.soundEngine && window.soundEngine.playObjectiveComplete) window.soundEngine.playObjectiveComplete();
+    addScreenShake(8);
+    particles.push(new ShockwaveRing(this.x, this.y, 180, "#22c55e"));
+
+    if (dungeon) {
+      dungeon.onObjectiveProgress("SETUP_UPLINK", 1);
+    }
+    if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
+      window.soundEngine.speakRobot(`BEACON ${this.index + 1} ONLINE. MESH PACKETS ROUTED.`, "SUPER DESTROYER");
+    }
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    // Capture radius ring
+    ctx.strokeStyle = this.completed ? "rgba(34, 197, 94, 0.75)" : "rgba(234, 179, 8, 0.4)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 6]);
+    ctx.beginPath();
+    ctx.arc(0, 0, this.captureRadius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Antenna tower body
+    ctx.fillStyle = "#1e293b";
+    ctx.fillRect(-10, -28, 20, 48);
+
+    ctx.fillStyle = this.completed ? "#22c55e" : "#facc15";
+    ctx.beginPath();
+    ctx.arc(0, -32, 12, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Beam to sky if completed
+    if (this.completed) {
+      ctx.fillStyle = "rgba(34, 197, 94, 0.35)";
+      ctx.fillRect(-6, -10000, 12, 10000);
+    }
+
+    ctx.font = "bold 10px monospace";
+    ctx.fillStyle = this.completed ? "#22c55e" : "#facc15";
+    ctx.textAlign = "center";
+    const pct = Math.min(100, Math.round((this.progress / this.maxProgress) * 100));
+    ctx.fillText(this.completed ? `UPLINK ${this.index + 1}: CONNECTED` : `UPLINK ${this.index + 1}: ${pct}%`, 0, -this.radius - 20);
+
+    ctx.restore();
+  }
+}
+
+// ============================================================================
+// --- ENVIRONMENTAL BIOME HAZARDS ---
+// ============================================================================
+class SteamVent {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.radius = 28;
+    this.timer = Math.random() * 3.0;
+    this.state = 'dormant'; // 'dormant', 'warning', 'erupting'
+    this.stateDuration = 2.5;
+  }
+
+  update(dt) {
+    this.timer += dt;
+    if (this.state === 'dormant' && this.timer > 3.0) {
+      this.state = 'warning';
+      this.timer = 0;
+    } else if (this.state === 'warning' && this.timer > 1.0) {
+      this.state = 'erupting';
+      this.timer = 0;
+      if (window.soundEngine && window.soundEngine.playNapalmDrop) window.soundEngine.playNapalmDrop();
+      addScreenShake(3);
+    } else if (this.state === 'erupting' && this.timer > 1.6) {
+      this.state = 'dormant';
+      this.timer = 0;
+    }
+
+    if (this.state === 'erupting') {
+      // Spew flame particles
+      particles.push(new FlameParticle(
+        this.x + (Math.random() - 0.5) * 20,
+        this.y + (Math.random() - 0.5) * 20,
+        (Math.random() - 0.5) * 50,
+        -180 - Math.random() * 80,
+        0.4,
+        35,
+        false
+      ));
+
+      // Damage player if standing on vent
+      if (player && Math.hypot(player.x - this.x, player.y - this.y) < this.radius + player.radius) {
+        player.takeDamage(45 * dt, "STEAM_VENT");
+      }
+      for (const enemy of enemies) {
+        if (Math.hypot(enemy.x - this.x, enemy.y - this.y) < this.radius + enemy.radius) {
+          enemy.takeDamage(55 * dt, "STEAM_VENT");
+        }
+      }
+    }
+    return true;
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    // Industrial vent grate
+    ctx.fillStyle = "#292524";
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = this.state === 'warning' ? "#ef4444" : (this.state === 'erupting' ? "#ea580c" : "#78716c");
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+
+    ctx.restore();
+  }
+}
+
+class CryoPool {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.radius = 42;
+  }
+  update(dt) {
+    if (player && Math.hypot(player.x - this.x, player.y - this.y) < this.radius + player.radius) {
+      player.webSlowTimer = 0.5; // Freezing slow
+      if (Math.random() < 0.2) {
+        particles.push(new SparkParticle(player.x, player.y, 0, -20, "#38bdf8"));
+      }
+    }
+    return true;
+  }
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.fillStyle = "rgba(6, 182, 212, 0.35)";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, this.radius, this.radius * 0.65, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(56, 189, 248, 0.6)";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+class AcidPool {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.radius = 38;
+  }
+  update(dt) {
+    if (player && Math.hypot(player.x - this.x, player.y - this.y) < this.radius + player.radius) {
+      player.takeDamage(15 * dt, "CORROSIVE_ACID");
+      player.corrodedTimer = 2.0;
+    }
+    for (const enemy of enemies) {
+      if (Math.hypot(enemy.x - this.x, enemy.y - this.y) < this.radius + enemy.radius) {
+        enemy.takeDamage(25 * dt, "CORROSIVE_ACID");
+        enemy.corrodedTimer = 2.0;
+      }
+    }
+    return true;
+  }
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.fillStyle = "rgba(34, 197, 94, 0.4)";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, this.radius, this.radius * 0.65, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(74, 222, 128, 0.7)";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+class SecurityTripwire {
+  constructor(x1, y1, x2, y2) {
+    this.x1 = x1;
+    this.y1 = y1;
+    this.x2 = x2;
+    this.y2 = y2;
+    this.tripped = false;
+  }
+  update(dt) {
+    if (this.tripped || !player) return true;
+    // Check if player crosses the segment
+    const distToSeg = this.distToSegment(player.x, player.y, this.x1, this.y1, this.x2, this.y2);
+    if (distToSeg < player.radius) {
+      this.tripped = true;
+      if (window.soundEngine && window.soundEngine.playAmbushAlarm) window.soundEngine.playAmbushAlarm();
+      addScreenShake(8);
+      dropPods.push(new HostileDropPod(player.x + 180, player.y));
+      dropPods.push(new HostileDropPod(player.x - 180, player.y));
+      if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
+        window.soundEngine.speakRobot("SECURITY TRIPWIRE COMPROMISED. DEPLOYING ENFORCER DROPPODS.", "WALLED GARDEN SEC");
+      }
+    }
+    return true;
+  }
+  distToSegment(px, py, x1, y1, x2, y2) {
+    const l2 = (x2 - x1) ** 2 + (y2 - y1) ** 2;
+    if (l2 === 0) return Math.hypot(px - x1, py - y1);
+    let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(px - (x1 + t * (x2 - x1)), py - (y1 + t * (y2 - y1)));
+  }
+  draw(ctx) {
+    if (this.tripped) return;
+    ctx.save();
+    ctx.strokeStyle = "rgba(239, 68, 68, 0.85)";
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(this.x1, this.y1);
+    ctx.lineTo(this.x2, this.y2);
+    ctx.stroke();
+
+    // End bollards
+    ctx.fillStyle = "#ca8a04";
+    ctx.fillRect(this.x1 - 4, this.y1 - 4, 8, 8);
+    ctx.fillRect(this.x2 - 4, this.y2 - 4, 8, 8);
+    ctx.restore();
+  }
+}
+
+class SingularityRift {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.radius = 75;
+    this.spin = 0;
+  }
+  update(dt) {
+    this.spin += dt * 4;
+    // Gentle pull
+    if (player) {
+      const d = Math.hypot(player.x - this.x, player.y - this.y);
+      if (d < 280 && d > 10) {
+        const pull = (1 - d / 280) * 110 * dt;
+        player.vx += ((this.x - player.x) / d) * pull;
+        player.vy += ((this.y - player.y) / d) * pull;
+      }
+    }
+    return true;
+  }
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.spin);
+    ctx.fillStyle = "rgba(126, 34, 206, 0.25)";
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#c084fc";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+class DoorBarrier {
+  constructor(tx, ty, room) {
+    this.tx = tx;
+    this.ty = ty;
+    this.x = (tx + 0.5) * TILE_SIZE;
+    this.y = (ty + 0.5) * TILE_SIZE;
+    this.room = room;
+  }
+
+  isSolid() {
+    return this.room.locked;
+  }
+
+  draw(ctx) {
+    if (!this.room.locked) {
+      ctx.save();
+      ctx.strokeStyle = "rgba(56, 189, 248, 0.35)";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(this.tx * TILE_SIZE + 4, this.ty * TILE_SIZE + 4, TILE_SIZE - 8, TILE_SIZE - 8);
+      ctx.restore();
+      return;
+    }
+    ctx.save();
+    ctx.fillStyle = "rgba(239, 68, 68, 0.35)";
+    ctx.fillRect(this.tx * TILE_SIZE, this.ty * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+
+    ctx.strokeStyle = "#ef4444";
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(this.tx * TILE_SIZE, (this.ty + 0.5) * TILE_SIZE);
+    ctx.lineTo((this.tx + 1) * TILE_SIZE, (this.ty + 0.5) * TILE_SIZE);
+    ctx.stroke();
+
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(this.tx * TILE_SIZE, (this.ty + 0.5) * TILE_SIZE);
+    ctx.lineTo((this.tx + 1) * TILE_SIZE, (this.ty + 0.5) * TILE_SIZE);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+class Room {
+  constructor(id, rx, ry, rw, rh, type = "COMBAT") {
+    this.id = id;
+    this.rx = rx; // Tile coordinates
+    this.ry = ry;
+    this.rw = rw;
+    this.rh = rh;
+    this.x = rx * TILE_SIZE;
+    this.y = ry * TILE_SIZE;
+    this.width = rw * TILE_SIZE;
+    this.height = rh * TILE_SIZE;
+    this.cx = this.x + this.width / 2;
+    this.cy = this.y + this.height / 2;
+    this.radius = Math.max(this.width, this.height) / 2;
+    this.type = type; // "SPAWN", "COMBAT", "OBJECTIVE", "TREASURE", "BOSS", "EXIT"
+    this.doors = [];
+    this.cleared = (type === "SPAWN" || type === "TREASURE" || type === "EXIT");
+    this.locked = false;
+    this.visited = false;
+    this.wavesTotal = (type === "BOSS" ? 1 : 2);
+    this.wavesCleared = 0;
+    this.roomEnemies = [];
+  }
+
+  containsPoint(px, py) {
+    const d = Math.hypot(px - this.cx, py - this.cy);
+    return d <= this.radius || (px >= this.x && px <= this.x + this.width && py >= this.y && py <= this.y + this.height);
+  }
+
+  onPlayerEnter() {
+    this.visited = true;
+    if (this.cleared || this.locked) return;
+
+    if (this.type === "COMBAT" || this.type === "OBJECTIVE" || this.type === "BOSS") {
+      this.locked = true;
+      window.soundEngine.playRoomLockdown();
+      addScreenShake(12);
+      addFloatingText(this.cx, this.cy - 100, "⚠️ SECTOR LOCKDOWN - PURGE HOSTILES! ⚠️", "#ef4444", 28);
+      this.spawnRoomWave();
+    }
+  }
+
+  spawnRoomWave() {
+    if (this.type === "BOSS") {
+      let boss;
+      const bossType = (dungeon.sectorMajor - 1) % 4;
+      if (bossType === 0) boss = new BossBloatware(this.cx, this.cy);
+      else if (bossType === 1) boss = new BossVendorLockin(this.cx, this.cy);
+      else if (bossType === 2) boss = new BossCloudMonopoly(this.cx, this.cy);
+      else boss = new BossOmegaAI(this.cx, this.cy);
+
+      boss.hp *= dungeon.getDifficultyMultiplier();
+      boss.maxHp = boss.hp;
+      enemies.push(boss);
+      this.roomEnemies.push(boss);
+      return;
+    }
+
+    const enemyCount = Math.floor(5 + dungeon.sectorNum * 1.3);
+    for (let i = 0; i < enemyCount; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 50 + Math.random() * (this.radius * 0.7);
+      let sx = this.cx + Math.cos(angle) * dist;
+      let sy = this.cy + Math.sin(angle) * dist;
+      if (dungeon && dungeon.isSolid(sx, sy)) {
+        sx = this.cx;
+        sy = this.cy;
+      }
+      const enemy = dungeon.createEnemyForSector(sx, sy);
+      enemies.push(enemy);
+      this.roomEnemies.push(enemy);
+    }
+  }
+
+  update(dt) {
+    if (!this.locked) return;
+
+    this.roomEnemies = this.roomEnemies.filter(e => enemies.includes(e) && e.hp > 0);
+
+    if (this.roomEnemies.length === 0) {
+      this.wavesCleared++;
+      if (this.wavesCleared < this.wavesTotal && this.type !== "BOSS") {
+        addFloatingText(this.cx, this.cy, "WAVE 2 INCOMING!", "#f97316", 24);
+        this.spawnRoomWave();
+      } else {
+        this.locked = false;
+        this.cleared = true;
+        window.soundEngine.playRoomClear();
+        addFloatingText(this.cx, this.cy - 60, "ROOM PURGED! LOCKDOWN LIFTED!", "#22c55e", 26);
+
+        for (let i = 0; i < 6; i++) {
+          pickups.push(new Pickup(this.cx + (Math.random() - 0.5) * 80, this.cy + (Math.random() - 0.5) * 80, 'xp'));
+        }
+        pickups.push(new Pickup(this.cx + 20, this.cy, 'hp'));
+        pickups.push(new Pickup(this.cx - 20, this.cy, 'fuel'));
+
+        if (Math.random() < 0.45) {
+          const available = WEAPON_CATALOG.filter(w => w.id !== player.heldWeapons[0].id && w.id !== player.heldWeapons[1].id);
+          const dropW = available[Math.floor(Math.random() * available.length)] || WEAPON_CATALOG[2];
+          groundWeapons.push(new GroundWeapon(this.cx, this.cy, dropW));
+        }
+
+        // Rare chance of discovering a relic Space Marine Exosuit (fair and rewarding)
+        if (Math.random() < 0.08) {
+          spaceMarineSuitPickups.push(new SpaceMarineSuitPickup(this.cx, this.cy));
+          addFloatingText(this.cx, this.cy - 40, "⚡ RARE POWER EXOSUIT DISCOVERED! ⚡", "#06b6d4", 22);
+        }
+
+        dungeon.onRoomCleared(this);
+      }
+    }
+  }
+}
+
+// --- ADAPTIVE ENDLESS DIRECTOR ---
+// Tracks player actions (favored weapons, damage suffered, kill momentum)
+// to procedurally adapt terrain biomes, environmental hazards, and tactical modifiers!
+class AdaptiveDirector {
+  constructor() {
+    this.totalKills = 0;
+    this.weaponUsage = { flame: 0, buckshot: 0, bolter: 0, minigun: 0, rocket: 0, railgun: 0, cryo: 0 };
+    this.totalDamageTaken = 0;
+    this.stratagemsCalled = 0;
+    this.sectorsCleared = 0;
+    this.currentBiome = "EMERALD_GLADE";
+    this.sectorModifier = "TACTICAL_ASSAULT";
+  }
+
+  recordKill(weaponType = "flame") {
+    this.totalKills++;
+    if (this.weaponUsage[weaponType] !== undefined) {
+      this.weaponUsage[weaponType]++;
+    } else {
+      this.weaponUsage.flame++;
+    }
+  }
+
+  recordDamageTaken(amount) {
+    this.totalDamageTaken += amount;
+  }
+
+  recordStratagem() {
+    this.stratagemsCalled++;
+  }
+
+  onSectorAdvance(sectorNum) {
+    this.sectorsCleared++;
+    const biomes = ["EMERALD_GLADE", "TOXIC_SWAMP", "MONOLITH_CAVERNS", "OVERCLOCK_REACTOR"];
+    this.currentBiome = biomes[(sectorNum - 1) % biomes.length];
+
+    // Adaptively tune modifiers based on player performance:
+    if (this.totalKills > 35 && this.totalDamageTaken < 80) {
+      this.sectorModifier = "HOSTILE_SURGE"; // High combat skill -> heavier enemy patrols
+    } else if (this.totalDamageTaken > 200) {
+      this.sectorModifier = "CACHE_DROP"; // Struggling -> emergency supply cache airdropped
+    } else if (this.weaponUsage.flame > 25) {
+      this.sectorModifier = "FIREWALL_ARMOR"; // Pyromaniac player -> swampy terrain & armored units
+    } else if (this.weaponUsage.railgun + this.weaponUsage.bolter > 20) {
+      this.sectorModifier = "LONG_RANGE_OUTPOSTS"; // Precision player -> scattered monolith cover
+    } else {
+      this.sectorModifier = "TACTICAL_ASSAULT";
+    }
+  }
+
+  getTacticalBrief() {
+    switch (this.sectorModifier) {
+      case "HOSTILE_SURGE":
+        return "⚡ [DIRECTOR: HIGH PURGE RATE -> HEAVY VANGUARD PATROLS DEPLOYED]";
+      case "CACHE_DROP":
+        return "📦 [DIRECTOR: INTEGRITY WARNING -> EMERGENCY WEAPON CACHE DROPPED]";
+      case "FIREWALL_ARMOR":
+        return "🛡️ [DIRECTOR: ADAPTING TO PYRO PURGE -> WETLAND MARSH & HEAVY UNITS]";
+      case "LONG_RANGE_OUTPOSTS":
+        return "🎯 [DIRECTOR: LONG-RANGE PROFILE -> MONOLITH COVER SCATTERED]";
+      default:
+        return "🛰️ [DIRECTOR: RECON COMPLETE -> PURGE HOSTILES & LIBERATE REPO]";
+    }
+  }
+}
+
+const adaptiveDirector = new AdaptiveDirector();
+window.adaptiveDirector = adaptiveDirector;
+
+class ObjectiveManager {
+  constructor(dungeon) {
+    this.dungeon = dungeon;
+    this.tier = 1;
+    this.biome = (dungeon && dungeon.currentBiome) ? dungeon.currentBiome : null;
+    this.objectiveType = "DEFEND_SERVERS";
+    this.objectives = [];
+    this.generateTierObjectives();
+  }
+
+  generateTierObjectives() {
+    this.objectives = [
+      {
+        id: "DESTROY_ANTENNAS",
+        text: `Purge Outpost Antennas`,
+        current: 0,
+        required: 1 + Math.min(2, Math.floor(this.tier / 2)),
+        done: false
+      },
+      {
+        id: "PURGE_ENEMIES",
+        text: `Eliminate Proprietary Hostiles`,
+        current: 0,
+        required: 10 + this.tier * 4,
+        done: false
+      },
+      {
+        id: "PURGE_BOSS",
+        text: `Defeat Corporate Monopoly Boss`,
+        current: 0,
+        required: 1,
+        done: false
+      }
+    ];
+    this.updateUI();
+  }
+
+  setupBiomeObjectives(biome, objectiveType, tier) {
+    this.tier = tier || this.tier;
+    this.biome = biome || ((this.dungeon && this.dungeon.currentBiome) ? this.dungeon.currentBiome : null);
+    this.objectiveType = objectiveType || "DEFEND_SERVERS";
+
+    switch (this.objectiveType) {
+      case "DEFEND_SERVERS":
+        this.objectives = [
+          {
+            id: "DEFEND_SERVERS",
+            text: "Defend Server Cluster Node (Hold Position)",
+            current: 0,
+            required: 1,
+            done: false
+          },
+          {
+            id: "PURGE_ENEMIES",
+            text: "Eliminate Hostile Outpost Defenders",
+            current: 0,
+            required: 12 + this.tier * 3,
+            done: false
+          }
+        ];
+        break;
+      case "ATTACK_FORTRESS":
+        this.objectives = [
+          {
+            id: "ATTACK_FORTRESS",
+            text: "Destroy Shield Pylons & Demolish Fortress Core",
+            current: 0,
+            required: 1,
+            done: false
+          },
+          {
+            id: "PURGE_ENEMIES",
+            text: "Eliminate Fortress Garrison Enforcers",
+            current: 0,
+            required: 14 + this.tier * 4,
+            done: false
+          }
+        ];
+        break;
+      case "SETUP_UPLINK":
+        this.objectives = [
+          {
+            id: "SETUP_UPLINK",
+            text: "Calibrate 3 Encrypted Mesh Uplinks",
+            current: 0,
+            required: 3,
+            done: false
+          },
+          {
+            id: "PURGE_ENEMIES",
+            text: "Clear Hostile Signals in Sector",
+            current: 0,
+            required: 10 + this.tier * 3,
+            done: false
+          }
+        ];
+        break;
+      case "ELITE_BOUNTY":
+      case "PURGE_BOSS":
+        const bossName = (this.biome && this.biome.bossId) ? this.biome.bossId.replace('_', ' ').toUpperCase() : "MONOPOLY BOSS";
+        this.objectives = [
+          {
+            id: "PURGE_BOSS",
+            text: `Purge Sector Apex: ${bossName}`,
+            current: 0,
+            required: 1,
+            done: false
+          },
+          {
+            id: "PURGE_ENEMIES",
+            text: "Eliminate Proprietary Escort Guard",
+            current: 0,
+            required: 10 + this.tier * 3,
+            done: false
+          }
+        ];
+        break;
+      default:
+        this.generateTierObjectives();
+        return;
+    }
+    this.updateUI();
+  }
+
+  generateForSector(sectorMajor, sectorMinor, sectorNum) {
+    this.tier = sectorNum || 1;
+    this.generateTierObjectives();
+  }
+
+  updateUI() {
+    const titleEl = document.getElementById('sectorTitle');
+    if (titleEl) {
+      const bLabel = this.biome ? this.biome.name : (window.adaptiveDirector ? (window.adaptiveDirector.currentBiome || "WILDERNESS") : "WILDERNESS");
+      titleEl.innerText = `TIER ${this.tier} // ${bLabel}`;
+    }
+
+    const badgeEl = document.getElementById('objectiveStatusBadge');
+    const isAllDone = this.isComplete();
+    if (badgeEl) {
+      if (isAllDone) {
+        badgeEl.className = "obj-badge complete";
+        badgeEl.innerText = "PORTALS OPEN";
+      } else {
+        badgeEl.className = "obj-badge in-progress";
+        badgeEl.innerText = "ACTIVE";
+      }
+    }
+
+    const listEl = document.getElementById('objectiveList');
+    if (listEl) {
+      listEl.innerHTML = this.objectives.map(obj => `
+        <div class="objective-item ${obj.done ? 'done' : ''}">
+          <span class="obj-check">${obj.done ? '✓' : '◻'}</span>
+          <span>${obj.text} (${obj.current}/${obj.required})</span>
+        </div>
+      `).join('');
+    }
+
+    const waveEl = document.getElementById('waveDisplay');
+    if (waveEl && player) {
+      const distM = Math.round(Math.hypot(player.x, player.y) / 10);
+      waveEl.innerText = `TIER ${this.tier} • ${distM}m DEEP`;
+    }
+  }
+
+  progress(objId, amount = 1) {
+    let changed = false;
+    for (const obj of this.objectives) {
+      if (obj.id === objId && !obj.done) {
+        obj.current = Math.min(obj.required, obj.current + amount);
+        if (obj.current >= obj.required) {
+          obj.done = true;
+          if (window.soundEngine && window.soundEngine.playObjectiveComplete) {
+            window.soundEngine.playObjectiveComplete();
+          }
+          if (player) {
+            addFloatingText(player.x, player.y - 60, `OBJECTIVE COMPLETE: ${obj.text}!`, "#22c55e", 24);
+          }
+        }
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.checkAllDone();
+    }
+  }
+
+  checkAllDone() {
+    const allDone = this.objectives.length > 0 && this.objectives.every(o => o.done);
+    this.updateUI();
+    if (allDone) {
+      if (window.soundEngine && window.soundEngine.playObjectiveComplete) {
+        window.soundEngine.playObjectiveComplete();
+      }
+      if (player) {
+        addFloatingText(player.x, player.y - 90, `⭐ TIER ${this.tier} CONQUERED! EXTRACTION PORTALS ACTIVE! ⭐`, "#facc15", 28);
+        addScreenShake(14);
+        screenFlash = 0.8;
+      }
+      if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
+        window.soundEngine.speakRobot("ALL EXPEDITION DIRECTIVES ACCOMPLISHED. MULTIPLE TRANSIT PORTALS ONLINE. SELECT EXPEDITION ROUTE.", "SUPER DESTROYER");
+      }
+      if (this.dungeon && typeof this.dungeon.spawnExtractionPortals === 'function') {
+        this.dungeon.spawnExtractionPortals();
+      }
+      this.tier++;
+      if (window.adaptiveDirector && window.adaptiveDirector.onSectorAdvance) {
+        window.adaptiveDirector.onSectorAdvance(this.tier);
+      }
+      setTimeout(() => {
+        if (gameState === STATE.PLAYING) showUpgradeScreen();
+      }, 750);
+    }
+    return allDone;
+  }
+
+  isComplete() {
+    return this.objectives.length > 0 && this.objectives.every(o => o.done);
+  }
+}
+
+// --- HOSTILE REINFORCEMENTS & AMBUSH INFRASTRUCTURE ---
+class HostileDropPod {
+  constructor(targetX, targetY) {
+    this.x = targetX;
+    this.targetY = targetY;
+    this.y = targetY - 1100;
+    this.speed = 2300;
+    this.landed = false;
+  }
+  update(dt) {
+    if (!this.landed) {
+      this.y += this.speed * dt;
+      if (this.y >= this.targetY) {
+        this.y = this.targetY;
+        this.landed = true;
+        if (window.soundEngine) window.soundEngine.playNoiseBurst(0.4, 0.5, 2400, 100);
+        addScreenShake(12);
+        particles.push(new ShockwaveRing(this.x, this.y, 140));
+        if (dungeon) {
+          enemies.push(dungeon.createEnemyForSector(this.x, this.y));
+        }
+        return false;
+      }
+    }
+    return true;
+  }
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.fillStyle = "#7f1d1d";
+    ctx.fillRect(-14, -30, 28, 60);
+    ctx.strokeStyle = "#ef4444";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(-14, -30, 28, 60);
+    ctx.fillStyle = "#ef4444";
+    ctx.beginPath();
+    ctx.moveTo(-12, -30);
+    ctx.lineTo(0, -60 - Math.random() * 25);
+    ctx.lineTo(12, -30);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+class AmbushDirector {
+  constructor() {
+    this.timer = 45.0;
+    this.lastDist = 0;
+  }
+  update(dt) {
+    if (gameState !== STATE.PLAYING || !player) return;
+    this.timer -= dt;
+    const dist = Math.hypot(player.x, player.y);
+    const distDelta = dist - this.lastDist;
+
+    if ((this.timer <= 0 && dist > 600) || distDelta > 1900) {
+      this.triggerAmbush();
+      this.timer = 55 + Math.random() * 35;
+      this.lastDist = dist;
+    }
+  }
+  triggerAmbush() {
+    if (!player) return;
+    if (window.soundEngine && window.soundEngine.playAmbushAlarm) window.soundEngine.playAmbushAlarm();
+    addScreenShake(14);
+    const banner = document.getElementById('ambushAlertBanner');
+    if (banner) {
+      banner.style.display = 'flex';
+      setTimeout(() => { if (banner) banner.style.display = 'none'; }, 4500);
+    }
+    window.broadcastBossStoryDialogue("PROPRIETARY RECON", "Tux signature verified! Deploying ambush drop-pods immediately!", "#ef4444", "🚨");
+
+    const count = 3 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < count; i++) {
+      const a = (Math.PI * 2 / count) * i + Math.random() * 0.4;
+      const rad = 240 + Math.random() * 180;
+      dropPods.push(new HostileDropPod(player.x + Math.cos(a) * rad, player.y + Math.sin(a) * rad));
+    }
+  }
+}
+
+class BossDirector {
+  constructor() {
+    this.bossTiersDefeated = 0;
+    this.nextBossDist = 1800; // First speaking boss at 1800px from spawn
+    this.bossRoster = [
+      "ballmer_bot",
+      "patent_troll_sovereign",
+      "oracle_audit_archon",
+      "crowdstrike_null_pointer",
+      "apple_garden_warden"
+    ];
+  }
+  update(dt) {
+    if (gameState !== STATE.PLAYING || !player) return;
+    const dist = Math.hypot(player.x, player.y);
+
+    if (dist >= this.nextBossDist) {
+      const activeBoss = enemies.find(e => e.isBoss);
+      if (!activeBoss) {
+        this.spawnSpeakingBoss();
+        this.nextBossDist += 2400; // Next speaking boss at +2400px
+      }
+    }
+  }
+  spawnSpeakingBoss() {
+    if (!player) return;
+    const bossId = this.bossRoster[this.bossTiersDefeated % this.bossRoster.length];
+    this.bossTiersDefeated++;
+
+    const a = player.angle || 0;
+    const sx = player.x + Math.cos(a) * 580;
+    const sy = player.y + Math.sin(a) * 580;
+
+    let bossEnemy;
+    if (window.EnemyModelFactory && window.EnemyModelFactory.getTemplate(bossId)) {
+      bossEnemy = window.EnemyModelFactory.createFromSpec(bossId, sx, sy);
+    } else {
+      bossEnemy = new BossBloatware(sx, sy);
+    }
+
+    const distMult = 1.0 + (Math.hypot(sx, sy) / 2800) * 0.4;
+    bossEnemy.hp = Math.round(bossEnemy.hp * distMult);
+    bossEnemy.maxHp = bossEnemy.hp;
+    if (bossEnemy.shield) {
+      bossEnemy.shield = Math.round(bossEnemy.shield * distMult);
+      bossEnemy.maxShield = bossEnemy.shield;
+    }
+
+    enemies.push(bossEnemy);
+    addScreenShake(18);
+    screenFlash = 1.0;
+  }
+}
+
+class ReinforcementAntenna {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.radius = 32;
+    this.hp = 700;
+    this.maxHp = 700;
+    this.shield = 250;
+    this.maxShield = 250;
+    this.label = "REINFORCEMENT ANTENNA";
+    this.isAlarming = false;
+    this.alarmTimer = 8.0;
+    this.radarAngle = 0;
+    this.destroyed = false;
+  }
+
+  takeDamage(dmg, source = "TUX") {
+    if (this.destroyed) return;
+    if (this.shield > 0) {
+      if (this.shield >= dmg) {
+        this.shield -= dmg;
+        dmg = 0;
+      } else {
+        dmg -= this.shield;
+        this.shield = 0;
+      }
+    }
+    this.hp -= dmg;
+    addFloatingText(this.x, this.y - 40, Math.round(dmg), this.shield > 0 ? "#06b6d4" : "#f87171", 16);
+    if (!this.isAlarming && player) {
+      this.isAlarming = true;
+      if (window.soundEngine && window.soundEngine.playAmbushAlarm) window.soundEngine.playAmbushAlarm();
+      window.broadcastBossStoryDialogue("OUTPOST ALARM", "SECURITY BREACH! CALLING ORBITAL REINFORCEMENTS! 8 SECONDS!", "#ef4444", "🚨");
+    }
+    if (this.hp <= 0) {
+      this.die();
+    }
+  }
+
+  update(dt) {
+    if (this.destroyed) return false;
+    this.radarAngle += dt * 3.5;
+
+    // Check proximity alarm
+    if (!this.isAlarming && player && Math.hypot(player.x - this.x, player.y - this.y) < 450) {
+      this.isAlarming = true;
+      if (window.soundEngine && window.soundEngine.playAmbushAlarm) window.soundEngine.playAmbushAlarm();
+      window.broadcastBossStoryDialogue("OUTPOST ALARM", "SECURITY BREACH! CALLING ORBITAL REINFORCEMENTS! 8 SECONDS!", "#ef4444", "🚨");
+    }
+
+    if (this.isAlarming) {
+      this.alarmTimer -= dt;
+      if (Math.random() < 0.3) {
+        particles.push(new SparkParticle(this.x, this.y - 30, (Math.random() - 0.5) * 50, -50, "#ef4444"));
+      }
+
+      if (this.alarmTimer <= 0) {
+        this.alarmTimer = 12.0;
+        if (window.soundEngine && window.soundEngine.playAmbushAlarm) window.soundEngine.playAmbushAlarm();
+        addScreenShake(14);
+        window.broadcastBossStoryDialogue("ORBITAL DROPSHIP", "Reinforcements dropped into outpost coordinates!", "#ef4444", "🚀");
+        for (let i = 0; i < 3; i++) {
+          const a = (Math.PI * 2 / 3) * i;
+          dropPods.push(new HostileDropPod(this.x + Math.cos(a) * 120, this.y + Math.sin(a) * 120));
+        }
+      }
+    }
+    return true;
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    // Concrete bunker base
+    ctx.fillStyle = "#1e293b";
+    ctx.beginPath();
+    ctx.roundRect(-24, -24, 48, 48, 6);
+    ctx.fill();
+    ctx.strokeStyle = this.isAlarming ? "#ef4444" : "#475569";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Antenna mast
+    ctx.fillStyle = "#475569";
+    ctx.fillRect(-3, -45, 6, 45);
+
+    // Radar dish
+    ctx.save();
+    ctx.translate(0, -45);
+    ctx.rotate(this.radarAngle);
+    ctx.fillStyle = this.isAlarming ? "#ef4444" : "#22c55e";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 16, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Red beacon light
+    if (this.isAlarming) {
+      const flash = Math.sin(gameTime * 15) > 0;
+      ctx.fillStyle = flash ? "#ef4444" : "#7f1d1d";
+      ctx.beginPath();
+      ctx.arc(0, -52, 6, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Countdown display
+      ctx.fillStyle = "#ef4444";
+      ctx.font = "bold 11px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(`ALARM: ${Math.max(0, this.alarmTimer).toFixed(1)}s`, 0, 36);
+    }
+
+    // Health bar
+    ctx.fillStyle = "#091a10";
+    ctx.fillRect(-20, -32, 40, 5);
+    ctx.fillStyle = "#22c55e";
+    ctx.fillRect(-20, -32, (this.hp / this.maxHp) * 40, 5);
+
+    ctx.restore();
+  }
+
+  die() {
+    this.destroyed = true;
+    if (window.soundEngine) window.soundEngine.playProprietaryDestroyed('boss');
+    addScreenShake(14);
+    for (let i = 0; i < 24; i++) {
+      particles.push(new SparkParticle(this.x, this.y, (Math.random() - 0.5) * 220, (Math.random() - 0.5) * 220, "#ef4444"));
+    }
+    comboTracker.addScore(800);
+    addFloatingText(this.x, this.y - 50, "OUTPOST PURGED! +800", "#22c55e", 22);
+    window.broadcastBossStoryDialogue("TUX COMMS", "Enemy antenna severed! Reinforcements blocked!", "#22c55e", "🐧");
+
+    if (dungeon) {
+      dungeon.onObjectiveProgress("DESTROY_ANTENNAS", 1);
+    }
+
+    // Spawn rewards
+    pickups.push(new Pickup(this.x - 20, this.y, 'hp'));
+    pickups.push(new Pickup(this.x + 20, this.y, 'fuel'));
+    weaponChests.push(new WeaponChest(this.x, this.y + 35));
+  }
+}
+
+class Dungeon {
+  constructor() {
+    this.sectorMajor = 1;
+    this.sectorMinor = 1;
+    this.sectorNum = 1;
+    this.currentBiome = BIOMES.EMERALD_FRONTIER;
+    this.currentObjectiveType = "DEFEND_SERVERS";
+    this.dangerRating = 1;
+    this.chunks = new Map();
+    this.antennas = [];
+    this.rooms = [];
+    this.doorBarriers = [];
+    this.exitGateway = null;
+    this.sectorCompletedNotified = false;
+    this.objectiveManager = new ObjectiveManager(this);
+    this.isWarping = false;
+
+    // Zero-overhead L1 Chunk pointer cache
+    this._lastCx = 0x7FFFFFFF;
+    this._lastCy = 0x7FFFFFFF;
+    this._lastChunk = null;
+  }
+
+  getDifficultyMultiplier() {
+    const distFromOrigin = player ? Math.hypot(player.x, player.y) : 0;
+    const distanceMult = (distFromOrigin / 2200) * 0.35;
+    const tierMult = this.objectiveManager ? (this.objectiveManager.tier - 1) * 0.2 : 0;
+    return 1.0 + distanceMult + tierMult;
+  }
+
+  isSectorCompleted() {
+    return this.objectiveManager ? this.objectiveManager.isComplete() : false;
+  }
+
+  onObjectiveProgress(id, amt = 1) {
+    if (this.objectiveManager) this.objectiveManager.progress(id, amt);
+  }
+
+  onRoomCleared(room) {
+    this.onObjectiveProgress("PURGE_ENEMIES", 5);
+  }
+
+  warpToNextSector() {
+    if (this.isWarping) return;
+    this.isWarping = true;
+    setTimeout(() => { if (this) this.isWarping = false; }, 800);
+
+    window.soundEngine.playPortalWarp();
+    addScreenShake(16);
+    screenFlash = 1.0;
+
+    this.sectorNum++;
+    if (this.objectiveManager) {
+      this.objectiveManager.tier++;
+      this.objectiveManager.generateTierObjectives();
+    }
+    showUpgradeScreen();
+  }
+
+  warpToBiome(biomeKey, objectiveType, dangerRating) {
+    if (this.isWarping) return;
+    this.isWarping = true;
+    setTimeout(() => { if (this) this.isWarping = false; }, 900);
+
+    this.currentBiome = BIOMES[biomeKey] || BIOMES.EMERALD_FRONTIER;
+    this.currentObjectiveType = objectiveType || "DEFEND_SERVERS";
+    this.dangerRating = dangerRating || this.currentBiome.dangerLevel;
+    this.sectorNum = this.dangerRating;
+
+    this.chunks.clear();
+    this._lastCx = 0x7FFFFFFF;
+    this._lastCy = 0x7FFFFFFF;
+    this._lastChunk = null;
+
+    objectiveTargets.length = 0;
+    groundWeapons.length = 0;
+    weaponChests.length = 0;
+    enemies.length = 0;
+    enemyProjectiles.length = 0;
+    playerProjectiles.length = 0;
+    orbitalStrikes.length = 0;
+    dropPods.length = 0;
+    spaceMarineSuitPickups.length = 0;
+    floorHazards.length = 0;
+    particles.length = 0;
+    floatingTexts.length = 0;
+    proceduralPortals.length = 0;
+    environmentalHazards.length = 0;
+    this.antennas.length = 0;
+    this.sectorCompletedNotified = false;
+
+    if (window.adaptiveDirector) {
+      if (window.adaptiveDirector.onSectorAdvance) window.adaptiveDirector.onSectorAdvance(this.sectorNum);
+      window.adaptiveDirector.currentBiome = this.currentBiome.name;
+    }
+
+    // Pre-generate 3x3 chunks around spawn sanctuary so Tux starts in open clearing with new biome palette
+    for (let cy = -1; cy <= 1; cy++) {
+      for (let cx = -1; cx <= 1; cx++) {
+        this.getChunk(cx, cy);
+      }
+    }
+
+    if (player) {
+      player.x = 8 * TILE_SIZE;
+      player.y = 8 * TILE_SIZE;
+      player.vx = 0;
+      player.vy = 0;
+      player.updateWeaponHud();
+    }
+
+    // Sanctuary Starter Weapon Crates
+    weaponChests.push(new WeaponChest(420, 512));
+    weaponChests.push(new WeaponChest(604, 512));
+
+    const centerX = 8 * TILE_SIZE;
+    const centerY = 8 * TILE_SIZE;
+
+    // Spawn objective structures
+    if (this.currentObjectiveType === "DEFEND_SERVERS") {
+      objectiveTargets.push(new ServerClusterNode(centerX + 260, centerY));
+    } else if (this.currentObjectiveType === "ATTACK_FORTRESS") {
+      objectiveTargets.push(new FortressCore(centerX + 480, centerY + 120));
+    } else if (this.currentObjectiveType === "SETUP_UPLINK") {
+      objectiveTargets.push(new UplinkRelay(centerX - 320, centerY - 200, 0));
+      objectiveTargets.push(new UplinkRelay(centerX + 360, centerY - 220, 1));
+      objectiveTargets.push(new UplinkRelay(centerX + 240, centerY + 320, 2));
+    } else if (this.currentObjectiveType === "ELITE_BOUNTY" || this.currentObjectiveType === "PURGE_BOSS") {
+      if (window.EnemyModelFactory && this.currentBiome.bossId) {
+        const boss = window.EnemyModelFactory.createFromSpec(this.currentBiome.bossId, centerX + 400, centerY);
+        enemies.push(boss);
+      }
+    } else if (this.currentObjectiveType === "TREASURE_REWARD" || this.currentBiome.id === "TREASURE_VAULT") {
+      // Confidential Treasure Vault: multiple weapon crates, Space Marine armor, bonus pick-ups & forward portal
+      weaponChests.push(new WeaponChest(centerX - 140, centerY - 120));
+      weaponChests.push(new WeaponChest(centerX + 140, centerY - 120));
+      weaponChests.push(new WeaponChest(centerX - 140, centerY + 120));
+      weaponChests.push(new WeaponChest(centerX + 140, centerY + 120));
+      weaponChests.push(new WeaponChest(centerX, centerY - 160));
+      weaponChests.push(new WeaponChest(centerX, centerY + 160));
+
+      if (typeof SpaceMarineSuitPickup !== 'undefined') {
+        spaceMarineSuitPickups.push(new SpaceMarineSuitPickup(centerX, centerY));
+      }
+
+      pickups.push(new Pickup(centerX - 60, centerY, 'hp'));
+      pickups.push(new Pickup(centerX + 60, centerY, 'fuel'));
+      pickups.push(new Pickup(centerX, centerY - 60, 'xp'));
+      pickups.push(new Pickup(centerX, centerY + 60, 'xp'));
+
+      // Forward portal out of treasure vault to harder tier
+      const nextTier = (this.dangerRating || 1) + 1;
+      const harderBiomes = ["THERMAL_FOUNDRY", "CRYO_GLACIER", "TOXIC_HEAP", "WALLED_GARDEN", "QUANTUM_VOID"];
+      const nextBiomeKey = harderBiomes[Math.min(harderBiomes.length - 1, nextTier - 1)] || "QUANTUM_VOID";
+      const forwardPortal = new ProceduralPortal(centerX + 340, centerY, nextBiomeKey, "ATTACK_FORTRESS", nextTier);
+      forwardPortal.label = `TIER ${nextTier} EXPEDITION`;
+      proceduralPortals.push(forwardPortal);
+    }
+
+    // Spawn Biome Environmental Hazards
+    this.spawnBiomeHazards(centerX, centerY);
+
+    // Update objective manager
+    if (this.objectiveManager) {
+      this.objectiveManager.setupBiomeObjectives(this.currentBiome, this.currentObjectiveType, this.dangerRating);
+    }
+
+    setTimeout(() => {
+      if (player) {
+        addFloatingText(player.x, player.y - 70, `WARPED: ${this.currentBiome.name}`, this.currentBiome.accent, 26);
+      }
+    }, 400);
+  }
+
+  spawnBiomeHazards(cx, cy) {
+    environmentalHazards.length = 0;
+    const count = 7;
+    for (let i = 0; i < count; i++) {
+      const a = (Math.PI * 2 / count) * i + (Math.random() - 0.5) * 0.5;
+      const dist = 280 + Math.random() * 450;
+      const hx = cx + Math.cos(a) * dist;
+      const hy = cy + Math.sin(a) * dist;
+
+      if (this.currentBiome.id === "THERMAL_FOUNDRY") {
+        environmentalHazards.push(new SteamVent(hx, hy));
+      } else if (this.currentBiome.id === "CRYO_GLACIER") {
+        environmentalHazards.push(new CryoPool(hx, hy));
+      } else if (this.currentBiome.id === "TOXIC_HEAP") {
+        environmentalHazards.push(new AcidPool(hx, hy));
+      } else if (this.currentBiome.id === "WALLED_GARDEN") {
+        const segAngle = Math.random() * Math.PI;
+        const len = 90;
+        environmentalHazards.push(new SecurityTripwire(
+          hx - Math.cos(segAngle) * len, hy - Math.sin(segAngle) * len,
+          hx + Math.cos(segAngle) * len, hy + Math.sin(segAngle) * len
+        ));
+      } else if (this.currentBiome.id === "QUANTUM_VOID") {
+        environmentalHazards.push(new SingularityRift(hx, hy));
+      }
+    }
+  }
+
+  spawnExtractionPortals() {
+    proceduralPortals.length = 0;
+    const biomeKeys = Object.keys(BIOMES);
+    const originX = player ? player.x : 8 * TILE_SIZE;
+    const originY = player ? player.y : 8 * TILE_SIZE;
+
+    const objectivePool = ["DEFEND_SERVERS", "ATTACK_FORTRESS", "SETUP_UPLINK", "ELITE_BOUNTY"];
+
+    for (let i = 0; i < 3; i++) {
+      const angle = (Math.PI * 2 / 3) * i - Math.PI / 2;
+      const dist = 240;
+      const px = originX + Math.cos(angle) * dist;
+      const py = originY + Math.sin(angle) * dist;
+
+      const candidateBiomes = biomeKeys.filter(k => k !== (this.currentBiome ? this.currentBiome.id : ""));
+      const chosenBiomeKey = candidateBiomes[(i + (this.objectiveManager ? this.objectiveManager.tier : 1)) % candidateBiomes.length] || "THERMAL_FOUNDRY";
+      const chosenObj = objectivePool[i % objectivePool.length];
+      const tierRating = Math.max(1, (this.objectiveManager ? this.objectiveManager.tier : 1) + (i === 2 ? 1 : 0));
+
+      const portal = new ProceduralPortal(px, py, chosenBiomeKey, chosenObj, tierRating);
+      proceduralPortals.push(portal);
+    }
+
+    addScreenShake(12);
+  }
+
+  createEnemyForSector(x, y) {
+    const mult = this.getDifficultyMultiplier();
+    const roll = Math.random();
+    let enemy;
+
+    if (mult > 2.0 && roll < 0.12) {
+      enemy = new EnemyEULAEnforcer(x, y);
+    } else if (mult > 1.7 && roll < 0.22) {
+      enemy = new EnemySniper(x, y);
+    } else if (mult > 1.5 && roll < 0.32) {
+      enemy = new EnemyRiotShield(x, y);
+    } else if (mult > 1.4 && roll < 0.42) {
+      enemy = new EnemyMortarNode(x, y);
+    } else if (mult > 1.3 && roll < 0.50) {
+      enemy = new EnemyStalker(x, y);
+    } else if (mult > 1.2 && roll < 0.58) {
+      enemy = new EnemyDispatcher(x, y);
+    } else if (mult > 1.1 && roll < 0.68) {
+      enemy = new EnemyPodSwarm(x, y);
+    } else if (roll < 0.76) {
+      enemy = new EnemyPatentTroll(x, y);
+    } else if (roll < 0.84) {
+      enemy = new EnemyAISlop(x, y);
+    } else if (roll < 0.90) {
+      enemy = new EnemyPaywall(x, y);
+    } else if (roll < 0.95) {
+      enemy = new EnemyDRM(x, y);
+    } else {
+      enemy = new EnemyBSOD(x, y);
+    }
+
+    enemy.hp = Math.round(enemy.hp * mult);
+    enemy.maxHp = enemy.hp;
+    enemy.speed = Math.min(320, enemy.speed * (1.0 + (mult - 1.0) * 0.08));
+    return enemy;
+  }
+
+  getChunk(cx, cy) {
+    if (cx === this._lastCx && cy === this._lastCy && this._lastChunk) {
+      return this._lastChunk;
+    }
+    const key = ((cx & 0xFFFF) << 16) | (cy & 0xFFFF);
+    let chunk = this.chunks.get(key);
+    if (!chunk) {
+      chunk = this.generateChunk(cx, cy);
+      this.chunks.set(key, chunk);
+    }
+    this._lastCx = cx;
+    this._lastCy = cy;
+    this._lastChunk = chunk;
+    return chunk;
+  }
+
+  generateChunk(cx, cy) {
+    const tiles = new Uint8Array(16 * 16);
+    const chunkOriginX = cx * 16;
+    const chunkOriginY = cy * 16;
+
+    for (let ly = 0; ly < 16; ly++) {
+      for (let lx = 0; lx < 16; lx++) {
+        const tx = chunkOriginX + lx;
+        const ty = chunkOriginY + ly;
+
+        // Origin sanctuary: open clearing around world tile (8, 8)
+        const distToSpawnTiles = Math.hypot(tx - 8, ty - 8);
+        if (distToSpawnTiles < 10) {
+          tiles[lx + ly * 16] = 1; // Pure open floor
+          continue;
+        } else if (distToSpawnTiles < 14) {
+          tiles[lx + ly * 16] = (Math.sin(tx * 3.7 + ty * 5.1) > 0.4) ? 4 : 1;
+          continue;
+        }
+
+        // Global continuous multi-octave coherent procedural noise
+        const n1 = Math.sin(tx * 0.08) * Math.cos(ty * 0.08);
+        const n2 = Math.sin(tx * 0.035 + 1.4) * Math.sin(ty * 0.035 + 0.9) * 1.5;
+        const n3 = Math.cos(tx * 0.16 + ty * 0.07) * 0.6;
+        const val = (n1 + n2 + n3) / 3.1;
+
+        if (val > 0.46) {
+          tiles[lx + ly * 16] = 2; // Slate Wall
+        } else if (val > 0.38 && Math.sin(tx * 0.8 + ty * 0.3) > 0.5) {
+          tiles[lx + ly * 16] = 5; // Ruin Monolith Pillar
+        } else if (val < -0.42) {
+          tiles[lx + ly * 16] = 3; // Water Stream / Marsh Pond
+        } else if (val < -0.16) {
+          tiles[lx + ly * 16] = 4; // Rustling Tall Grass
+        } else {
+          tiles[lx + ly * 16] = 1; // Mossy Earth Path
+        }
+      }
+    }
+
+    // Wilderness Sites: Forward Outposts, Reinforcement Antennas, Caches
+    const distFromOrigin = Math.hypot(cx, cy);
+    const chunkHash = Math.abs(Math.sin(cx * 12.9898 + cy * 78.233) * 43758.5453) % 1.0;
+    let hasOutpost = false;
+
+    if (distFromOrigin >= 2 && chunkHash < 0.28) {
+      hasOutpost = true;
+      for (let dy = 4; dy <= 11; dy++) {
+        for (let dx = 4; dx <= 11; dx++) {
+          tiles[dx + dy * 16] = 1;
+        }
+      }
+      tiles[4 + 4 * 16] = 5;
+      tiles[11 + 4 * 16] = 5;
+      tiles[4 + 11 * 16] = 5;
+      tiles[11 + 11 * 16] = 5;
+
+      const outX = (chunkOriginX + 8) * TILE_SIZE;
+      const outY = (chunkOriginY + 8) * TILE_SIZE;
+
+      this.antennas.push(new ReinforcementAntenna(outX, outY));
+
+      const guardCount = 2 + Math.floor(Math.random() * 2);
+      for (let g = 0; g < guardCount; g++) {
+        const ga = (Math.PI * 2 / guardCount) * g;
+        const gx = outX + Math.cos(ga) * 160;
+        const gy = outY + Math.sin(ga) * 160;
+        enemies.push(this.createEnemyForSector(gx, gy));
+      }
+
+      weaponChests.push(new WeaponChest(outX + 50, outY - 50));
+    } else if (distFromOrigin >= 2 && chunkHash >= 0.28 && chunkHash < 0.36) {
+      // Forward Tactical Objective Site (Server Cluster or Uplink Relay)
+      for (let dy = 4; dy <= 11; dy++) {
+        for (let dx = 4; dx <= 11; dx++) {
+          tiles[dx + dy * 16] = 1;
+        }
+      }
+      tiles[4 + 4 * 16] = 5; tiles[11 + 4 * 16] = 5;
+      tiles[4 + 11 * 16] = 5; tiles[11 + 11 * 16] = 5;
+
+      const siteX = (chunkOriginX + 8) * TILE_SIZE;
+      const siteY = (chunkOriginY + 8) * TILE_SIZE;
+      const isServer = chunkHash < 0.32;
+      const objTarget = isServer ? new ServerClusterNode(siteX, siteY) : new UplinkRelay(siteX, siteY, objectiveTargets.length);
+      objTarget.label = isServer ? "SERVER NODE" : "UPLINK RELAY";
+      objectiveTargets.push(objTarget);
+
+      // Guards protecting the site
+      for (let g = 0; g < 3; g++) {
+        const ga = (Math.PI * 2 / 3) * g;
+        enemies.push(this.createEnemyForSector(siteX + Math.cos(ga) * 140, siteY + Math.sin(ga) * 140));
+      }
+      weaponChests.push(new WeaponChest(siteX + 60, siteY + 60));
+    } else if (distFromOrigin >= 2 && chunkHash >= 0.36 && chunkHash < 0.44) {
+      // Confidential Cartel Data Vault (Guaranteed Secret Treasure Portal + 2 Weapon Crates)
+      for (let dy = 4; dy <= 11; dy++) {
+        for (let dx = 4; dx <= 11; dx++) {
+          tiles[dx + dy * 16] = 1;
+        }
+      }
+      tiles[4 + 4 * 16] = 5; tiles[11 + 4 * 16] = 5;
+      tiles[4 + 11 * 16] = 5; tiles[11 + 11 * 16] = 5;
+
+      const vaultX = (chunkOriginX + 8) * TILE_SIZE;
+      const vaultY = (chunkOriginY + 8) * TILE_SIZE;
+      const vaultPortal = new ProceduralPortal(vaultX, vaultY, "TREASURE_VAULT", "TREASURE_REWARD", (this.sectorNum || 1));
+      vaultPortal.label = "TREASURE VAULT";
+      proceduralPortals.push(vaultPortal);
+
+      weaponChests.push(new WeaponChest(vaultX - 70, vaultY));
+      weaponChests.push(new WeaponChest(vaultX + 70, vaultY));
+
+      // Guarded by corporate enforcers
+      enemies.push(new EnemyRiotShield(vaultX, vaultY - 90));
+      enemies.push(new EnemyDRM(vaultX, vaultY + 90));
+    } else if (distFromOrigin >= 2 && chunkHash >= 0.44 && chunkHash < 0.50) {
+      // Rogue Expedition Gateway to Advanced Biome
+      for (let dy = 4; dy <= 11; dy++) {
+        for (let dx = 4; dx <= 11; dx++) {
+          tiles[dx + dy * 16] = 1;
+        }
+      }
+      const gateX = (chunkOriginX + 8) * TILE_SIZE;
+      const gateY = (chunkOriginY + 8) * TILE_SIZE;
+      const harderBiomes = ["THERMAL_FOUNDRY", "CRYO_GLACIER", "TOXIC_HEAP", "WALLED_GARDEN", "QUANTUM_VOID"];
+      const bKey = harderBiomes[Math.floor(Math.random() * harderBiomes.length)];
+      const nTier = (this.sectorNum || 1) + 1;
+      const expPortal = new ProceduralPortal(gateX, gateY, bKey, "ATTACK_FORTRESS", nTier);
+      expPortal.label = `TIER ${nTier} ADVANCE`;
+      proceduralPortals.push(expPortal);
+      weaponChests.push(new WeaponChest(gateX + 50, gateY - 50));
+    } else if (distFromOrigin >= 1 && chunkHash > 0.68 && chunkHash <= 0.88) {
+      const px = (chunkOriginX + 8) * TILE_SIZE;
+      const py = (chunkOriginY + 8) * TILE_SIZE;
+      const patrolCount = 2 + Math.floor(Math.random() * 2);
+      for (let p = 0; p < patrolCount; p++) {
+        const pa = Math.random() * Math.PI * 2;
+        const pd = Math.random() * 120;
+        enemies.push(this.createEnemyForSector(px + Math.cos(pa) * pd, py + Math.sin(pa) * pd));
+      }
+    } else if (distFromOrigin >= 1 && chunkHash > 0.88) {
+      const cxp = (chunkOriginX + 8) * TILE_SIZE;
+      const cyp = (chunkOriginY + 8) * TILE_SIZE;
+      weaponChests.push(new WeaponChest(cxp, cyp));
+    }
+
+    // Pre-render chunk to offscreen canvas for zero-overhead 60 FPS GPU blitting!
+    let chunkCanvas = null;
+    if (typeof document !== 'undefined' && document.createElement) {
+      chunkCanvas = document.createElement('canvas');
+      chunkCanvas.width = 16 * TILE_SIZE;
+      chunkCanvas.height = 16 * TILE_SIZE;
+      const cCtx = (typeof chunkCanvas.getContext === 'function') ? chunkCanvas.getContext('2d') : null;
+      if (cCtx) {
+        this.renderChunkToCanvas(cCtx, chunkOriginX, chunkOriginY, tiles);
+      } else {
+        chunkCanvas = null;
+      }
+    }
+
+    return { cx, cy, tiles, canvas: chunkCanvas, hasOutpost };
+  }
+
+  renderChunkToCanvas(cCtx, chunkOriginX, chunkOriginY, tiles) {
+    const b = this.currentBiome || BIOMES.EMERALD_FRONTIER;
+    for (let ly = 0; ly < 16; ly++) {
+      for (let lx = 0; lx < 16; lx++) {
+        const t = tiles[lx + ly * 16];
+        const px = lx * TILE_SIZE;
+        const py = ly * TILE_SIZE;
+        const tx = chunkOriginX + lx;
+        const ty = chunkOriginY + ly;
+
+        if (t === 1) {
+          cCtx.fillStyle = b.floorColor;
+          cCtx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+          cCtx.strokeStyle = b.floorBorder;
+          cCtx.lineWidth = 1;
+          cCtx.strokeRect(px, py, TILE_SIZE, TILE_SIZE);
+
+          const seed = (tx * 374761393 + ty * 668265263) >>> 0;
+          if (seed % 3 === 0) {
+            cCtx.fillStyle = b.floorBorder;
+            cCtx.fillRect(px + (seed % 42) + 10, py + ((seed >> 4) % 42) + 10, 3, 3);
+          }
+        } else if (t === 2) {
+          cCtx.fillStyle = b.wallColor;
+          cCtx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+          cCtx.fillStyle = b.wallCap;
+          cCtx.fillRect(px, py, TILE_SIZE, 6);
+          cCtx.strokeStyle = b.floorBorder;
+          cCtx.lineWidth = 1.5;
+          cCtx.strokeRect(px, py, TILE_SIZE, TILE_SIZE);
+
+          const seed = (tx * 1234567 + ty * 7654321) >>> 0;
+          if (seed % 2 === 0) {
+            cCtx.strokeStyle = "rgba(0, 0, 0, 0.4)";
+            cCtx.lineWidth = 1.5;
+            cCtx.beginPath();
+            cCtx.moveTo(px + 8, py + 16);
+            cCtx.lineTo(px + 26, py + 32);
+            cCtx.lineTo(px + 46, py + 26);
+            cCtx.stroke();
+          }
+        } else if (t === 3) {
+          cCtx.fillStyle = b.liquidColor;
+          cCtx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+          cCtx.fillStyle = b.liquidGlow;
+          cCtx.fillRect(px + 4, py + 20, TILE_SIZE - 8, 8);
+          cCtx.strokeStyle = b.liquidGlow;
+          cCtx.lineWidth = 1;
+          cCtx.strokeRect(px, py, TILE_SIZE, TILE_SIZE);
+        } else if (t === 4) {
+          cCtx.fillStyle = b.floorColor;
+          cCtx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+          cCtx.strokeStyle = b.foliageColor;
+          cCtx.lineWidth = 2.5;
+          cCtx.beginPath();
+          cCtx.moveTo(px + 16, py + 48); cCtx.lineTo(px + 14, py + 18);
+          cCtx.moveTo(px + 28, py + 52); cCtx.lineTo(px + 30, py + 14);
+          cCtx.moveTo(px + 44, py + 50); cCtx.lineTo(px + 46, py + 16);
+          cCtx.stroke();
+
+          cCtx.fillStyle = b.accent;
+          cCtx.fillRect(px + 13, py + 16, 3, 4);
+          cCtx.fillRect(px + 29, py + 12, 3, 4);
+          cCtx.fillRect(px + 45, py + 14, 3, 4);
+        } else if (t === 5) {
+          cCtx.fillStyle = b.pillarColor;
+          cCtx.fillRect(px + 6, py + 6, TILE_SIZE - 12, TILE_SIZE - 12);
+          cCtx.strokeStyle = b.accent;
+          cCtx.lineWidth = 2;
+          cCtx.strokeRect(px + 6, py + 6, TILE_SIZE - 12, TILE_SIZE - 12);
+
+          cCtx.fillStyle = b.accent;
+          cCtx.font = "bold 13px monospace";
+          cCtx.textAlign = "center";
+          cCtx.fillText("0x9F", px + TILE_SIZE / 2, py + TILE_SIZE / 2 + 5);
+        }
+      }
+    }
+  }
+
+  getTileAt(wx, wy) {
+    const tx = Math.floor(wx / TILE_SIZE);
+    const ty = Math.floor(wy / TILE_SIZE);
+    const cx = Math.floor(tx / 16);
+    const cy = Math.floor(ty / 16);
+    const chunk = this.getChunk(cx, cy);
+    const lx = ((tx % 16) + 16) % 16;
+    const ly = ((ty % 16) + 16) % 16;
+    return chunk.tiles[lx + ly * 16];
+  }
+
+  isTileSolid(tx, ty) {
+    const cx = Math.floor(tx / 16);
+    const cy = Math.floor(ty / 16);
+    const chunk = this.getChunk(cx, cy);
+    const lx = ((tx % 16) + 16) % 16;
+    const ly = ((ty % 16) + 16) % 16;
+    const t = chunk.tiles[lx + ly * 16];
+    return (t === 2 || t === 5);
+  }
+
+  isSolid(wx, wy) {
+    const tx = Math.floor(wx / TILE_SIZE);
+    const ty = Math.floor(wy / TILE_SIZE);
+    return this.isTileSolid(tx, ty);
+  }
+
+  hasLineOfSight(x1, y1, x2, y2) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const dist = Math.hypot(dx, dy);
+    if (dist === 0) return true;
+    const stepSize = TILE_SIZE * 0.35;
+    const steps = Math.ceil(dist / stepSize);
+    for (let i = 1; i < steps; i++) {
+      const px = x1 + (dx * i) / steps;
+      const py = y1 + (dy * i) / steps;
+      if (this.isSolid(px, py)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  resolveCircle(entity, radius, axis) {
+    const minTx = Math.floor((entity.x - radius) / TILE_SIZE);
+    const maxTx = Math.floor((entity.x + radius) / TILE_SIZE);
+    const minTy = Math.floor((entity.y - radius) / TILE_SIZE);
+    const maxTy = Math.floor((entity.y + radius) / TILE_SIZE);
+
+    for (let ty = minTy; ty <= maxTy; ty++) {
+      for (let tx = minTx; tx <= maxTx; tx++) {
+        if (!this.isTileSolid(tx, ty)) continue;
+
+        const tileLeft = tx * TILE_SIZE;
+        const tileRight = (tx + 1) * TILE_SIZE;
+        const tileTop = ty * TILE_SIZE;
+        const tileBottom = (ty + 1) * TILE_SIZE;
+
+        const closestX = Math.max(tileLeft, Math.min(tileRight, entity.x));
+        const closestY = Math.max(tileTop, Math.min(tileBottom, entity.y));
+
+        const distX = entity.x - closestX;
+        const distY = entity.y - closestY;
+        const distSq = distX * distX + distY * distY;
+
+        if (distSq < radius * radius) {
+          const dist = Math.sqrt(distSq);
+          if (dist > 0.0001) {
+            const overlap = radius - dist;
+            const nx = distX / dist;
+            const ny = distY / dist;
+
+            entity.x += nx * overlap;
+            entity.y += ny * overlap;
+
+            // Zero velocity component directed into the wall, letting entity slide smoothly along the wall!
+            const dot = (entity.vx * nx + entity.vy * ny);
+            if (dot < 0) {
+              entity.vx -= dot * nx;
+              entity.vy -= dot * ny;
+            }
+          } else {
+            entity.x += 1;
+            entity.y += 1;
+          }
+        }
+      }
+    }
+  }
+
+  // --- ENDLESS LINUX FRONTIER SECTOR GENERATION ---
+  generateSector() {
+    this.chunks.clear();
+    this.antennas = [];
+    this.rooms = [];
+    this.doorBarriers = [];
+    this._lastCx = 0x7FFFFFFF;
+    this._lastCy = 0x7FFFFFFF;
+    this._lastChunk = null;
+
+    objectiveTargets.length = 0;
+    groundWeapons.length = 0;
+    weaponChests.length = 0;
+    enemies.length = 0;
+    enemyProjectiles.length = 0;
+    playerProjectiles.length = 0;
+    orbitalStrikes.length = 0;
+    dropPods.length = 0;
+    spaceMarineSuitPickups.length = 0;
+    floorHazards.length = 0;
+    particles.length = 0;
+    floatingTexts.length = 0;
+    this.sectorCompletedNotified = false;
+
+    // Adaptive Director updates realm parameters
+    if (window.adaptiveDirector && window.adaptiveDirector.onSectorAdvance) {
+      window.adaptiveDirector.onSectorAdvance(this.sectorNum);
+    }
+
+    // Pre-generate 3x3 chunks around spawn sanctuary so Tux starts in open clearing
+    for (let cy = -1; cy <= 1; cy++) {
+      for (let cx = -1; cx <= 1; cx++) {
+        this.getChunk(cx, cy);
+      }
+    }
+
+    // Sanctuary Starter Weapon Crates (at world tile 8, 8 -> 512, 512)
+    weaponChests.push(new WeaponChest(420, 512));
+    weaponChests.push(new WeaponChest(604, 512));
+
+    if (this.objectiveManager) {
+      this.objectiveManager.generateTierObjectives();
+    }
+
+    if (player) {
+      player.x = 8 * TILE_SIZE; // 512px
+      player.y = 8 * TILE_SIZE; // 512px
+      player.vx = 0;
+      player.vy = 0;
+      player.updateWeaponHud();
+      setTimeout(() => {
+        addFloatingText(player.x, player.y - 70, "🌲 BOUNDLESS OPEN-SOURCE WILDERNESS 🌲", "#4ade80", 24);
+      }, 350);
+    }
+  }
+
+  update(dt) {
+    for (let i = objectiveTargets.length - 1; i >= 0; i--) {
+      if (!objectiveTargets[i].update(dt)) {
+        objectiveTargets.splice(i, 1);
+      }
+    }
+
+    for (let i = environmentalHazards.length - 1; i >= 0; i--) {
+      if (!environmentalHazards[i].update(dt)) {
+        environmentalHazards.splice(i, 1);
+      }
+    }
+
+    for (let i = activeDomeShields.length - 1; i >= 0; i--) {
+      if (!activeDomeShields[i].update(dt)) {
+        activeDomeShields.splice(i, 1);
+      }
+    }
+
+    for (let i = teslaTowers.length - 1; i >= 0; i--) {
+      if (!teslaTowers[i].update(dt)) {
+        teslaTowers.splice(i, 1);
+      }
+    }
+
+    for (let i = proceduralPortals.length - 1; i >= 0; i--) {
+      proceduralPortals[i].update(dt);
+    }
+
+    for (let i = groundWeapons.length - 1; i >= 0; i--) {
+      groundWeapons[i].update(dt);
+    }
+
+    if (this.exitGateway) {
+      this.exitGateway.update(dt);
+    }
+  }
+
+  // --- HARDWARE-ACCELERATED CHUNK DRAWING (GPU Blit ~0.1ms per frame) ---
+  draw(ctx) {
+    const chunkPixelSize = 16 * TILE_SIZE; // 1024px
+    const minCx = Math.floor(camera.x / chunkPixelSize);
+    const maxCx = Math.floor((camera.x + canvas.width) / chunkPixelSize);
+    const minCy = Math.floor(camera.y / chunkPixelSize);
+    const maxCy = Math.floor((camera.y + canvas.height) / chunkPixelSize);
+
+    // Only render the 4 to 6 chunks currently intersecting the camera viewport!
+    for (let cy = minCy; cy <= maxCy; cy++) {
+      for (let cx = minCx; cx <= maxCx; cx++) {
+        const chunk = this.getChunk(cx, cy);
+        if (chunk.canvas) {
+          ctx.drawImage(chunk.canvas, cx * chunkPixelSize, cy * chunkPixelSize);
+        } else {
+          this.drawChunkDirect(ctx, chunk);
+        }
+      }
+    }
+
+    // Environmental Biome Hazards (Vents, Pools, Tripwires, Singularity Rifts)
+    for (const haz of environmentalHazards) {
+      haz.draw(ctx);
+    }
+
+    // Procedural Portals
+    for (const portal of proceduralPortals) {
+      portal.draw(ctx);
+    }
+
+    // Outpost Reinforcement Antennas
+    for (let i = this.antennas.length - 1; i >= 0; i--) {
+      const ant = this.antennas[i];
+      if (ant.destroyed) {
+        this.antennas.splice(i, 1);
+      } else {
+        ant.draw(ctx);
+      }
+    }
+
+    // Weapon Chests & Tactical Caches
+    for (const chest of weaponChests) {
+      chest.draw(ctx);
+    }
+
+    // Ground Weapons
+    for (const gw of groundWeapons) {
+      gw.draw(ctx);
+    }
+
+    // Tesla Towers
+    for (const tt of teslaTowers) {
+      tt.draw(ctx);
+    }
+
+    // Active Dome Shields
+    for (const dome of activeDomeShields) {
+      dome.draw(ctx);
+    }
+
+    // Objective Relays & Terminals
+    for (const target of objectiveTargets) {
+      target.draw(ctx);
+    }
+
+    if (this.exitGateway) {
+      this.exitGateway.draw(ctx);
+    }
+  }
+
+  // Direct drawing fallback for headless or unaccelerated environments
+  drawChunkDirect(ctx, chunk) {
+    const b = this.currentBiome || BIOMES.EMERALD_FRONTIER;
+    const chunkOriginX = chunk.cx * 16 * TILE_SIZE;
+    const chunkOriginY = chunk.cy * 16 * TILE_SIZE;
+    for (let ly = 0; ly < 16; ly++) {
+      for (let lx = 0; lx < 16; lx++) {
+        const t = chunk.tiles[lx + ly * 16];
+        const wx = chunkOriginX + lx * TILE_SIZE;
+        const wy = chunkOriginY + ly * TILE_SIZE;
+        if (t === 1) {
+          ctx.fillStyle = b.floorColor;
+          ctx.fillRect(wx, wy, TILE_SIZE, TILE_SIZE);
+        } else if (t === 2) {
+          ctx.fillStyle = b.wallColor;
+          ctx.fillRect(wx, wy, TILE_SIZE, TILE_SIZE);
+        } else if (t === 3) {
+          ctx.fillStyle = b.liquidColor;
+          ctx.fillRect(wx, wy, TILE_SIZE, TILE_SIZE);
+        } else if (t === 4) {
+          ctx.fillStyle = b.floorColor;
+          ctx.fillRect(wx, wy, TILE_SIZE, TILE_SIZE);
+        } else if (t === 5) {
+          ctx.fillStyle = b.pillarColor;
+          ctx.fillRect(wx + 6, wy + 6, TILE_SIZE - 12, TILE_SIZE - 12);
+        }
+      }
+    }
+  }
+
+  // --- ULTRA-FAST 60 FPS PHOSPHOR MILITARY RADAR (Zero Tile Scans, Pure Blips) ---
+  drawMinimap() {
+    const mmCanvas = document.getElementById('minimapCanvas');
+    if (!mmCanvas) return;
+    const mmCtx = mmCanvas.getContext('2d');
+    mmCtx.clearRect(0, 0, mmCanvas.width, mmCanvas.height);
+
+    const cx = mmCanvas.width / 2;
+    const cy = mmCanvas.height / 2;
+    const radarRadius = Math.min(cx, cy) - 4;
+    const worldRadius = 2400; // 2400px radar coverage around Tux
+    const scale = radarRadius / worldRadius;
+
+    // Dark tactical military radar display
+    mmCtx.save();
+    mmCtx.beginPath();
+    mmCtx.arc(cx, cy, radarRadius, 0, Math.PI * 2);
+    mmCtx.clip();
+
+    mmCtx.fillStyle = "#030a05";
+    mmCtx.fillRect(0, 0, mmCanvas.width, mmCanvas.height);
+
+    // Radar distance range rings
+    mmCtx.strokeStyle = "rgba(34, 197, 94, 0.2)";
+    mmCtx.lineWidth = 1;
+    mmCtx.beginPath();
+    mmCtx.arc(cx, cy, radarRadius * 0.33, 0, Math.PI * 2);
+    mmCtx.arc(cx, cy, radarRadius * 0.66, 0, Math.PI * 2);
+    mmCtx.arc(cx, cy, radarRadius * 0.99, 0, Math.PI * 2);
+    mmCtx.stroke();
+
+    // Crosshairs
+    mmCtx.beginPath();
+    mmCtx.moveTo(cx - radarRadius, cy); mmCtx.lineTo(cx + radarRadius, cy);
+    mmCtx.moveTo(cx, cy - radarRadius); mmCtx.lineTo(cx, cy + radarRadius);
+    mmCtx.stroke();
+
+    // Rotating Radar Sweep Line
+    const sweepAngle = (gameTime * 2.8) % (Math.PI * 2);
+    const sweepGrad = mmCtx.createRadialGradient(cx, cy, 0, cx, cy, radarRadius);
+    sweepGrad.addColorStop(0, "rgba(34, 197, 94, 0.3)");
+    sweepGrad.addColorStop(1, "rgba(34, 197, 94, 0.0)");
+    mmCtx.fillStyle = sweepGrad;
+    mmCtx.beginPath();
+    mmCtx.moveTo(cx, cy);
+    mmCtx.arc(cx, cy, radarRadius, sweepAngle - 0.45, sweepAngle);
+    mmCtx.closePath();
+    mmCtx.fill();
+
+    if (player) {
+      // 1. Outpost Reinforcement Antennas (Amber warning pings)
+      for (const ant of this.antennas) {
+        if (ant.destroyed) continue;
+        const ax = cx + (ant.x - player.x) * scale;
+        const ay = cy + (ant.y - player.y) * scale;
+        if (Math.hypot(ax - cx, ay - cy) < radarRadius) {
+          mmCtx.fillStyle = ant.isAlarming ? "#ef4444" : "#fbbf24";
+          mmCtx.beginPath();
+          mmCtx.arc(ax, ay, ant.isAlarming ? 4.5 : 3.5, 0, Math.PI * 2);
+          mmCtx.fill();
+        }
+      }
+
+      // 2. Weapon Chests / Tactical Caches (Bright Gold diamonds)
+      for (const chest of weaponChests) {
+        if (chest.opened) continue;
+        const chx = cx + (chest.x - player.x) * scale;
+        const chy = cy + (chest.y - player.y) * scale;
+        if (Math.hypot(chx - cx, chy - cy) < radarRadius) {
+          mmCtx.fillStyle = "#facc15";
+          mmCtx.fillRect(chx - 2, chy - 2, 4, 4);
+        }
+      }
+
+      // 3. Ground Weapons (Cyan blips)
+      for (const gw of groundWeapons) {
+        const gx = cx + (gw.x - player.x) * scale;
+        const gy = cy + (gw.y - player.y) * scale;
+        if (Math.hypot(gx - cx, gy - cy) < radarRadius) {
+          mmCtx.fillStyle = "#38bdf8";
+          mmCtx.fillRect(gx - 1.5, gy - 1.5, 3, 3);
+        }
+      }
+
+      // 4. Hostile Units & Bosses (Crisp Red blips)
+      for (const enemy of enemies) {
+        const ex = cx + (enemy.x - player.x) * scale;
+        const ey = cy + (enemy.y - player.y) * scale;
+        if (Math.hypot(ex - cx, ey - cy) < radarRadius) {
+          if (enemy.isBoss) {
+            mmCtx.fillStyle = Math.sin(gameTime * 14) > 0 ? "#ef4444" : "#ffffff";
+            mmCtx.beginPath();
+            mmCtx.arc(ex, ey, 6, 0, Math.PI * 2);
+            mmCtx.fill();
+          } else {
+            mmCtx.fillStyle = "#ef4444";
+            mmCtx.fillRect(ex - 1.5, ey - 1.5, 3, 3);
+          }
+        }
+      }
+
+      // 5. Procedural Extraction Portals (Pulsating Diamond Blips)
+      for (const portal of proceduralPortals) {
+        const px = cx + (portal.x - player.x) * scale;
+        const py = cy + (portal.y - player.y) * scale;
+        if (Math.hypot(px - cx, py - cy) < radarRadius) {
+          mmCtx.fillStyle = portal.biome ? portal.biome.accent : "#c084fc";
+          mmCtx.fillRect(px - 3, py - 3, 6, 6);
+          mmCtx.strokeStyle = "#ffffff";
+          mmCtx.lineWidth = 1;
+          mmCtx.strokeRect(px - 3, py - 3, 6, 6);
+        }
+      }
+
+      // 6. Tactical Objective Targets (Server Cluster, Citadel Core, Mesh Beacons)
+      for (const tgt of objectiveTargets) {
+        const tx = cx + (tgt.x - player.x) * scale;
+        const ty = cy + (tgt.y - player.y) * scale;
+        if (Math.hypot(tx - cx, ty - cy) < radarRadius) {
+          mmCtx.fillStyle = tgt.completed ? "#22c55e" : "#38bdf8";
+          mmCtx.beginPath();
+          mmCtx.arc(tx, ty, 4.5, 0, Math.PI * 2);
+          mmCtx.fill();
+        }
+      }
+
+      // 7. Player Tux (Phosphor Green Dot with Aim Direction Needle)
+      mmCtx.fillStyle = "#22c55e";
+      mmCtx.beginPath();
+      mmCtx.arc(cx, cy, 3.5, 0, Math.PI * 2);
+      mmCtx.fill();
+
+      // Aim Heading Needle
+      const aimDist = 12;
+      mmCtx.strokeStyle = "#4ade80";
+      mmCtx.lineWidth = 1.5;
+      mmCtx.beginPath();
+      mmCtx.moveTo(cx, cy);
+      mmCtx.lineTo(cx + Math.cos(player.angle) * aimDist, cy + Math.sin(player.angle) * aimDist);
+      mmCtx.stroke();
+
+      // 8. Soliton Radar Directional Chevron & Range Readout to Nearest Objective
+      let nearestTarget = null;
+      let nearestDist = Infinity;
+      let targetLabel = "OBJECTIVE";
+      let targetColor = "#38bdf8";
+
+      // A: Incomplete objective targets (Server clusters, Citadel core, Uplink relays)
+      for (const tgt of objectiveTargets) {
+        if (!tgt.completed && !tgt.destroyed) {
+          const d = Math.hypot(tgt.x - player.x, tgt.y - player.y);
+          if (d < nearestDist) {
+            nearestDist = d;
+            nearestTarget = tgt;
+            targetLabel = tgt.label || "OBJECTIVE";
+            targetColor = "#38bdf8";
+          }
+        }
+      }
+
+      // B: Active extraction or secret treasure portals
+      for (const portal of proceduralPortals) {
+        const d = Math.hypot(portal.x - player.x, portal.y - player.y);
+        if (d < nearestDist) {
+          nearestDist = d;
+          nearestTarget = portal;
+          targetLabel = portal.biomeKey === "TREASURE_VAULT" ? "VAULT" : "PORTAL";
+          targetColor = portal.biomeKey === "TREASURE_VAULT" ? "#facc15" : "#c084fc";
+        }
+      }
+
+      // C: Active boss
+      for (const enemy of enemies) {
+        if (enemy.isBoss && enemy.hp > 0) {
+          const d = Math.hypot(enemy.x - player.x, enemy.y - player.y);
+          if (d < nearestDist) {
+            nearestDist = d;
+            nearestTarget = enemy;
+            targetLabel = "BOSS";
+            targetColor = "#ef4444";
+          }
+        }
+      }
+
+      // D: Active reinforcement antenna
+      for (const ant of this.antennas) {
+        if (!ant.destroyed) {
+          const d = Math.hypot(ant.x - player.x, ant.y - player.y);
+          if (d < nearestDist) {
+            nearestDist = d;
+            nearestTarget = ant;
+            targetLabel = "RELAY";
+            targetColor = "#fbbf24";
+          }
+        }
+      }
+
+      if (nearestTarget) {
+        const targetAngle = Math.atan2(nearestTarget.y - player.y, nearestTarget.x - player.x);
+        const arrowR = radarRadius - 8;
+        const ax = cx + Math.cos(targetAngle) * arrowR;
+        const ay = cy + Math.sin(targetAngle) * arrowR;
+
+        // Draw crisp MGS tactical directional chevron on radar perimeter
+        mmCtx.save();
+        mmCtx.translate(ax, ay);
+        mmCtx.rotate(targetAngle);
+
+        const pulseScale = 1.0 + Math.sin(gameTime * 7) * 0.15;
+        mmCtx.scale(pulseScale, pulseScale);
+
+        mmCtx.fillStyle = targetColor;
+        mmCtx.beginPath();
+        mmCtx.moveTo(7, 0);
+        mmCtx.lineTo(-6, -6);
+        mmCtx.lineTo(-2, 0);
+        mmCtx.lineTo(-6, 6);
+        mmCtx.closePath();
+        mmCtx.fill();
+
+        mmCtx.strokeStyle = "#ffffff";
+        mmCtx.lineWidth = 1;
+        mmCtx.stroke();
+        mmCtx.restore();
+
+        // Draw tactical distance telemetry readout inside lower radar bezel
+        const distMeters = Math.max(1, Math.round(nearestDist / 14));
+        mmCtx.font = "bold 9px ui-monospace, monospace";
+        mmCtx.fillStyle = targetColor;
+        mmCtx.textAlign = "center";
+        mmCtx.fillText(`▸ ${targetLabel}: ${distMeters}m`, cx, cy + radarRadius - 6);
+      }
+    }
+
+    mmCtx.restore();
+
+    // Radar Glass Outer Ring & Compass Bezel
+    mmCtx.strokeStyle = "#166534";
+    mmCtx.lineWidth = 2.5;
+    mmCtx.beginPath();
+    mmCtx.arc(cx, cy, radarRadius, 0, Math.PI * 2);
+    mmCtx.stroke();
+  }
+}
+
+// WaveManager compatibility proxy for existing references
+class WaveManager {
+  get wave() {
+    return dungeon ? `${dungeon.sectorMajor}-${dungeon.sectorMinor}` : "1-1";
+  }
+  update(dt) {
+    if (dungeon) dungeon.update(dt);
+  }
+}
+
+// --- UPGRADE SYSTEM ---
+const UPGRADES_POOL = [
+  {
+    id: "plasma",
+    title: "Plasma Compiler (GPLv3)",
+    desc: "Upgrades flames into ultra-hot Blue Plasma: +50% Damage & Piercing heat!",
+    apply: () => { player.plasmaFlames = true; player.flameDamageMult += 0.5; }
+  },
+  {
+    id: "fork",
+    title: "fork() Bomb Cascade",
+    desc: "Enemies have a 40% chance to burst into 4 cluster fireballs upon death!",
+    apply: () => { player.forkBombPerk = true; }
+  },
+  {
+    id: "magma",
+    title: "Sudo Magma Dash",
+    desc: "Belly slide leaves permanent molten magma trails and rams enemies for +100% damage!",
+    apply: () => { player.magmaSlidePerk = true; }
+  },
+  {
+    id: "gpl",
+    title: "Infectious GPL License",
+    desc: "Burning enemies transmit flames to all nearby proprietary bullshit upon death!",
+    apply: () => { player.infectiousGPL = true; }
+  },
+  {
+    id: "community",
+    title: "Community Pull Requests",
+    desc: "Summons a cute mini helper Linux Penguin with an active blowtorch!",
+    apply: () => {
+      helperPenguins.push(new HelperPenguin(player.x + 40, player.y + 40));
+    }
+  },
+  {
+    id: "overclock",
+    title: "Kernel Overclock (CPU Boost)",
+    desc: "+25% Move Speed and all weapons recycle 40% faster!",
+    apply: () => {
+      player.speed *= 1.25;
+      player.fuelRegen *= 1.6;
+    }
+  },
+  {
+    id: "kill9",
+    title: "SIGKILL Optimization",
+    desc: "KILL -9 Shockwave recharges 50% faster with +40% blast radius!",
+    apply: () => {
+      player.kill9CooldownMax *= 0.5;
+    }
+  },
+  {
+    id: "armor",
+    title: "Debian Rock-Solid Kernel",
+    desc: "+50 Max HP and Tux passively regenerates +4 HP every second!",
+    apply: () => {
+      player.maxHp += 50;
+      player.hp += 50;
+      player.regenRate += 4.0;
+    }
+  },
+  // --- NEW WEAPONS & STRATAGEM UPGRADES ---
+  {
+    id: "stratagem_hero",
+    title: "Super Destroyer Stratagem Hero",
+    desc: "-35% Stratagem call cooldowns and orbital blasts gain +40% explosive radius!",
+    apply: () => {
+      player.stratagemHeroPerk = true;
+      for (const strat of STRATAGEMS) {
+        strat.cooldownMax *= 0.65;
+      }
+    }
+  },
+  {
+    id: "purity_seals",
+    title: "Torvalds' Purity Seals",
+    desc: "Astartes Power Armor gains +150 extra Ceramite Shield and deals holy flame aura!",
+    apply: () => {
+      player.maxSuitShield += 150;
+      if (player.isSpaceMarine) player.suitShield += 150;
+    }
+  },
+  {
+    id: "armor_pierce",
+    title: "HE-AP Penetrator Rounds",
+    desc: "Shotgun pellets, Bolters, and Minigun bullets pierce through multiple targets!",
+    apply: () => {
+      player.armorPiercePerk = true;
+    }
+  },
+  {
+    id: "patriot_stim",
+    title: "Super-Earth Patriot Stims",
+    desc: "Belly slide instantly restores +20 RAM (HP) and grants +50% slide speed!",
+    apply: () => {
+      player.patriotStimPerk = true;
+    }
+  },
+  {
+    id: "cluster_bomb",
+    title: "Forkbomb Cluster Munitions",
+    desc: "500KG orbital bombs and RPG rockets spawn twice as many secondary cluster fireballs!",
+    apply: () => {
+      player.clusterPerk = true;
+    }
+  },
+  {
+    id: "tesla_coil",
+    title: "Tesla Co-processor",
+    desc: "Minigun tracers and Bolter hits have a 40% chance to arc chain lightning to 2 nearby foes!",
+    apply: () => {
+      player.teslaCoilPerk = true;
+    }
+  },
+  {
+    id: "akimbo_firepower",
+    title: "Akimbo Root Firepower",
+    desc: "Bolters fire twin side-bolts and all weapons deal +30% extra ballistic damage!",
+    apply: () => {
+      player.akimboPerk = true;
+      player.flameDamageMult += 0.3;
+    }
+  },
+  {
+    id: "nanite_shield",
+    title: "Self-Healing Memory Nanites",
+    desc: "Passive auto-repair: regenerates +12 HP/s when not taking damage for 2.5 seconds!",
+    apply: () => {
+      player.naniteShieldPerk = true;
+    }
+  }
+];
+
+let availableUpgrades = [];
+function showUpgradeScreen() {
+  gameState = STATE.UPGRADE;
+  const shuffled = [...UPGRADES_POOL].sort(() => 0.5 - Math.random());
+  availableUpgrades = shuffled.slice(0, 3);
+
+  const container = document.getElementById('upgradeChoices');
+  container.innerHTML = '';
+
+  availableUpgrades.forEach((upg, index) => {
+    const card = document.createElement('div');
+    card.className = 'upgrade-card';
+    card.innerHTML = `
+      <div class="upgrade-num">[${index + 1}]</div>
+      <div class="upgrade-title">${upg.title}</div>
+      <div class="upgrade-desc">${upg.desc}</div>
+    `;
+    card.onclick = () => selectUpgrade(index);
+    container.appendChild(card);
+  });
+
+  document.getElementById('upgradeModal').style.display = 'flex';
+}
+
+function selectUpgrade(index) {
+  if (availableUpgrades[index]) {
+    availableUpgrades[index].apply();
+  }
+  document.getElementById('upgradeModal').style.display = 'none';
+  gameState = STATE.PLAYING;
+}
+const triggerUpgradeModal = showUpgradeScreen;
+
+// Global Entities
+let player;
+let waveManager;
+let enemies = [];
+let particles = [];
+let pickups = [];
+let helperPenguins = [];
+
+function resetGame() {
+  dungeon = new Dungeon();
+  dungeon.generateSector();
+  waveManager = new WaveManager();
+  enemies = [];
+  particles = [];
+  pickups = [];
+  helperPenguins = [];
+  playerProjectiles.length = 0;
+  orbitalStrikes.length = 0;
+  sentryTurrets.length = 0;
+  dropPods.length = 0;
+  spaceMarineSuitPickups.length = 0;
+  enemyProjectiles.length = 0;
+  floatingTexts.length = 0;
+  comboTracker.count = 0;
+  comboTracker.totalScore = 0;
+  gameTime = 0;
+  screenFlash = 0;
+  gameState = STATE.PLAYING;
+
+  // Reset stratagem cooldowns
+  for (const strat of STRATAGEMS) {
+    strat.cooldown = 0;
+  }
+
+  // Tux begins at world (512, 512) in the open central sanctuary
+  player = new Player(8 * TILE_SIZE, 8 * TILE_SIZE);
+  player.switchSlot(0);
+  camera.x = player.x - canvas.width / 2;
+  camera.y = player.y - canvas.height / 2;
+
+  // Initialize Ambush and Boss Directors for Endless Wilderness
+  ambushDirector = new AmbushDirector();
+  bossDirector = new BossDirector();
+  window.ambushDirector = ambushDirector;
+  window.bossDirector = bossDirector;
+
+  // Hide modals
+  document.getElementById('gameOverModal').style.display = 'none';
+  document.getElementById('victoryModal').style.display = 'none';
+  document.getElementById('upgradeModal').style.display = 'none';
+  document.getElementById('titleScreen').style.display = 'none';
+  if (document.getElementById('bossBarContainer')) {
+    document.getElementById('bossBarContainer').style.display = 'none';
+  }
+  if (document.getElementById('bossCommsBanner')) {
+    document.getElementById('bossCommsBanner').style.display = 'none';
+  }
+  if (document.getElementById('ambushAlertBanner')) {
+    document.getElementById('ambushAlertBanner').style.display = 'none';
+  }
+
+  window.soundEngine.init();
+  window.soundEngine.resume();
+  window.soundEngine.startMusic();
+}
+
+window.dropRareWeaponAt = function(x, y) {
+  const available = WEAPON_CATALOG.filter(w => !player || (w.id !== player.heldWeapons[0].id && w.id !== player.heldWeapons[1].id));
+  const chosen = available[Math.floor(Math.random() * available.length)] || WEAPON_CATALOG[2];
+  groundWeapons.push(new GroundWeapon(x, y, chosen));
+};
+
+window.spawnReinforcementSquad = function(x, y, count = 3) {
+  for (let i = 0; i < count; i++) {
+    const a = (Math.PI * 2 / count) * i;
+    dropPods.push(new HostileDropPod(x + Math.cos(a) * 100, y + Math.sin(a) * 100));
+  }
+};
+
+function triggerGameOver() {
+  gameState = STATE.GAMEOVER;
+  window.soundEngine.stopMusic();
+  window.soundEngine.setFlamethrower(false);
+  document.getElementById('finalScoreText').innerText = `Final Repos Purged Score: ${comboTracker.totalScore}`;
+  document.getElementById('gameOverModal').style.display = 'flex';
+}
+
+function triggerVictory() {
+  gameState = STATE.VICTORY;
+  window.soundEngine.stopMusic();
+  window.soundEngine.setFlamethrower(false);
+  document.getElementById('victoryScoreText').innerText = `All Proprietary Monopolies Purged! Score: ${comboTracker.totalScore}`;
+  document.getElementById('victoryModal').style.display = 'flex';
+}
+
+function addScreenShake(amount) {
+  screenShake = Math.max(screenShake, amount);
+}
+
+// --- STRATAGEM MANDATORY ARROW INPUT & TERMINAL LOGIC ---
+window.switchWeapon = function(idx) {
+  if (player) player.switchSlot(idx);
+};
+
+window.openTerminalForStratagem = function(idx) {
+  if (!isStratagemTerminalOpen) {
+    toggleStratagemTerminal();
+  }
+};
+
+const arrowGlyphs = {
+  'ArrowUp': '▲',
+  'ArrowDown': '▼',
+  'ArrowLeft': '◀',
+  'ArrowRight': '▶'
+};
+
+function toggleStratagemTerminal(forceState) {
+  if (typeof forceState === 'boolean') {
+    isStratagemTerminalOpen = forceState;
+  } else {
+    isStratagemTerminalOpen = !isStratagemTerminalOpen;
+  }
+  const terminalEl = document.getElementById('stratagemTerminal');
+  if (terminalEl) {
+    terminalEl.style.display = isStratagemTerminalOpen ? 'block' : 'none';
+  }
+  if (!isStratagemTerminalOpen) {
+    currentTerminalSequence = [];
+    if (stratagemResetTimer) clearTimeout(stratagemResetTimer);
+  }
+  updateTerminalDisplay();
+}
+
+function updateTerminalDisplay() {
+  const seqEl = document.getElementById('terminalCurrentSeq');
+  if (seqEl) {
+    if (currentTerminalSequence.length === 0) {
+      seqEl.innerHTML = '<span style="font-size:12px; color:#94a3b8; font-weight:normal;">INPUT ARROW CODE [▲ ▶ ▼ ◀]</span>';
+    } else {
+      seqEl.innerHTML = currentTerminalSequence.map(k => `<span class="arrow-badge" style="background:#0f172a; border:1px solid #eab308; padding:2px 7px; border-radius:4px; margin-right:3px; color:#facc15;">${arrowGlyphs[k] || k}</span>`).join('');
+    }
+  }
+
+  const promptEl = document.getElementById('terminalInputDisplay');
+  if (promptEl) {
+    if (currentTerminalSequence.length > 0) {
+      const matches = STRATAGEMS.filter(s => {
+        if (currentTerminalSequence.length > s.code.length) return false;
+        return s.code.slice(0, currentTerminalSequence.length).every((v, i) => v === currentTerminalSequence[i]);
+      });
+      if (matches.length > 0) {
+        promptEl.innerHTML = matches.map(m => {
+          const rem = m.code.slice(currentTerminalSequence.length).map(k => arrowGlyphs[k]).join(' ');
+          return `<div style="color:#eab308; font-weight:bold; font-size:11px;">${m.name}: <span style="color:#94a3b8;">${rem || 'READY!'}</span></div>`;
+        }).join('');
+      } else {
+        promptEl.innerText = "NO MATCHING UPLINK CODE";
+      }
+    } else {
+      promptEl.innerText = "INPUT CODE WITH ARROW KEYS ONLY [▲ ▼ ◀ ▶]";
+    }
+  }
+}
+
+function handleStratagemDirectionalInput(code) {
+  if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(code)) return;
+
+  if (!isStratagemTerminalOpen) {
+    toggleStratagemTerminal(true);
+  }
+
+  if (stratagemResetTimer) clearTimeout(stratagemResetTimer);
+  stratagemResetTimer = setTimeout(() => {
+    currentTerminalSequence = [];
+    updateTerminalDisplay();
+    if (isStratagemTerminalOpen) toggleStratagemTerminal(false);
+  }, 4000);
+
+  currentTerminalSequence.push(code);
+
+  // Check if matches any stratagem
+  for (const strat of STRATAGEMS) {
+    const isPrimaryMatch = strat.code.length === currentTerminalSequence.length &&
+      strat.code.every((val, idx) => val === currentTerminalSequence[idx]);
+
+    if (isPrimaryMatch) {
+      if (strat.cooldown <= 0) {
+        strat.cooldown = strat.cooldownMax * (player && player.stratagemHeroPerk ? 0.65 : 1.0);
+        player.holdingStratagem = strat.id;
+        window.soundEngine.playStratagemCall();
+        addFloatingText(player.x, player.y - 45, `${strat.name} ARMED - LEFT CLICK TO THROW!`, "#eab308", 24);
+        addScreenShake(7);
+        toggleStratagemTerminal(false);
+        return;
+      } else {
+        window.soundEngine.playStratagemBeep(false);
+        addFloatingText(player.x, player.y - 40, `${strat.name} ON COOLDOWN! (${strat.cooldown.toFixed(1)}s)`, "#ef4444", 20);
+        currentTerminalSequence = [];
+        updateTerminalDisplay();
+        return;
+      }
+    }
+  }
+
+  // Check prefix match
+  const anyPrefix = STRATAGEMS.some(strat => {
+    if (currentTerminalSequence.length > strat.code.length) return false;
+    return strat.code.slice(0, currentTerminalSequence.length).every((val, idx) => val === currentTerminalSequence[idx]);
+  });
+
+  if (anyPrefix) {
+    window.soundEngine.playStratagemBeep(true);
+    updateTerminalDisplay();
+  } else {
+    // Mistyped input! Error sound and reset
+    window.soundEngine.playStratagemBeep(false);
+    addFloatingText(player.x, player.y - 35, "MISTYPE - SEQUENCE RESET!", "#ef4444", 20);
+    currentTerminalSequence = [];
+    updateTerminalDisplay();
+  }
+}
+
+// --- MAIN LOOP ---
+function gameLoop(timestamp) {
+  if (!lastTimestamp) lastTimestamp = timestamp;
+  let dt = (timestamp - lastTimestamp) / 1000;
+  lastTimestamp = timestamp;
+
+  if (dt > 0.1) dt = 0.1;
+
+  if (gameState === STATE.PLAYING) {
+    gameTime += dt;
+    comboTracker.update(dt);
+    waveManager.update(dt);
+    if (window.ambushDirector) window.ambushDirector.update(dt);
+    if (window.bossDirector) window.bossDirector.update(dt);
+
+    // Update Stratagem cooldowns
+    for (const strat of STRATAGEMS) {
+      if (strat.cooldown > 0) strat.cooldown -= dt;
+    }
+
+    // Update Player
+    player.update(dt);
+
+    // Update Helper Penguins
+    for (const hp of helperPenguins) {
+      hp.update(dt);
+    }
+
+    // Update Sentry Turrets
+    for (let i = sentryTurrets.length - 1; i >= 0; i--) {
+      if (!sentryTurrets[i].update(dt)) {
+        sentryTurrets.splice(i, 1);
+      }
+    }
+
+    // Update Drop Pods
+    for (let i = dropPods.length - 1; i >= 0; i--) {
+      if (!dropPods[i].update(dt)) {
+        dropPods.splice(i, 1);
+      }
+    }
+
+    // Update Space Marine Suit Pickups
+    for (let i = spaceMarineSuitPickups.length - 1; i >= 0; i--) {
+      if (!spaceMarineSuitPickups[i].update(dt)) {
+        spaceMarineSuitPickups.splice(i, 1);
+      }
+    }
+
+    // Update Player Projectiles (bullets, rockets, beacons)
+    for (let i = playerProjectiles.length - 1; i >= 0; i--) {
+      const p = playerProjectiles[i];
+      if (Math.abs(p.x - player.x) > 2200 || Math.abs(p.y - player.y) > 2200 || !p.update(dt)) {
+        playerProjectiles.splice(i, 1);
+      }
+    }
+
+    // Update Orbital Strikes (500kg, 380mm, laser)
+    for (let i = orbitalStrikes.length - 1; i >= 0; i--) {
+      if (!orbitalStrikes[i].update(dt)) {
+        orbitalStrikes.splice(i, 1);
+      }
+    }
+
+    // Update Enemies (with distance-based sleeping & far-offscreen despawning)
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const enemy = enemies[i];
+      const distToPlayer = Math.hypot(enemy.x - player.x, enemy.y - player.y);
+
+      // Despawn non-boss enemies left far behind (>3600px)
+      if (!enemy.isBoss && distToPlayer > 3600) {
+        enemies.splice(i, 1);
+        continue;
+      }
+
+      // Far offscreen (>1600px): sleep to save raycast / collision CPU
+      if (!enemy.isBoss && distToPlayer > 1600) {
+        continue;
+      }
+
+      if (!enemy.update(dt)) {
+        // Died in update
+      }
+    }
+
+    // Update Floor Hazards (Patent Webs, Paywall Puddles, Mortars)
+    for (let i = floorHazards.length - 1; i >= 0; i--) {
+      if (!floorHazards[i].update(dt)) {
+        floorHazards.splice(i, 1);
+      }
+    }
+
+    // Update Enemy Projectiles (culled if far offscreen)
+    for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
+      const ep = enemyProjectiles[i];
+      if (Math.abs(ep.x - player.x) > 2200 || Math.abs(ep.y - player.y) > 2200 || !ep.update(dt)) {
+        enemyProjectiles.splice(i, 1);
+      }
+    }
+
+    // Update Pickups
+    for (let i = pickups.length - 1; i >= 0; i--) {
+      if (!pickups[i].update(dt)) {
+        pickups.splice(i, 1);
+      }
+    }
+
+    // Update Particles (capped to 250 max for silky 60 FPS)
+    if (particles.length > 250) {
+      particles.splice(0, particles.length - 250);
+    }
+    for (let i = particles.length - 1; i >= 0; i--) {
+      if (!particles[i].update(dt)) {
+        particles.splice(i, 1);
+      }
+    }
+
+    // Update Floating Text
+    for (let i = floatingTexts.length - 1; i >= 0; i--) {
+      const ft = floatingTexts[i];
+      ft.lifetime -= dt;
+      ft.y += ft.vy * dt;
+      if (ft.lifetime <= 0) {
+        floatingTexts.splice(i, 1);
+      }
+    }
+
+    // Decay screen flash & shake
+    if (screenFlash > 0) screenFlash = Math.max(0, screenFlash - 2.5 * dt);
+    if (screenShake > 0) screenShake = Math.max(0, screenShake - 30 * dt);
+
+    // Camera Lerp (Endless, boundless tracking anywhere in the universe)
+    camera.targetX = player.x - canvas.width / 2;
+    camera.targetY = player.y - canvas.height / 2;
+    camera.x += (camera.targetX - camera.x) * 16 * dt;
+    camera.y += (camera.targetY - camera.y) * 16 * dt;
+
+    mouse.worldX = mouse.x + camera.x;
+    mouse.worldY = mouse.y + camera.y;
+
+    updateHUD();
+  }
+
+  render();
+  requestAnimationFrame(gameLoop);
+}
+
+function updateHUD() {
+  document.getElementById('hpFill').style.width = `${(player.hp / player.maxHp) * 100}%`;
+  document.getElementById('hpText').innerText = `${Math.round(player.hp)} / ${player.maxHp}`;
+
+  // Tactical Energy Shield Matrix
+  const shieldFill = document.getElementById('shieldFill');
+  const shieldText = document.getElementById('shieldText');
+  if (shieldFill && shieldText) {
+    shieldFill.style.width = `${(player.shield / player.maxShield) * 100}%`;
+    shieldText.innerText = `${Math.round(player.shield)} / ${player.maxShield}`;
+  }
+
+  // Ammo / Heat Label & Bar for 2-slot inventory
+  const fuelFill = document.getElementById('fuelFill');
+  const ammoHeatLabel = document.getElementById('ammoHeatLabel');
+  const curW = player.heldWeapons[player.activeWeaponSlot];
+
+  if (player.currentWeapon === 0) {
+    fuelFill.style.width = `${(player.fuel / player.maxFuel) * 100}%`;
+    fuelFill.style.background = player.isRootMode ? '#ef4444' : '#eab308';
+    if (ammoHeatLabel) ammoHeatLabel.innerText = "Flamethrower Fuel";
+  } else {
+    const cd = player.weaponCooldowns[player.currentWeapon] || 0;
+    const cdMax = [0, 0.52, 0.16, 0.065, 1.05, 0.65, 0.38][player.currentWeapon] || 0.5;
+    const readyRatio = cd > 0 ? (1 - (cd / cdMax)) : 1.0;
+    fuelFill.style.width = `${readyRatio * 100}%`;
+    fuelFill.style.background = '#22c55e';
+    if (ammoHeatLabel && curW) ammoHeatLabel.innerText = `${curW.name} [${cd <= 0 ? 'READY' : 'CYCLING'}]`;
+  }
+
+  // Root Meter
+  document.getElementById('rootFill').style.width = `${(player.rootCharge / player.rootMax) * 100}%`;
+  const rootStatus = document.getElementById('rootStatus');
+  if (player.isRootMode) {
+    rootStatus.innerText = `ROOT ACTIVE (${player.rootDuration.toFixed(1)}s)`;
+    rootStatus.className = 'status-badge active';
+  } else if (player.rootCharge >= player.rootMax) {
+    rootStatus.innerText = "ROOT READY! [PRESS F / R]";
+    rootStatus.className = 'status-badge ready';
+  } else {
+    rootStatus.innerText = "ACCUMULATING COMMITS...";
+    rootStatus.className = 'status-badge';
+  }
+
+  // Space Marine Suit Card in HUD
+  const suitCard = document.getElementById('marineSuitCard');
+  if (player.isSpaceMarine && suitCard) {
+    suitCard.style.display = 'block';
+    document.getElementById('suitShieldText').innerText = `${Math.max(0, Math.round(player.suitShield))} / ${player.maxSuitShield}`;
+    document.getElementById('suitShieldFill').style.width = `${Math.max(0, (player.suitShield / player.maxSuitShield) * 100)}%`;
+
+    const suitBatteryText = document.getElementById('suitBatteryText');
+    const suitBatteryFill = document.getElementById('suitBatteryFill');
+    if (suitBatteryText && suitBatteryFill) {
+      suitBatteryText.innerText = `${Math.max(0, player.suitBattery).toFixed(1)}s`;
+      suitBatteryFill.style.width = `${Math.max(0, (player.suitBattery / player.maxSuitBattery) * 100)}%`;
+    }
+  } else if (suitCard) {
+    suitCard.style.display = 'none';
+  }
+
+  // Boss Bar in HUD
+  const currentBoss = enemies.find(e => e.isBoss);
+  const bossBar = document.getElementById('bossBarContainer');
+  if (currentBoss && bossBar) {
+    bossBar.style.display = 'block';
+    document.getElementById('bossName').innerText = currentBoss.label;
+    document.getElementById('bossHpText').innerText = `${Math.max(0, Math.round(currentBoss.hp))} / ${currentBoss.maxHp}`;
+    document.getElementById('bossHpFill').style.width = `${Math.max(0, (currentBoss.hp / currentBoss.maxHp) * 100)}%`;
+  } else if (bossBar) {
+    bossBar.style.display = 'none';
+  }
+
+  // Ability Cooldowns
+  const slideStatus = document.getElementById('slideStatus');
+  if (player.isSpaceMarine) {
+    if (player.suitSlamCooldown <= 0) {
+      slideStatus.innerText = "THUNDER SLAM: READY [SPACE]";
+      slideStatus.style.color = "#38bdf8";
+    } else {
+      slideStatus.innerText = `THUNDER SLAM: ${player.suitSlamCooldown.toFixed(1)}s`;
+      slideStatus.style.color = "#94a3b8";
+    }
+  } else {
+    if (player.slideCooldown <= 0) {
+      slideStatus.innerText = "SUDO DASH: READY [SPACE / SHIFT]";
+      slideStatus.style.color = "#38bdf8";
+    } else {
+      slideStatus.innerText = `SUDO DASH: ${(player.slideCooldown).toFixed(1)}s`;
+      slideStatus.style.color = "#94a3b8";
+    }
+  }
+
+  const kill9Status = document.getElementById('kill9Status');
+  if (player.kill9Cooldown <= 0) {
+    kill9Status.innerText = "KILL -9: READY [RIGHT CLICK]";
+    kill9Status.style.color = "#ef4444";
+  } else {
+    kill9Status.innerText = `KILL -9: ${(player.kill9Cooldown).toFixed(1)}s`;
+    kill9Status.style.color = "#94a3b8";
+  }
+
+  // Stratagem Cards Cooldown
+  for (let i = 0; i < STRATAGEMS.length; i++) {
+    const strat = STRATAGEMS[i];
+    const card = document.getElementById(`stratCard${i}`);
+    const cdEl = document.getElementById(`stratCd${i}`);
+    if (cdEl) {
+      if (strat.cooldown <= 0) {
+        cdEl.innerText = "READY";
+        cdEl.style.color = "#22c55e";
+        if (card) {
+          card.classList.add('ready');
+          if (player.holdingStratagem === i) card.classList.add('active-calling');
+          else card.classList.remove('active-calling');
+        }
+      } else {
+        cdEl.innerText = `${strat.cooldown.toFixed(1)}s`;
+        cdEl.style.color = "#ef4444";
+        if (card) {
+          card.classList.remove('ready');
+          card.classList.remove('active-calling');
+        }
+      }
+    }
+  }
+
+  document.getElementById('scoreDisplay').innerText = `PURGED: ${comboTracker.totalScore}`;
+  document.getElementById('waveDisplay').innerText = `SECTOR: ${dungeon ? `${dungeon.sectorMajor}-${dungeon.sectorMinor}` : "1-1"}`;
+  document.getElementById('levelDisplay').innerText = `LVL: ${player.level}`;
+
+  const comboEl = document.getElementById('comboDisplay');
+  if (comboTracker.count > 1) {
+    comboEl.style.display = 'block';
+    comboEl.innerText = `COMBO x${comboTracker.multiplier} (${comboTracker.count} PURGES)`;
+  } else {
+    comboEl.style.display = 'none';
+  }
+
+  // Update Minimap Radar
+  if (dungeon) {
+    dungeon.drawMinimap();
+  }
+}
+
+function render() {
+  ctx.save();
+
+  // Clear Screen
+  ctx.fillStyle = "#090d16";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Apply Screen Shake
+  if (screenShake > 0) {
+    const shakeX = (Math.random() - 0.5) * screenShake;
+    const shakeY = (Math.random() - 0.5) * screenShake;
+    ctx.translate(shakeX, shakeY);
+  }
+
+  // Camera Translation
+  ctx.translate(-camera.x, -camera.y);
+
+  // Procedural Dungeon Tiles & Interactive Entities
+  if (dungeon) {
+    dungeon.draw(ctx);
+  }
+
+  // Floor Hazards (Patent Webs, Paywall Puddles, Mortars)
+  for (const hazard of floorHazards) {
+    hazard.draw(ctx);
+  }
+
+  // Scorch / Magma Trails
+  for (const p of particles) {
+    if (p instanceof ScorchTrail) p.draw(ctx);
+  }
+
+  // Pickups
+  for (const pickup of pickups) {
+    pickup.draw(ctx);
+  }
+
+  // Space Marine Suit Drop Pods & Pickups
+  for (const pod of dropPods) {
+    pod.draw(ctx);
+  }
+  for (const suit of spaceMarineSuitPickups) {
+    suit.draw(ctx);
+  }
+
+  // Sentry Turrets
+  for (const sentry of sentryTurrets) {
+    sentry.draw(ctx);
+  }
+
+  // Helper Penguins
+  for (const hp of helperPenguins) {
+    hp.draw(ctx);
+  }
+
+  // Player Tux
+  if (player) {
+    player.draw(ctx);
+  }
+
+  // Enemies
+  for (const enemy of enemies) {
+    enemy.draw(ctx);
+  }
+
+  // Projectiles
+  for (const proj of enemyProjectiles) {
+    proj.draw(ctx);
+  }
+  for (const proj of playerProjectiles) {
+    proj.draw(ctx);
+  }
+
+  // Orbital Strikes (500kg bomb, 380mm, laser)
+  for (const strike of orbitalStrikes) {
+    strike.draw(ctx);
+  }
+
+  // Flame, Spark, and Shockwave Particles
+  for (const p of particles) {
+    if (!(p instanceof ScorchTrail)) p.draw(ctx);
+  }
+
+  // Floating Text
+  for (const ft of floatingTexts) {
+    const alpha = ft.lifetime / ft.maxLifetime;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = ft.color;
+    ctx.font = `bold ${ft.size}px monospace`;
+    ctx.textAlign = "center";
+    ctx.fillText(ft.text, ft.x, ft.y);
+    ctx.restore();
+  }
+
+  ctx.restore();
+
+  // Nuclear Flash Overlay from 500KG Bomb / Sector Warp
+  if (screenFlash > 0) {
+    ctx.save();
+    ctx.fillStyle = `rgba(255, 255, 255, ${screenFlash})`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+  }
+}
+
+// --- EVENT LISTENERS ---
+function resizeCanvas() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+window.addEventListener('keydown', (e) => {
+  // Arrow keys are STRICTLY & EXCLUSIVELY for Stratagem input! Never move Tux with arrows.
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+    e.preventDefault();
+    if (gameState === STATE.PLAYING && player) {
+      handleStratagemDirectionalInput(e.code);
+    }
+    return;
+  }
+
+  keys[e.code] = true;
+
+  // Key shortcuts for upgrade modal
+  if (gameState === STATE.UPGRADE) {
+    if (e.code === 'Digit1') selectUpgrade(0);
+    if (e.code === 'Digit2') selectUpgrade(1);
+    if (e.code === 'Digit3') selectUpgrade(2);
+    return;
+  }
+
+  // Space to start on title screen
+  if (gameState === STATE.TITLE && e.code === 'Space') {
+    resetGame();
+    return;
+  }
+
+  // Controls during PLAYING
+  if (gameState === STATE.PLAYING && player) {
+    // 2-Weapon Inventory Switching (Soul Knight style)
+    if (e.code === 'Digit1') player.switchSlot(0);
+    else if (e.code === 'Digit2') player.switchSlot(1);
+    else if (e.code === 'KeyQ') player.switchSlot((player.activeWeaponSlot + 1) % 2);
+
+    // Interaction key E: Swap ground weapon / Open chest / Enter portal
+    else if (e.code === 'KeyE') {
+      player.interact();
+    }
+
+    // Stratagem Terminal manual toggle: Ctrl or Tab or G
+    else if (e.code === 'ControlLeft' || e.code === 'ControlRight' || e.code === 'KeyG' || e.code === 'Tab') {
+      e.preventDefault();
+      toggleStratagemTerminal();
+    }
+  }
+});
+
+window.addEventListener('keyup', (e) => {
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) return;
+  keys[e.code] = false;
+});
+
+window.addEventListener('wheel', (e) => {
+  if (gameState !== STATE.PLAYING || !player) return;
+  player.switchSlot((player.activeWeaponSlot + 1) % 2);
+});
+
+window.addEventListener('mousemove', (e) => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+});
+
+window.addEventListener('mousedown', (e) => {
+  if (e.button === 0) {
+    mouse.down = true;
+    if (gameState === STATE.PLAYING && player && player.holdingStratagem !== null) {
+      player.throwStratagemBeacon(player.holdingStratagem);
+      player.holdingStratagem = null;
+      return;
+    }
+  } else if (e.button === 2) {
+    mouse.rightDown = true;
+  }
+});
+
+window.addEventListener('mouseup', (e) => {
+  if (e.button === 0) {
+    mouse.down = false;
+  } else if (e.button === 2) {
+    mouse.rightDown = false;
+  }
+});
+
+// Prevent right-click context menu so Right Click can be used for KILL -9 shockwave!
+window.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+});
+
+// Clear all inputs on window blur to prevent stuck keys and loss of control
+window.addEventListener('blur', () => {
+  for (const k in keys) keys[k] = false;
+  mouse.down = false;
+  mouse.rightDown = false;
+});
+
+// UI Buttons
+document.getElementById('startBtn').addEventListener('click', () => {
+  resetGame();
+});
+
+document.getElementById('restartBtn').addEventListener('click', () => {
+  resetGame();
+});
+
+document.getElementById('playAgainBtn').addEventListener('click', () => {
+  resetGame();
+});
+
+// Kick off loop
+requestAnimationFrame(gameLoop);
+

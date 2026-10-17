@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "name": "tux_root_purge_mcp_tools",
+  "description": "Model Context Protocol (MCP) tool specifications for Tux: Root Purge. Allows an LLM to generate custom enemies, scripted boss battles, narrative story comms, and dynamic wilderness ambushes at runtime.",
+  "tools": [
+    {
+      "name": "generate_enemy_spec",
+      "description": "Define and register a custom enemy model or boss with specialized chassis visual styles, attack behaviors, threat lore, and anti-open-source dialogue.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Unique model ID, e.g. 'ballmer_bot_v2' or 'cloud_monolith'" },
+          "name": { "type": "string", "description": "Display name of the enemy or boss" },
+          "title": { "type": "string", "description": "Tactical subtitle, e.g. 'Enterprise License Inquisitor'" },
+          "tier": { "type": "string", "enum": ["minion", "elite", "boss", "outpost_commander"] },
+          "lore": { "type": "string", "description": "Backstory narrative describing this proprietary menace" },
+          "visual": {
+            "type": "object",
+            "properties": {
+              "chassis": { "type": "string", "enum": ["biped_executive", "tank_rover", "drone_sphere", "server_monolith", "singularity_core"] },
+              "primaryColor": { "type": "string", "description": "Hex color code, e.g. '#0284c7'" },
+              "accentColor": { "type": "string", "description": "Hex color code, e.g. '#ef4444'" },
+              "radius": { "type": "number", "description": "Hitbox and drawing radius (minion: 20-30, boss: 60-90)" },
+              "badgeText": { "type": "string", "description": "Short 3-6 char badge on chassis (e.g. 'DRM', '$MS', 'EULA')" }
+            },
+            "required": ["chassis", "primaryColor", "radius"]
+          },
+          "stats": {
+            "type": "object",
+            "properties": {
+              "hp": { "type": "number", "description": "Total hit points" },
+              "shield": { "type": "number", "description": "Tactical shield absorption points" },
+              "speed": { "type": "number", "description": "Movement velocity (0 for stationary antenna, 90-150 for boss)" }
+            },
+            "required": ["hp", "speed"]
+          },
+          "attacks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "cooldown": { "type": "number" },
+                "range": { "type": "number" },
+                "type": { "type": "string", "enum": ["bullet_burst", "spiral_danmaku", "mortar_cluster", "summon_reinforcements"] },
+                "count": { "type": "number" },
+                "speed": { "type": "number" },
+                "projectile": {
+                  "type": "object",
+                  "properties": {
+                    "label": { "type": "string" },
+                    "color": { "type": "string" },
+                    "damage": { "type": "number" },
+                    "size": { "type": "number" }
+                  }
+                }
+              },
+              "required": ["id", "type", "cooldown", "range"]
+            }
+          },
+          "dialogue": {
+            "type": "object",
+            "properties": {
+              "onSpawn": { "type": "array", "items": { "type": "string" } },
+              "onEnrage": { "type": "array", "items": { "type": "string" } },
+              "onDefeat": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "required": ["id", "name", "tier", "visual", "stats"]
+      }
+    },
+    {
+      "name": "spawn_custom_enemy",
+      "description": "Spawn an enemy or boss into the live game by template ID or direct inline specification at coordinates (x, y) relative to player.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "templateId": { "type": "string", "description": "Preset ID (e.g. 'ballmer_bot', 'patent_troll_sovereign', 'oracle_audit_archon') or previously registered ID" },
+          "offsetX": { "type": "number", "description": "Pixel offset X from player (e.g. 400 for ahead, -400 for behind)" },
+          "offsetY": { "type": "number", "description": "Pixel offset Y from player" }
+        },
+        "required": ["templateId"]
+      }
+    },
+    {
+      "name": "broadcast_story_dialogue",
+      "description": "Transmit a threatening or narrative radio comms broadcast to Tux's terminal with speech audio chatter.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "speaker": { "type": "string", "description": "Name of the entity transmitting (e.g. 'STEVE BALLMER AI')" },
+          "message": { "type": "string", "description": "Speech text threatening open source software" },
+          "color": { "type": "string", "description": "Terminal accent color, e.g. '#ef4444'" },
+          "icon": { "type": "string", "description": "Emoji avatar icon, e.g. '☠️', '💼', '🔥'" }
+        },
+        "required": ["speaker", "message"]
+      }
+    },
+    {
+      "name": "query_battlefield_state",
+      "description": "Retrieve current player vitals, distance explored, active enemies, weapon inventory, and active bosses to feed the LLM story writer.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  ]
+}
