@@ -4415,6 +4415,14 @@ const comboTracker = {
   multiplier: 1,
   totalScore: 0,
 
+  addScore(pts) {
+    const points = typeof pts === 'number' ? pts : 200;
+    this.totalScore += points;
+    if (typeof player !== 'undefined' && player && typeof addFloatingText === 'function') {
+      addFloatingText(player.x, player.y - 45, `+${points} PTS`, "#facc15", 22);
+    }
+  },
+
   registerKill() {
     this.count++;
     this.timer = 2.5; // Combo reset window
@@ -4443,8 +4451,11 @@ const comboTracker = {
   },
 
   addBonus(label, pts) {
-    this.totalScore += pts;
-    addFloatingText(player.x, player.y - 45, `+${pts} ${label}`, "#38bdf8", 22);
+    const points = typeof pts === 'number' ? pts : 100;
+    this.totalScore += points;
+    if (typeof player !== 'undefined' && player && typeof addFloatingText === 'function') {
+      addFloatingText(player.x, player.y - 45, `+${points} ${label}`, "#38bdf8", 22);
+    }
   },
 
   update(dt) {
@@ -4457,6 +4468,7 @@ const comboTracker = {
     }
   }
 };
+window.comboTracker = comboTracker;
 
 // --- PICKUPS ---
 class Pickup {
@@ -4883,27 +4895,33 @@ class EnemyBase {
     }
 
     if (this.isBoss) {
-      if (window.bossDirector) window.bossDirector.bossTiersDefeated++;
+      try {
+        if (window.bossDirector) window.bossDirector.bossTiersDefeated++;
 
-      const currentTier = (dungeon && dungeon.sectorNum) ? dungeon.sectorNum : 1;
-      const nextTier = currentTier + 1;
-      const harderBiomes = ["THERMAL_FOUNDRY", "CRYO_GLACIER", "TOXIC_HEAP", "WALLED_GARDEN", "QUANTUM_VOID"];
-      const nextBiomeKey = harderBiomes[Math.min(harderBiomes.length - 1, nextTier - 1)] || "QUANTUM_VOID";
-      const objectivePool = ["DEFEND_SERVERS", "ATTACK_FORTRESS", "SETUP_UPLINK", "ELITE_BOUNTY"];
-      const nextObj = objectivePool[Math.floor(Math.random() * objectivePool.length)];
+        const currentTier = (dungeon && dungeon.sectorNum) ? dungeon.sectorNum : 1;
+        const nextTier = currentTier + 1;
+        const harderBiomes = ["THERMAL_FOUNDRY", "CRYO_GLACIER", "TOXIC_HEAP", "WALLED_GARDEN", "QUANTUM_VOID"];
+        const nextBiomeKey = harderBiomes[Math.min(harderBiomes.length - 1, nextTier - 1)] || "QUANTUM_VOID";
+        const objectivePool = ["DEFEND_SERVERS", "ATTACK_FORTRESS", "SETUP_UPLINK", "ELITE_BOUNTY"];
+        const nextObj = objectivePool[Math.floor(Math.random() * objectivePool.length)];
 
-      // Drop Portal to harder sector at detonation site
-      const portalHarder = new ProceduralPortal(this.x - 55, this.y, nextBiomeKey, nextObj, nextTier);
-      portalHarder.label = `TIER ${nextTier} ADVANCE`;
-      proceduralPortals.push(portalHarder);
+        // Drop Portal to harder sector at detonation site with safety distance and arming delay
+        const portalHarder = new ProceduralPortal(this.x - 75, this.y, nextBiomeKey, nextObj, nextTier);
+        portalHarder.label = `TIER ${nextTier} ADVANCE`;
+        portalHarder.armTimer = 1.5;
+        proceduralPortals.push(portalHarder);
 
-      // Drop Secret Treasure Vault portal right beside it
-      const portalTreasure = new ProceduralPortal(this.x + 55, this.y, "TREASURE_VAULT", "TREASURE_REWARD", nextTier);
-      portalTreasure.label = "TREASURE VAULT";
-      proceduralPortals.push(portalTreasure);
+        // Drop Secret Treasure Vault portal right beside it
+        const portalTreasure = new ProceduralPortal(this.x + 75, this.y, "TREASURE_VAULT", "TREASURE_REWARD", nextTier);
+        portalTreasure.label = "TREASURE VAULT";
+        portalTreasure.armTimer = 1.5;
+        proceduralPortals.push(portalTreasure);
 
-      if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
-        window.soundEngine.speakRobot("APEX CORPORATE OVERLORD TERMINATED. DEMOCRATIC ADVANCE PORTALS ONLINE.", "SUPER DESTROYER");
+        if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
+          window.soundEngine.speakRobot("APEX CORPORATE OVERLORD TERMINATED. DEMOCRATIC ADVANCE PORTALS ONLINE.", "SUPER DESTROYER");
+        }
+      } catch (bossErr) {
+        console.error("Error in EnemyBase boss defeat handling:", bossErr);
       }
     }
 
@@ -7843,6 +7861,7 @@ class ProceduralPortal {
     this.spinAngle = 0;
     this.pulse = 0;
     this.entered = false;
+    this.armTimer = 1.5; // Portal stabilization timer - prevents instant telefrag when boss dies at close range
 
     switch (this.objectiveType) {
       case "DEFEND_SERVERS":
@@ -7876,6 +7895,23 @@ class ProceduralPortal {
     this.spinAngle += dt * 3.8;
     this.pulse += dt * 3.0;
 
+    // Portal stabilization / arming countdown
+    if (this.armTimer > 0) {
+      this.armTimer -= dt;
+      if (Math.random() < 0.25 && typeof particles !== 'undefined' && typeof SparkParticle !== 'undefined') {
+        const a = Math.random() * Math.PI * 2;
+        const r = this.radius * 0.5;
+        particles.push(new SparkParticle(
+          this.x + Math.cos(a) * r,
+          this.y + Math.sin(a) * r,
+          Math.cos(a) * 20,
+          Math.sin(a) * 20,
+          "#ffffff"
+        ));
+      }
+      return;
+    }
+
     if (Math.random() < 0.35) {
       const a = Math.random() * Math.PI * 2;
       const r = this.radius * (0.6 + Math.random() * 0.4);
@@ -7884,31 +7920,38 @@ class ProceduralPortal {
         this.y + Math.sin(a) * r,
         -Math.cos(a) * 35,
         -Math.sin(a) * 35,
-        this.biome.accent
+        (this.biome && this.biome.accent) ? this.biome.accent : "#38bdf8"
       ));
     }
 
-    // Step-in trigger check
-    if (!this.entered && player && Math.hypot(player.x - this.x, player.y - this.y) < this.radius * 0.75) {
+    // Step-in trigger check (only active after portal has stabilized!)
+    if (!this.entered && this.armTimer <= 0 && player && Math.hypot(player.x - this.x, player.y - this.y) < this.radius * 0.65) {
       this.enter();
     }
   }
 
   enter() {
     if (this.entered) return;
+    if (this.armTimer > 0) return;
     if (dungeon && dungeon.isWarping) return;
     this.entered = true;
 
     const doWarp = () => {
       if (window.soundEngine && window.soundEngine.playPortalWarp) window.soundEngine.playPortalWarp();
       if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
-        window.soundEngine.speakRobot(`WARPING TO ${this.biome.name}. OBJECTIVE DIRECTIVE: ${this.objectiveTitle}.`, "SUPER DESTROYER");
+        const bName = (this.biome && this.biome.name) ? this.biome.name : "UNKNOWN SECTOR";
+        window.soundEngine.speakRobot(`WARPING TO ${bName}. OBJECTIVE DIRECTIVE: ${this.objectiveTitle || "ENGAGE"}.`, "SUPER DESTROYER");
       }
       addScreenShake(18);
       screenFlash = 1.0;
 
       if (dungeon) {
-        dungeon.warpToBiome(this.biomeKey, this.objectiveType, this.dangerRating);
+        // Defer warp to microtask so current update/projectile loop terminates cleanly without array index corruption
+        setTimeout(() => {
+          if (dungeon) {
+            dungeon.warpToBiome(this.biomeKey, this.objectiveType, this.dangerRating, true);
+          }
+        }, 16);
       }
     };
 
@@ -9625,23 +9668,33 @@ class ReinforcementAntenna {
 
   die() {
     this.destroyed = true;
-    if (window.soundEngine) window.soundEngine.playProprietaryDestroyed('boss');
-    addScreenShake(14);
-    for (let i = 0; i < 24; i++) {
-      particles.push(new SparkParticle(this.x, this.y, (Math.random() - 0.5) * 220, (Math.random() - 0.5) * 220, "#ef4444"));
-    }
-    comboTracker.addScore(800);
-    addFloatingText(this.x, this.y - 50, "OUTPOST PURGED! +800", "#22c55e", 22);
-    window.broadcastBossStoryDialogue("TUX COMMS", "Enemy antenna severed! Reinforcements blocked!", "#22c55e", "🐧");
+    try {
+      if (window.soundEngine) window.soundEngine.playProprietaryDestroyed('boss');
+      addScreenShake(14);
+      for (let i = 0; i < 24; i++) {
+        particles.push(new SparkParticle(this.x, this.y, (Math.random() - 0.5) * 220, (Math.random() - 0.5) * 220, "#ef4444"));
+      }
+      if (comboTracker && typeof comboTracker.addScore === 'function') {
+        comboTracker.addScore(800);
+      } else if (comboTracker && typeof comboTracker.addBonus === 'function') {
+        comboTracker.addBonus("OUTPOST PURGED", 800);
+      }
+      addFloatingText(this.x, this.y - 50, "OUTPOST PURGED! +800", "#22c55e", 22);
+      if (typeof window.broadcastBossStoryDialogue === 'function') {
+        window.broadcastBossStoryDialogue("TUX COMMS", "Enemy antenna severed! Reinforcements blocked!", "#22c55e", "🐧");
+      }
 
-    if (dungeon) {
-      dungeon.onObjectiveProgress("DESTROY_ANTENNAS", 1);
-    }
+      if (dungeon) {
+        dungeon.onObjectiveProgress("DESTROY_ANTENNAS", 1);
+      }
 
-    // Spawn rewards
-    pickups.push(new Pickup(this.x - 20, this.y, 'hp'));
-    pickups.push(new Pickup(this.x + 20, this.y, 'fuel'));
-    weaponChests.push(new WeaponChest(this.x, this.y + 35));
+      // Spawn rewards
+      pickups.push(new Pickup(this.x - 20, this.y, 'hp'));
+      pickups.push(new Pickup(this.x + 20, this.y, 'fuel'));
+      weaponChests.push(new WeaponChest(this.x, this.y + 35));
+    } catch (err) {
+      console.error("Error in ReinforcementAntenna.die:", err);
+    }
   }
 }
 
@@ -9704,7 +9757,7 @@ class Dungeon {
     showUpgradeScreen();
   }
 
-  warpToBiome(biomeKey, objectiveType, dangerRating) {
+  warpToBiome(biomeKey, objectiveType, dangerRating, skipCutscene = false) {
     if (this.isWarping) return;
     this.isWarping = true;
     setTimeout(() => { if (this) this.isWarping = false; }, 900);
@@ -9755,8 +9808,8 @@ class Dungeon {
       window.AutonomousStoryDirector.onSectorEntered(this.sectorNum, this.currentBiome.name);
     }
 
-    // Trigger Ring-0 Violet Abyss Infiltration Cinematic
-    if (biomeKey === "QUANTUM_VOID" && window.PixelCutscenes && typeof window.PixelCutscenes.play === 'function') {
+    // Trigger Ring-0 Violet Abyss Infiltration Cinematic (only if not already played by portal)
+    if (!skipCutscene && biomeKey === "QUANTUM_VOID" && window.PixelCutscenes && typeof window.PixelCutscenes.play === 'function' && !window.PixelCutscenes.isActive()) {
       window.PixelCutscenes.play('ring0_entry', () => {
         if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
           window.soundEngine.speakRobot("HARDWARE RING 0 ACCESSED. SINGULARITY CORE ONLINE.", "SUPER DESTROYER");
@@ -9801,7 +9854,7 @@ class Dungeon {
         enemies.push(boss);
 
         // Contextual boss encounter introduction
-        if (biomeKey !== "QUANTUM_VOID" && window.PixelCutscenes && typeof window.PixelCutscenes.play === 'function') {
+        if (!skipCutscene && biomeKey !== "QUANTUM_VOID" && window.PixelCutscenes && typeof window.PixelCutscenes.play === 'function' && !window.PixelCutscenes.isActive()) {
           const spec = boss.spec || {};
           const quotes = (spec.dialogue && spec.dialogue.onSpawn) || ["YOU WILL YIELD TO PROPRIETARY RULE!"];
           window.PixelCutscenes.play("boss_encounter", {
@@ -11024,9 +11077,15 @@ function resetGame() {
 }
 
 window.dropRareWeaponAt = function(x, y) {
-  const available = WEAPON_CATALOG.filter(w => !player || (w.id !== player.heldWeapons[0].id && w.id !== player.heldWeapons[1].id));
-  const chosen = available[Math.floor(Math.random() * available.length)] || WEAPON_CATALOG[2];
-  groundWeapons.push(new GroundWeapon(x, y, chosen));
+  try {
+    const held0Id = (player && player.heldWeapons && player.heldWeapons[0]) ? player.heldWeapons[0].id : -1;
+    const held1Id = (player && player.heldWeapons && player.heldWeapons[1]) ? player.heldWeapons[1].id : -1;
+    const available = WEAPON_CATALOG.filter(w => w.id !== held0Id && w.id !== held1Id);
+    const chosen = available[Math.floor(Math.random() * available.length)] || WEAPON_CATALOG[2];
+    groundWeapons.push(new GroundWeapon(x, y, chosen));
+  } catch (err) {
+    console.error("Error in dropRareWeaponAt:", err);
+  }
 };
 
 window.spawnReinforcementSquad = function(x, y, count = 3) {
@@ -11200,147 +11259,152 @@ function gameLoop(timestamp) {
 
   if (dt > 0.1) dt = 0.1;
 
-  if (gameState === STATE.PLAYING) {
-    gameTime += dt;
-    comboTracker.update(dt);
-    waveManager.update(dt);
-    if (window.ambushDirector) window.ambushDirector.update(dt);
-    if (window.bossDirector) window.bossDirector.update(dt);
+  try {
+    if (gameState === STATE.PLAYING) {
+      gameTime += dt;
+      comboTracker.update(dt);
+      waveManager.update(dt);
+      if (window.ambushDirector) window.ambushDirector.update(dt);
+      if (window.bossDirector) window.bossDirector.update(dt);
 
-    // Update Stratagem cooldowns
-    for (const strat of STRATAGEMS) {
-      if (strat.cooldown > 0) strat.cooldown -= dt;
-    }
-
-    // Update Player
-    player.update(dt);
-
-    // Update Helper Penguins
-    for (const hp of helperPenguins) {
-      hp.update(dt);
-    }
-
-    // Update Sentry Turrets
-    for (let i = sentryTurrets.length - 1; i >= 0; i--) {
-      if (!sentryTurrets[i].update(dt)) {
-        sentryTurrets.splice(i, 1);
-      }
-    }
-
-    // Update Drop Pods
-    for (let i = dropPods.length - 1; i >= 0; i--) {
-      if (!dropPods[i].update(dt)) {
-        dropPods.splice(i, 1);
-      }
-    }
-
-    // Update Space Marine Suit Pickups
-    for (let i = spaceMarineSuitPickups.length - 1; i >= 0; i--) {
-      if (!spaceMarineSuitPickups[i].update(dt)) {
-        spaceMarineSuitPickups.splice(i, 1);
-      }
-    }
-
-    // Update Player Projectiles (bullets, rockets, beacons)
-    for (let i = playerProjectiles.length - 1; i >= 0; i--) {
-      const p = playerProjectiles[i];
-      if (Math.abs(p.x - player.x) > 2200 || Math.abs(p.y - player.y) > 2200 || !p.update(dt)) {
-        playerProjectiles.splice(i, 1);
-      }
-    }
-
-    // Update Orbital Strikes (500kg, 380mm, laser)
-    for (let i = orbitalStrikes.length - 1; i >= 0; i--) {
-      if (!orbitalStrikes[i].update(dt)) {
-        orbitalStrikes.splice(i, 1);
-      }
-    }
-
-    // Update Enemies (with distance-based sleeping & far-offscreen despawning)
-    for (let i = enemies.length - 1; i >= 0; i--) {
-      const enemy = enemies[i];
-      const distToPlayer = Math.hypot(enemy.x - player.x, enemy.y - player.y);
-
-      // Despawn non-boss enemies left far behind (>3600px)
-      if (!enemy.isBoss && distToPlayer > 3600) {
-        enemies.splice(i, 1);
-        continue;
+      // Update Stratagem cooldowns
+      for (const strat of STRATAGEMS) {
+        if (strat.cooldown > 0) strat.cooldown -= dt;
       }
 
-      // Far offscreen (>1600px): sleep to save raycast / collision CPU
-      if (!enemy.isBoss && distToPlayer > 1600) {
-        continue;
+      // Update Player
+      player.update(dt);
+
+      // Update Helper Penguins
+      for (const hp of helperPenguins) {
+        hp.update(dt);
       }
 
-      if (!enemy.update(dt)) {
-        // Died in update
+      // Update Sentry Turrets
+      for (let i = sentryTurrets.length - 1; i >= 0; i--) {
+        if (!sentryTurrets[i].update(dt)) {
+          sentryTurrets.splice(i, 1);
+        }
       }
-    }
 
-    // Update Floor Hazards (Patent Webs, Paywall Puddles, Mortars)
-    for (let i = floorHazards.length - 1; i >= 0; i--) {
-      if (!floorHazards[i].update(dt)) {
-        floorHazards.splice(i, 1);
+      // Update Drop Pods
+      for (let i = dropPods.length - 1; i >= 0; i--) {
+        if (!dropPods[i].update(dt)) {
+          dropPods.splice(i, 1);
+        }
       }
-    }
 
-    // Update Enemy Projectiles (culled if far offscreen)
-    for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
-      const ep = enemyProjectiles[i];
-      if (Math.abs(ep.x - player.x) > 2200 || Math.abs(ep.y - player.y) > 2200 || !ep.update(dt)) {
-        enemyProjectiles.splice(i, 1);
+      // Update Space Marine Suit Pickups
+      for (let i = spaceMarineSuitPickups.length - 1; i >= 0; i--) {
+        if (!spaceMarineSuitPickups[i].update(dt)) {
+          spaceMarineSuitPickups.splice(i, 1);
+        }
       }
-    }
 
-    // Update Pickups
-    for (let i = pickups.length - 1; i >= 0; i--) {
-      if (!pickups[i].update(dt)) {
-        pickups.splice(i, 1);
+      // Update Player Projectiles (bullets, rockets, beacons)
+      for (let i = playerProjectiles.length - 1; i >= 0; i--) {
+        const p = playerProjectiles[i];
+        if (Math.abs(p.x - player.x) > 2200 || Math.abs(p.y - player.y) > 2200 || !p.update(dt)) {
+          playerProjectiles.splice(i, 1);
+        }
       }
-    }
 
-    // Update Particles (capped to 250 max for silky 60 FPS)
-    if (particles.length > 250) {
-      particles.splice(0, particles.length - 250);
-    }
-    for (let i = particles.length - 1; i >= 0; i--) {
-      if (!particles[i].update(dt)) {
-        particles.splice(i, 1);
+      // Update Orbital Strikes (500kg, 380mm, laser)
+      for (let i = orbitalStrikes.length - 1; i >= 0; i--) {
+        if (!orbitalStrikes[i].update(dt)) {
+          orbitalStrikes.splice(i, 1);
+        }
       }
-    }
 
-    // Update Floating Text
-    for (let i = floatingTexts.length - 1; i >= 0; i--) {
-      const ft = floatingTexts[i];
-      ft.lifetime -= dt;
-      ft.y += ft.vy * dt;
-      if (ft.lifetime <= 0) {
-        floatingTexts.splice(i, 1);
+      // Update Enemies (with distance-based sleeping & far-offscreen despawning)
+      for (let i = enemies.length - 1; i >= 0; i--) {
+        const enemy = enemies[i];
+        const distToPlayer = Math.hypot(enemy.x - player.x, enemy.y - player.y);
+
+        // Despawn non-boss enemies left far behind (>3600px)
+        if (!enemy.isBoss && distToPlayer > 3600) {
+          enemies.splice(i, 1);
+          continue;
+        }
+
+        // Far offscreen (>1600px): sleep to save raycast / collision CPU
+        if (!enemy.isBoss && distToPlayer > 1600) {
+          continue;
+        }
+
+        if (!enemy.update(dt)) {
+          // Died in update
+        }
       }
+
+      // Update Floor Hazards (Patent Webs, Paywall Puddles, Mortars)
+      for (let i = floorHazards.length - 1; i >= 0; i--) {
+        if (!floorHazards[i].update(dt)) {
+          floorHazards.splice(i, 1);
+        }
+      }
+
+      // Update Enemy Projectiles (culled if far offscreen)
+      for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
+        const ep = enemyProjectiles[i];
+        if (Math.abs(ep.x - player.x) > 2200 || Math.abs(ep.y - player.y) > 2200 || !ep.update(dt)) {
+          enemyProjectiles.splice(i, 1);
+        }
+      }
+
+      // Update Pickups
+      for (let i = pickups.length - 1; i >= 0; i--) {
+        if (!pickups[i].update(dt)) {
+          pickups.splice(i, 1);
+        }
+      }
+
+      // Update Particles (capped to 250 max for silky 60 FPS)
+      if (particles.length > 250) {
+        particles.splice(0, particles.length - 250);
+      }
+      for (let i = particles.length - 1; i >= 0; i--) {
+        if (!particles[i].update(dt)) {
+          particles.splice(i, 1);
+        }
+      }
+
+      // Update Floating Text
+      for (let i = floatingTexts.length - 1; i >= 0; i--) {
+        const ft = floatingTexts[i];
+        ft.lifetime -= dt;
+        ft.y += ft.vy * dt;
+        if (ft.lifetime <= 0) {
+          floatingTexts.splice(i, 1);
+        }
+      }
+
+      // Update Autonomous Narrative Story Director
+      if (window.AutonomousStoryDirector && typeof window.AutonomousStoryDirector.update === 'function') {
+        window.AutonomousStoryDirector.update(dt);
+      }
+
+      // Decay screen flash & shake
+      if (screenFlash > 0) screenFlash = Math.max(0, screenFlash - 2.5 * dt);
+      if (screenShake > 0) screenShake = Math.max(0, screenShake - 30 * dt);
+
+      // Camera Lerp (Endless, boundless tracking anywhere in the universe)
+      camera.targetX = player.x - canvas.width / 2;
+      camera.targetY = player.y - canvas.height / 2;
+      camera.x += (camera.targetX - camera.x) * 16 * dt;
+      camera.y += (camera.targetY - camera.y) * 16 * dt;
+
+      mouse.worldX = mouse.x + camera.x;
+      mouse.worldY = mouse.y + camera.y;
+
+      updateHUD();
     }
 
-    // Update Autonomous Narrative Story Director
-    if (window.AutonomousStoryDirector && typeof window.AutonomousStoryDirector.update === 'function') {
-      window.AutonomousStoryDirector.update(dt);
-    }
-
-    // Decay screen flash & shake
-    if (screenFlash > 0) screenFlash = Math.max(0, screenFlash - 2.5 * dt);
-    if (screenShake > 0) screenShake = Math.max(0, screenShake - 30 * dt);
-
-    // Camera Lerp (Endless, boundless tracking anywhere in the universe)
-    camera.targetX = player.x - canvas.width / 2;
-    camera.targetY = player.y - canvas.height / 2;
-    camera.x += (camera.targetX - camera.x) * 16 * dt;
-    camera.y += (camera.targetY - camera.y) * 16 * dt;
-
-    mouse.worldX = mouse.x + camera.x;
-    mouse.worldY = mouse.y + camera.y;
-
-    updateHUD();
+    render();
+  } catch (loopErr) {
+    console.error("Game loop exception caught (prevented engine halt):", loopErr);
   }
 
-  render();
   requestAnimationFrame(gameLoop);
 }
 

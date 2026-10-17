@@ -58,6 +58,24 @@ class SoundEngine {
     }
   }
 
+  getSharedNoiseBuffer() {
+    if (this.sharedNoiseBuffer && this.sharedNoiseBuffer.sampleRate === this.ctx.sampleRate) {
+      return this.sharedNoiseBuffer;
+    }
+    if (!this.ctx) return null;
+    try {
+      const size = Math.floor(this.ctx.sampleRate * 2.0); // 2.0s pre-cached noise buffer
+      this.sharedNoiseBuffer = this.ctx.createBuffer(1, size, this.ctx.sampleRate);
+      const d = this.sharedNoiseBuffer.getChannelData(0);
+      for (let i = 0; i < size; i++) {
+        d[i] = Math.random() * 2 - 1;
+      }
+      return this.sharedNoiseBuffer;
+    } catch (e) {
+      return null;
+    }
+  }
+
   initFlamethrowerSynth() {
     if (!this.ctx) return;
     // Buffer for looped noise
@@ -159,20 +177,17 @@ class SoundEngine {
   playNoiseBurst(duration, volume, startFreq, endFreq) {
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
-    const bufferSize = this.ctx.sampleRate * duration;
-    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-      data[i] = Math.random() * 2 - 1;
-    }
+    const buf = this.getSharedNoiseBuffer();
+    if (!buf) return;
 
     const noise = this.ctx.createBufferSource();
-    noise.buffer = buffer;
+    noise.buffer = buf;
+    noise.loop = true;
 
     const filter = this.ctx.createBiquadFilter();
     filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(startFreq, now);
-    filter.frequency.exponentialRampToValueAtTime(endFreq, now + duration);
+    filter.frequency.setValueAtTime(Math.max(20, startFreq), now);
+    filter.frequency.exponentialRampToValueAtTime(Math.max(20, endFreq), now + duration);
     filter.Q.value = 3.0;
 
     const gain = this.ctx.createGain();
@@ -794,27 +809,26 @@ class SoundEngine {
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
     // Military radio burst: bandpass white noise + tactical squelch beep
-    const bufferSize = Math.floor(this.ctx.sampleRate * 0.08);
-    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.4));
+    const buf = this.getSharedNoiseBuffer();
+    if (buf) {
+      const noise = this.ctx.createBufferSource();
+      noise.buffer = buf;
+      noise.loop = true;
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(1400, now);
+      filter.Q.setValueAtTime(3.0, now);
+
+      const gain = this.ctx.createGain();
+      gain.gain.setValueAtTime(0.25, now);
+      gain.gain.linearRampToValueAtTime(0.001, now + 0.08);
+
+      noise.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.sfxGain);
+      noise.start(now);
+      noise.stop(now + 0.08);
     }
-    const noise = this.ctx.createBufferSource();
-    noise.buffer = buffer;
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(1400, now);
-    filter.Q.setValueAtTime(3.0, now);
-
-    const gain = this.ctx.createGain();
-    gain.gain.setValueAtTime(0.25, now);
-    gain.gain.linearRampToValueAtTime(0.001, now + 0.08);
-
-    noise.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.sfxGain);
-    noise.start(now);
 
     // High command dual tactical chirp
     const osc = this.ctx.createOscillator();
@@ -887,6 +901,9 @@ class SoundEngine {
           if (chosen) utter.voice = chosen;
         }
 
+        if (window.speechSynthesis.speaking) {
+          window.speechSynthesis.cancel();
+        }
         window.speechSynthesis.speak(utter);
       } catch (err) {
         // Silently catch so game loop is NEVER impacted
@@ -1303,40 +1320,36 @@ class SoundEngine {
     osc.start(time);
     osc.stop(time + 0.1);
 
-    // Noise snap
-    const bufferSize = this.ctx.sampleRate * 0.15;
-    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-      data[i] = (Math.random() * 2 - 1);
+    // Noise snap (reusing cached buffer - eliminates GC hitching!)
+    const buf = this.getSharedNoiseBuffer();
+    if (buf) {
+      const noise = this.ctx.createBufferSource();
+      noise.buffer = buf;
+      noise.loop = true;
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'highpass';
+      filter.frequency.setValueAtTime(1200, time);
+
+      const noiseGain = this.ctx.createGain();
+      noiseGain.gain.setValueAtTime(0.35, time);
+      noiseGain.gain.exponentialRampToValueAtTime(0.001, time + 0.14);
+
+      noise.connect(filter);
+      filter.connect(noiseGain);
+      noiseGain.connect(this.musicGain);
+      noise.start(time);
+      noise.stop(time + 0.15);
     }
-    const noise = this.ctx.createBufferSource();
-    noise.buffer = buffer;
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = 'highpass';
-    filter.frequency.setValueAtTime(1200, time);
-
-    const noiseGain = this.ctx.createGain();
-    noiseGain.gain.setValueAtTime(0.35, time);
-    noiseGain.gain.exponentialRampToValueAtTime(0.001, time + 0.14);
-
-    noise.connect(filter);
-    filter.connect(noiseGain);
-    noiseGain.connect(this.musicGain);
-    noise.start(time);
-    noise.stop(time + 0.15);
   }
 
   playSynthHat(time, vol = 0.15) {
     if (!this.ctx) return;
-    const bufferSize = this.ctx.sampleRate * 0.04;
-    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-      data[i] = (Math.random() * 2 - 1);
-    }
+    const buf = this.getSharedNoiseBuffer();
+    if (!buf) return;
+
     const noise = this.ctx.createBufferSource();
-    noise.buffer = buffer;
+    noise.buffer = buf;
+    noise.loop = true;
 
     const filter = this.ctx.createBiquadFilter();
     filter.type = 'highpass';

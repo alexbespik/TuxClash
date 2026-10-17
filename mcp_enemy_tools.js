@@ -1120,6 +1120,30 @@
       ctx.fillStyle = this.isBoss ? "#ef4444" : "#22c55e";
       ctx.fillRect(-this.radius, -this.radius - 12, hpWidth * hpPercent, 5);
 
+      // Status effect visuals (burn flame tongues, electric EMP arcs, acid sizzle)
+      if (this.burnTimer > 0) {
+        const flameH = 6 + (Math.sin(Date.now() * 0.02) * 3);
+        ctx.fillStyle = "#f97316";
+        ctx.fillRect(-6, -this.radius - flameH - 14, 12, flameH);
+        ctx.fillStyle = "#fef08a";
+        ctx.fillRect(-3, -this.radius - flameH - 12, 6, flameH - 2);
+      }
+      if (this.shockTimer > 0) {
+        ctx.strokeStyle = Math.random() > 0.5 ? "#38bdf8" : "#ffffff";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        const ox = (Math.random() - 0.5) * this.radius * 1.2;
+        const oy = (Math.random() - 0.5) * this.radius * 1.2;
+        ctx.moveTo(ox, oy);
+        ctx.lineTo(ox + (Math.random() - 0.5) * 18, oy + (Math.random() - 0.5) * 18);
+        ctx.stroke();
+      }
+      if (this.corrodedTimer > 0) {
+        ctx.fillStyle = "#22c55e";
+        ctx.fillRect(-this.radius + 2, -this.radius - 6, 3, 3);
+        ctx.fillRect(this.radius - 5, -this.radius - 4, 3, 3);
+      }
+
       ctx.restore();
     }
 
@@ -1128,61 +1152,105 @@
       this.isDead = true;
       this.hp = 0;
 
-      // Play destruction sound & effects
-      if (window.soundEngine) {
-        window.soundEngine.playProprietaryDestroyed(this.isBoss ? 'boss' : 'normal');
-      }
-      if (typeof window.addScreenShake === 'function') {
-        window.addScreenShake(this.isBoss ? 16 : 6);
-      }
+      try {
+        // Play destruction sound & screen shake
+        if (window.soundEngine && typeof window.soundEngine.playProprietaryDestroyed === 'function') {
+          window.soundEngine.playProprietaryDestroyed(this.isBoss ? 'boss' : 'normal');
+        }
+        if (typeof window.addScreenShake === 'function') {
+          window.addScreenShake(this.isBoss ? 18 : 6);
+        }
 
-      // Drop score & XP
-      if (typeof window.comboTracker !== 'undefined') {
-        window.comboTracker.addScore(this.spec.stats.threatValue || 200);
-      }
-
-      // Boss death voice line
-      if (this.spec.dialogue && this.spec.dialogue.onDefeat) {
-        const lines = this.spec.dialogue.onDefeat;
-        const dyingQuote = lines[Math.floor(Math.random() * lines.length)];
-        window.broadcastBossStoryDialogue(this.label, dyingQuote, "#94a3b8", "💀");
-      }
-
-      // Drop pickups / loot safely
-      const PickupClass = window.Pickup || (typeof Pickup !== 'undefined' ? Pickup : null);
-      const pickupList = window.pickups || (typeof pickups !== 'undefined' ? pickups : null);
-
-      if (PickupClass && pickupList) {
-        pickupList.push(new PickupClass(this.x, this.y, 'xp'));
-        if (this.isBoss) {
-          pickupList.push(new PickupClass(this.x + 20, this.y, 'hp'));
-          pickupList.push(new PickupClass(this.x - 20, this.y, 'fuel'));
-          // Drop rare weapon
-          if (typeof window.dropRareWeaponAt === 'function') {
-            window.dropRareWeaponAt(this.x, this.y);
+        // Spawn death spark particles
+        const particleList = window.particles || (typeof particles !== 'undefined' ? particles : null);
+        const SparkClass = window.SparkParticle || (typeof SparkParticle !== 'undefined' ? SparkParticle : null);
+        if (particleList && SparkClass) {
+          const count = this.isBoss ? 36 : 14;
+          for (let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const spd = 60 + Math.random() * 220;
+            particleList.push(new SparkClass(
+              this.x,
+              this.y,
+              Math.cos(angle) * spd,
+              Math.sin(angle) * spd,
+              Math.random() < 0.5 ? (this.isBoss ? "#ef4444" : "#f97316") : "#1e293b"
+            ));
           }
-          // Drop portals to harder places & secret treasure vault
-          if (typeof window.ProceduralPortal !== 'undefined' && typeof window.proceduralPortals !== 'undefined') {
-            const currentTier = (window.dungeon && window.dungeon.sectorNum) ? window.dungeon.sectorNum : 1;
-            const nextTier = currentTier + 1;
-            const harderBiomes = ["THERMAL_FOUNDRY", "CRYO_GLACIER", "TOXIC_HEAP", "WALLED_GARDEN", "QUANTUM_VOID"];
-            const nextBiomeKey = harderBiomes[Math.min(harderBiomes.length - 1, nextTier - 1)] || "QUANTUM_VOID";
-            const objectivePool = ["DEFEND_SERVERS", "ATTACK_FORTRESS", "SETUP_UPLINK", "ELITE_BOUNTY"];
-            const nextObj = objectivePool[Math.floor(Math.random() * objectivePool.length)];
+        }
 
-            const portalHarder = new window.ProceduralPortal(this.x - 55, this.y, nextBiomeKey, nextObj, nextTier);
-            portalHarder.label = `TIER ${nextTier} ADVANCE`;
-            window.proceduralPortals.push(portalHarder);
+        // Drop score safely to comboTracker
+        const threatVal = (this.spec && this.spec.stats && this.spec.stats.threatValue) ? this.spec.stats.threatValue : (this.isBoss ? 1000 : 200);
+        if (typeof window.comboTracker !== 'undefined' && window.comboTracker) {
+          if (typeof window.comboTracker.addScore === 'function') {
+            window.comboTracker.addScore(threatVal);
+          } else if (typeof window.comboTracker.addBonus === 'function') {
+            window.comboTracker.addBonus("BOSS PURGE", threatVal);
+          }
+        }
 
-            const portalTreasure = new window.ProceduralPortal(this.x + 55, this.y, "TREASURE_VAULT", "TREASURE_REWARD", nextTier);
-            portalTreasure.label = "TREASURE VAULT";
-            window.proceduralPortals.push(portalTreasure);
+        // Advance sector objectives & director
+        if (typeof window.dungeon !== 'undefined' && window.dungeon) {
+          window.dungeon.onObjectiveProgress("PURGE_ENEMIES", 1);
+          if (this.isBoss) {
+            window.dungeon.onObjectiveProgress("PURGE_BOSS", 1);
+          }
+        }
+        if (this.isBoss && typeof window.bossDirector !== 'undefined' && window.bossDirector) {
+          window.bossDirector.bossTiersDefeated++;
+        }
 
-            if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
-              window.soundEngine.speakRobot("APEX CORPORATE OVERLORD TERMINATED. ADVANCED SECTOR AND SECRET TREASURE PORTALS MATERIALIZED AT DETONATION SITE.", "SUPER DESTROYER");
+        // Boss death voice line
+        if (this.spec && this.spec.dialogue && this.spec.dialogue.onDefeat && this.spec.dialogue.onDefeat.length > 0) {
+          const lines = this.spec.dialogue.onDefeat;
+          const dyingQuote = lines[Math.floor(Math.random() * lines.length)];
+          if (typeof window.broadcastBossStoryDialogue === 'function') {
+            window.broadcastBossStoryDialogue(this.label || "BOSS", dyingQuote, "#94a3b8", "💀");
+          }
+        }
+
+        // Drop pickups / loot safely
+        const PickupClass = window.Pickup || (typeof Pickup !== 'undefined' ? Pickup : null);
+        const pickupList = window.pickups || (typeof pickups !== 'undefined' ? pickups : null);
+
+        if (PickupClass && pickupList) {
+          pickupList.push(new PickupClass(this.x, this.y, 'xp'));
+          if (this.isBoss) {
+            pickupList.push(new PickupClass(this.x + 20, this.y, 'hp'));
+            pickupList.push(new PickupClass(this.x - 20, this.y, 'fuel'));
+            // Drop rare weapon
+            if (typeof window.dropRareWeaponAt === 'function') {
+              window.dropRareWeaponAt(this.x, this.y);
+            }
+            // Drop portals to harder places & secret treasure vault with safe spacing and arming delay
+            const PortalClass = window.ProceduralPortal || (typeof ProceduralPortal !== 'undefined' ? ProceduralPortal : null);
+            const portalList = window.proceduralPortals || (typeof proceduralPortals !== 'undefined' ? proceduralPortals : null);
+            if (PortalClass && portalList) {
+              const currentTier = (window.dungeon && window.dungeon.sectorNum) ? window.dungeon.sectorNum : 1;
+              const nextTier = currentTier + 1;
+              const harderBiomes = ["THERMAL_FOUNDRY", "CRYO_GLACIER", "TOXIC_HEAP", "WALLED_GARDEN", "QUANTUM_VOID"];
+              const nextBiomeKey = harderBiomes[Math.min(harderBiomes.length - 1, nextTier - 1)] || "QUANTUM_VOID";
+              const objectivePool = ["DEFEND_SERVERS", "ATTACK_FORTRESS", "SETUP_UPLINK", "ELITE_BOUNTY"];
+              const nextObj = objectivePool[Math.floor(Math.random() * objectivePool.length)];
+
+              const portalHarder = new PortalClass(this.x - 75, this.y, nextBiomeKey, nextObj, nextTier);
+              portalHarder.label = `TIER ${nextTier} ADVANCE`;
+              portalHarder.armTimer = 1.5;
+              portalList.push(portalHarder);
+
+              const portalTreasure = new PortalClass(this.x + 75, this.y, "TREASURE_VAULT", "TREASURE_REWARD", nextTier);
+              portalTreasure.label = "TREASURE VAULT";
+              portalTreasure.armTimer = 1.5;
+              portalList.push(portalTreasure);
+
+              if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
+                window.soundEngine.speakRobot("APEX CORPORATE OVERLORD TERMINATED. DEMOCRATIC ADVANCE PORTALS ONLINE.", "SUPER DESTROYER");
+              }
             }
           }
         }
+      } catch (err) {
+        console.error("Error during DynamicCustomEnemy.die:", err);
       }
 
       // Remove from enemies array
@@ -1195,18 +1263,20 @@
   }
 
   // Comms Dialogue Broadcaster
-  function broadcastBossStoryDialogue(speaker, message, color = "#22c55e", icon = "☠️") {
+  function broadcastBossStoryDialogue(speaker = "COMMUNICATIONS", message = "...", color = "#22c55e", icon = "☠️") {
     const banner = document.getElementById('bossCommsBanner');
     const speakerEl = document.getElementById('commsSpeaker');
     const msgEl = document.getElementById('commsMessage');
     const iconEl = document.getElementById('commsAvatarIcon');
 
+    const speakerName = (speaker ? String(speaker) : "UNKNOWN").toUpperCase();
+
     if (!banner || !speakerEl || !msgEl) {
-      console.log(`[COMMS TRANSMISSION] ${speaker}: "${message}"`);
+      console.log(`[COMMS TRANSMISSION] ${speakerName}: "${message}"`);
       return;
     }
 
-    speakerEl.innerText = speaker.toUpperCase();
+    speakerEl.innerText = speakerName;
     speakerEl.style.color = color;
     msgEl.innerText = `"${message}"`;
     if (iconEl) iconEl.innerText = icon;

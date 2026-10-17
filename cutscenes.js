@@ -1165,35 +1165,41 @@
 
     let maxDuration = 18.0;
 
-    switch (activeCutscene) {
-      case 'burning_servers':
-        maxDuration = 18.0;
-        renderBurningServers(elapsedSec, frame);
-        break;
-      case 'orbital_drop':
-        maxDuration = 17.5;
-        renderOrbitalDrop(elapsedSec, frame);
-        break;
-      case 'victory_liberation':
-        maxDuration = 18.0;
-        renderVictoryLiberation(elapsedSec, frame);
-        break;
-      case 'ring0_entry':
-        maxDuration = 6.8;
-        renderRing0Entry(elapsedSec, frame);
-        break;
-      case 'boss_encounter':
-        maxDuration = 5.6;
-        renderBossEncounter(elapsedSec, frame);
-        break;
-      case 'server_sabotage':
-        maxDuration = 5.4;
-        renderServerSabotage(elapsedSec, frame);
-        break;
-      default:
-        console.warn("Unknown cutscene:", activeCutscene);
-        stopCutscene();
-        return;
+    try {
+      switch (activeCutscene) {
+        case 'burning_servers':
+          maxDuration = 18.0;
+          renderBurningServers(elapsedSec, frame);
+          break;
+        case 'orbital_drop':
+          maxDuration = 17.5;
+          renderOrbitalDrop(elapsedSec, frame);
+          break;
+        case 'victory_liberation':
+          maxDuration = 18.0;
+          renderVictoryLiberation(elapsedSec, frame);
+          break;
+        case 'ring0_entry':
+          maxDuration = 6.8;
+          renderRing0Entry(elapsedSec, frame);
+          break;
+        case 'boss_encounter':
+          maxDuration = 5.6;
+          renderBossEncounter(elapsedSec, frame);
+          break;
+        case 'server_sabotage':
+          maxDuration = 5.4;
+          renderServerSabotage(elapsedSec, frame);
+          break;
+        default:
+          console.warn("Unknown cutscene:", activeCutscene);
+          stopCutscene();
+          return;
+      }
+    } catch (cutsceneErr) {
+      console.error("Cutscene render error caught, safely terminating cutscene:", cutsceneErr);
+      stopCutscene();
+      return;
     }
 
     if (elapsedSec >= maxDuration) {
