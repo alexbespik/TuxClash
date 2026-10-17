@@ -994,7 +994,9 @@
               this.y + Math.sin(a) * (this.radius + 5),
               Math.cos(a) * spd,
               Math.sin(a) * spd,
-              proj.label
+              proj.label,
+              false,
+              proj.damage || 26
             ));
           }
         }
@@ -1011,11 +1013,124 @@
               this.y + Math.sin(a) * (this.radius + 5),
               Math.cos(a) * spd,
               Math.sin(a) * spd,
-              proj.label
+              proj.label,
+              false,
+              proj.damage || 22
             ));
           }
         }
         if (window.soundEngine) window.soundEngine.playNoiseBurst(0.18, 0.3, 2400, 600);
+      } else if (atk.type === "bouncing_spread") {
+        // Soul Knight style bouncing kinetic projectiles
+        const count = atk.count || 6;
+        const spread = atk.spread || 0.6;
+        const spd = atk.speed || 360;
+        for (let c = 0; c < count; c++) {
+          const a = baseAngle + (c - (count - 1) / 2) * (spread / Math.max(1, count - 1));
+          if (ProjClass && pList) {
+            const ep = new ProjClass(
+              this.x + Math.cos(a) * (this.radius + 5),
+              this.y + Math.sin(a) * (this.radius + 5),
+              Math.cos(a) * spd,
+              Math.sin(a) * spd,
+              proj.label || "RICOCHET",
+              false,
+              proj.damage || 28
+            );
+            ep.bouncesLeft = 2;
+            const origUpdate = ep.update.bind(ep);
+            ep.update = function(dt) {
+              const res = origUpdate(dt);
+              if (!res && ep.bouncesLeft > 0 && window.dungeon) {
+                ep.bouncesLeft--;
+                ep.lifetime = 2.2;
+                ep.vx = -ep.vx * 0.85;
+                ep.vy = -ep.vy * 0.85;
+                ep.x += ep.vx * dt * 2;
+                ep.y += ep.vy * dt * 2;
+                return true;
+              }
+              return res;
+            };
+            pList.push(ep);
+          }
+        }
+        if (window.soundEngine) window.soundEngine.playNoiseBurst(0.15, 0.28, 2200, 500);
+      } else if (atk.type === "expanding_ring") {
+        // Expanding ring of 18 bullets with safe dodging gaps (classic bullet hell)
+        const total = 18;
+        const gap1 = Math.floor(Math.random() * total);
+        const gap2 = (gap1 + Math.floor(total / 2)) % total;
+        const spd = atk.speed || 240;
+        for (let c = 0; c < total; c++) {
+          if (c === gap1 || c === (gap1 + 1) % total || c === gap2 || c === (gap2 + 1) % total) continue;
+          const a = (Math.PI * 2 / total) * c;
+          if (ProjClass && pList) {
+            pList.push(new ProjClass(
+              this.x + Math.cos(a) * (this.radius + 6),
+              this.y + Math.sin(a) * (this.radius + 6),
+              Math.cos(a) * spd,
+              Math.sin(a) * spd,
+              proj.label || "RING_PULSE",
+              false,
+              proj.damage || 24
+            ));
+          }
+        }
+        if (window.soundEngine) window.soundEngine.playNoiseBurst(0.2, 0.35, 1800, 300);
+      } else if (atk.type === "homing_barrage") {
+        // Swarm of homing micro-missiles
+        const count = atk.count || 4;
+        for (let c = 0; c < count; c++) {
+          const a = baseAngle + (c - (count - 1) / 2) * 0.45;
+          const spd = atk.speed || 280;
+          if (ProjClass && pList) {
+            pList.push(new ProjClass(
+              this.x + Math.cos(a) * (this.radius + 5),
+              this.y + Math.sin(a) * (this.radius + 5),
+              Math.cos(a) * spd,
+              Math.sin(a) * spd,
+              proj.label || "HOMING_POD",
+              true,
+              proj.damage || 25
+            ));
+          }
+        }
+        if (window.soundEngine) window.soundEngine.playNoiseBurst(0.14, 0.3, 1200, 800);
+      } else if (atk.type === "kinetic_charge") {
+        const chargeSpd = 580;
+        this.vx = Math.cos(baseAngle) * chargeSpd;
+        this.vy = Math.sin(baseAngle) * chargeSpd;
+        if (typeof addScreenShake === 'function') addScreenShake(10);
+        if (window.soundEngine && typeof window.soundEngine.playNoiseBurst === 'function') {
+          window.soundEngine.playNoiseBurst(0.3, 0.5, 400, 100);
+        }
+      } else if (atk.type === "mortar_cluster") {
+        if (typeof window.player !== 'undefined' && window.player) {
+          const targetPoints = [
+            { x: window.player.x, y: window.player.y },
+            { x: window.player.x + 80, y: window.player.y - 50 },
+            { x: window.player.x - 80, y: window.player.y + 50 },
+            { x: window.player.x + 30, y: window.player.y + 90 }
+          ];
+          targetPoints.forEach((pt, idx) => {
+            setTimeout(() => {
+              if (typeof addScreenShake === 'function') addScreenShake(8);
+              if (ProjClass && pList) {
+                for (let k = 0; k < 6; k++) {
+                  const ka = (Math.PI * 2 / 6) * k;
+                  pList.push(new ProjClass(
+                    pt.x, pt.y,
+                    Math.cos(ka) * 220, Math.sin(ka) * 220,
+                    proj.label || "MORTAR",
+                    false,
+                    proj.damage || 28
+                  ));
+                }
+              }
+            }, 550 + idx * 220);
+          });
+        }
       } else if (atk.type === "summon_reinforcements") {
         if (typeof window.spawnReinforcementSquad === 'function') {
           window.spawnReinforcementSquad(this.x, this.y, atk.count || 3);
@@ -1030,34 +1145,359 @@
       const vis = this.spec.visual;
       const primary = this.burnTimer > 0 ? "#7f1d1d" : vis.primaryColor;
       const accent = vis.accentColor || "#22c55e";
+      const bossId = this.spec.id || "";
+      const t = Date.now() * 0.003;
 
       // Tactical shield aura
       if (this.shield > 0) {
-        ctx.strokeStyle = "rgba(6, 182, 212, 0.6)";
-        ctx.lineWidth = 3;
+        ctx.strokeStyle = "rgba(6, 182, 212, 0.65)";
+        ctx.lineWidth = 3.5;
         ctx.beginPath();
-        ctx.arc(0, 0, this.radius + 5, 0, Math.PI * 2);
+        ctx.arc(0, 0, this.radius + 6, 0, Math.PI * 2);
         ctx.stroke();
       }
 
       // Enraged fire aura
       if (this.isEnraged) {
-        ctx.strokeStyle = "rgba(239, 68, 68, 0.7)";
+        ctx.strokeStyle = "rgba(239, 68, 68, 0.8)";
         ctx.lineWidth = 4;
         ctx.beginPath();
-        const pulse = Math.sin(Date.now() * 0.01) * 4;
-        ctx.arc(0, 0, this.radius + 8 + pulse, 0, Math.PI * 2);
+        const pulse = Math.sin(Date.now() * 0.01) * 5;
+        ctx.arc(0, 0, this.radius + 10 + pulse, 0, Math.PI * 2);
         ctx.stroke();
       }
 
-      // Render Chassis archetype
-      if (vis.chassis === "tank_rover") {
+      // =========================================================================
+      // DEDICATED PIXEL BOSS MODELS (NO MORE IDENTICAL SQUARES!)
+      // =========================================================================
+
+      if (bossId === "ballmer_bot" || vis.chassis === "biped_executive") {
+        // --- 1. BALLMER-BOT 9000 (Raging Executive Mech) ---
+        // Hydraulic Piston Legs
+        ctx.fillStyle = "#1e293b";
+        ctx.fillRect(-28, 18, 16, 28);
+        ctx.fillRect(12, 18, 16, 28);
+        ctx.fillStyle = "#475569";
+        ctx.fillRect(-32, 42, 22, 10);
+        ctx.fillRect(10, 42, 22, 10);
+
+        // Heavy Cyber-Torso with Corporate Suit Plating
+        ctx.fillStyle = primary;
+        ctx.beginPath();
+        ctx.roundRect(-this.radius * 0.75, -this.radius * 0.45, this.radius * 1.5, this.radius * 0.9, 10);
+        ctx.fill();
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        // Flying Red Tie
+        ctx.fillStyle = "#ef4444";
+        ctx.beginPath();
+        ctx.moveTo(0, -this.radius * 0.35);
+        ctx.lineTo(8, -this.radius * 0.1);
+        ctx.lineTo(Math.sin(t * 4) * 12, 20);
+        ctx.lineTo(-4, 0);
+        ctx.closePath();
+        ctx.fill();
+
+        // Shoulder Exhaust Vents spraying coolant
+        ctx.fillStyle = "#334155";
+        ctx.fillRect(-this.radius * 0.8, -this.radius * 0.7, 18, 20);
+        ctx.fillRect(this.radius * 0.8 - 18, -this.radius * 0.7, 18, 20);
+        ctx.fillStyle = "rgba(56, 189, 248, 0.7)";
+        ctx.fillRect(-this.radius * 0.75, -this.radius * 0.85, 12, 8);
+        ctx.fillRect(this.radius * 0.8 - 15, -this.radius * 0.85, 12, 8);
+
+        // CRT Monitor Head with Angry Face ">:["
+        ctx.fillStyle = "#0f172a";
+        ctx.beginPath();
+        ctx.roundRect(-22, -this.radius * 0.85, 44, 30, 4);
+        ctx.fill();
+        ctx.strokeStyle = "#38bdf8";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.fillStyle = this.isEnraged ? "#ef4444" : "#0ea5e9";
+        ctx.font = "bold 13px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText(this.isEnraged ? ">:O" : ">:[", 0, -this.radius * 0.85 + 20);
+
+        // Arm holding / spinning wooden chair
+        const chairAngle = t * 3;
+        const cx = Math.cos(chairAngle) * (this.radius * 0.95);
+        const cy = Math.sin(chairAngle) * (this.radius * 0.95);
+        ctx.fillStyle = "#92400e";
+        ctx.fillRect(cx - 10, cy - 10, 20, 20);
+        ctx.strokeStyle = "#facc15";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(cx - 10, cy - 10, 20, 20);
+
+      } else if (bossId === "patent_troll_sovereign") {
+        // --- 2. PATENT TROLL SOVEREIGN (Hexapod Hover-Throne) ---
+        // 6 Golden Articulated Spider-Walker Legs
+        ctx.strokeStyle = "#fbbf24";
+        ctx.lineWidth = 4;
+        for (let leg = 0; leg < 6; leg++) {
+          const side = leg < 3 ? -1 : 1;
+          const legIdx = leg % 3;
+          const legPhase = t * 4 + leg;
+          const jointX = side * (this.radius * 0.65);
+          const jointY = -24 + legIdx * 24;
+          const footX = side * (this.radius * 1.35) + Math.sin(legPhase) * 12;
+          const footY = jointY + 32 + Math.cos(legPhase) * 8;
+
+          ctx.beginPath();
+          ctx.moveTo(0, jointY);
+          ctx.lineTo(jointX, jointY - 14);
+          ctx.lineTo(footX, footY);
+          ctx.stroke();
+        }
+
+        // Obsidian Royal Mainframe Throne
+        ctx.fillStyle = "#1e1b4b";
+        ctx.beginPath();
+        ctx.ellipse(0, 0, this.radius * 0.85, this.radius * 0.6, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#a855f7";
+        ctx.lineWidth = 3.5;
+        ctx.stroke();
+
+        // Gavel Cannon Barrel
+        ctx.fillStyle = "#fbbf24";
+        ctx.fillRect(0, -6, this.radius * 1.15, 12);
+        ctx.fillRect(this.radius * 1.15, -14, 12, 28);
+
+        // Orbiting Subpoena Parchments & Legal Briefs
+        for (let i = 0; i < 4; i++) {
+          const pa = t * 2.5 + (Math.PI / 2) * i;
+          const px = Math.cos(pa) * (this.radius * 1.15);
+          const py = Math.sin(pa) * (this.radius * 0.7);
+          ctx.fillStyle = "#fef08a";
+          ctx.fillRect(px - 7, py - 9, 14, 18);
+          ctx.strokeStyle = "#a855f7";
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(px - 7, py - 9, 14, 18);
+        }
+
+      } else if (bossId === "oracle_audit_archon") {
+        // --- 3. ORACLE AUDIT ARCHON (Inverted Crimson Pyramid & Orbiting Obelisks) ---
+        const bob = Math.sin(t * 3) * 6;
+
+        // Inverted Crimson Hovering Pyramid
+        ctx.fillStyle = "#7f1d1d";
+        ctx.beginPath();
+        ctx.moveTo(-this.radius * 0.8, -this.radius * 0.6 + bob);
+        ctx.lineTo(this.radius * 0.8, -this.radius * 0.6 + bob);
+        ctx.lineTo(0, this.radius * 0.85 + bob);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = "#ea580c";
+        ctx.lineWidth = 3.5;
+        ctx.stroke();
+
+        // Central Omniscient Orange Audit Eye
+        ctx.fillStyle = "#ffedd5";
+        ctx.beginPath();
+        ctx.arc(0, -10 + bob, 18, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#ea580c";
+        ctx.beginPath();
+        ctx.arc(0, -10 + bob, 9, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#000000";
+        ctx.beginPath();
+        ctx.arc(Math.sin(t * 4) * 3, -10 + bob, 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 4 Orbiting Mini-Obelisks with energy tether beams
+        for (let i = 0; i < 4; i++) {
+          const oa = t * 2 + (Math.PI / 2) * i;
+          const ox = Math.cos(oa) * (this.radius * 1.25);
+          const oy = Math.sin(oa) * (this.radius * 0.85);
+
+          ctx.strokeStyle = "rgba(234, 88, 12, 0.45)";
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(0, bob);
+          ctx.lineTo(ox, oy);
+          ctx.stroke();
+
+          ctx.fillStyle = "#991b1b";
+          ctx.beginPath();
+          ctx.moveTo(ox, oy - 14);
+          ctx.lineTo(ox + 8, oy + 12);
+          ctx.lineTo(ox - 8, oy + 12);
+          ctx.closePath();
+          ctx.fill();
+        }
+
+      } else if (bossId === "smelter_titan") {
+        // --- 4. SMELTER TITAN (Magma Furnace Golem) ---
+        // Industrial Iron Core Boiler
+        ctx.fillStyle = "#262626";
+        ctx.beginPath();
+        ctx.roundRect(-this.radius * 0.85, -this.radius * 0.7, this.radius * 1.7, this.radius * 1.4, 14);
+        ctx.fill();
+        ctx.strokeStyle = "#ea580c";
+        ctx.lineWidth = 4;
+        ctx.stroke();
+
+        // Twin Smokestacks venting black soot
+        ctx.fillStyle = "#171717";
+        ctx.fillRect(-this.radius * 0.65, -this.radius * 1.05, 18, 25);
+        ctx.fillRect(this.radius * 0.65 - 18, -this.radius * 1.05, 18, 25);
+
+        // Blazing Molten Furnace Grate with white-hot magma
+        const magmaGlow = Math.sin(t * 8) * 0.2 + 0.8;
+        ctx.fillStyle = `rgba(255, 150, 0, ${magmaGlow})`;
+        ctx.fillRect(-this.radius * 0.5, -15, this.radius, 32);
+
+        // Heavy Iron Grate Bars
+        ctx.fillStyle = "#0a0a0a";
+        for (let b = -this.radius * 0.4; b <= this.radius * 0.4; b += 14) {
+          ctx.fillRect(b, -15, 5, 32);
+        }
+
+        // Dripping Magma Claws
+        ctx.fillStyle = "#ea580c";
+        ctx.beginPath();
+        ctx.arc(-this.radius * 0.95, 15, 14, 0, Math.PI * 2);
+        ctx.arc(this.radius * 0.95, 15, 14, 0, Math.PI * 2);
+        ctx.fill();
+
+      } else if (bossId === "cryo_daemon") {
+        // --- 5. CRYO-DAEMON HYPERVISOR (Glacial Crystal Demon) ---
+        // Crystalline Ice Demon Wings
+        ctx.fillStyle = "rgba(6, 182, 212, 0.45)";
+        ctx.strokeStyle = "#38bdf8";
+        ctx.lineWidth = 2.5;
+
+        // Left Wing
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-this.radius * 1.5, -this.radius * 0.8 + Math.sin(t * 4) * 10);
+        ctx.lineTo(-this.radius * 1.2, 0);
+        ctx.lineTo(-this.radius * 1.6, 25);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Right Wing
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(this.radius * 1.5, -this.radius * 0.8 + Math.sin(t * 4) * 10);
+        ctx.lineTo(this.radius * 1.2, 0);
+        ctx.lineTo(this.radius * 1.6, 25);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Geometric Diamond Frost Demon Body
+        ctx.fillStyle = "#082f49";
+        ctx.beginPath();
+        ctx.moveTo(0, -this.radius * 0.9);
+        ctx.lineTo(this.radius * 0.7, 0);
+        ctx.lineTo(0, this.radius * 0.9);
+        ctx.lineTo(-this.radius * 0.7, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = "#38bdf8";
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        // Zero-Kelvin Glowing Cyan Core
+        ctx.fillStyle = "#e0f2fe";
+        ctx.beginPath();
+        ctx.arc(0, 0, 16, 0, Math.PI * 2);
+        ctx.fill();
+
+      } else if (bossId === "apple_garden_warden") {
+        // --- 6. APPLE WALLED-GARDEN WARDEN (Ceramic Monolith & Orbital Shield Rings) ---
+        // Sleek Anodized White Ceramic Body
+        ctx.fillStyle = "#f8fafc";
+        ctx.beginPath();
+        ctx.roundRect(-this.radius * 0.65, -this.radius * 0.8, this.radius * 1.3, this.radius * 1.6, 18);
+        ctx.fill();
+        ctx.strokeStyle = "#94a3b8";
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        // Jet-Black Glass Visor
+        ctx.fillStyle = "#0f172a";
+        ctx.beginPath();
+        ctx.roundRect(-this.radius * 0.45, -this.radius * 0.55, this.radius * 0.9, 24, 6);
+        ctx.fill();
+
+        // Glowing Apple Icon in Visor
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 14px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText("", 0, -this.radius * 0.55 + 17);
+
+        // Orbiting Glass/Titanium Barrier Rings (The "Walled Garden")
+        ctx.save();
+        ctx.rotate(t * 2);
+        ctx.strokeStyle = "rgba(148, 163, 184, 0.75)";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, this.radius * 1.35, this.radius * 0.45, 0.4, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+
+        // Lightning Dongle Charging Lance
+        ctx.fillStyle = "#cbd5e1";
+        ctx.fillRect(this.radius * 0.5, -4, 30, 8);
+        ctx.fillStyle = "#38bdf8";
+        ctx.fillRect(this.radius * 0.5 + 30, -2, 14, 4);
+
+      } else if (bossId === "quantum_hypervisor") {
+        // --- 7. RING-0 QUANTUM HYPERVISOR (Tesseract 4D Hypercube) ---
+        // Inner and Outer Rotating Cubes
+        const qAngle = t * 1.8;
+        ctx.strokeStyle = "#c084fc";
+        ctx.lineWidth = 3;
+
+        // Outer rotating square
+        ctx.save();
+        ctx.rotate(qAngle);
+        ctx.strokeRect(-this.radius * 0.75, -this.radius * 0.75, this.radius * 1.5, this.radius * 1.5);
+        ctx.restore();
+
+        // Inner counter-rotating square
+        ctx.save();
+        ctx.rotate(-qAngle * 1.4);
+        ctx.strokeStyle = "#e879f9";
+        ctx.lineWidth = 2.5;
+        ctx.strokeRect(-this.radius * 0.45, -this.radius * 0.45, this.radius * 0.9, this.radius * 0.9);
+        ctx.restore();
+
+        // Singularity Black Hole Core with Event Horizon
+        ctx.fillStyle = "#000000";
+        ctx.beginPath();
+        ctx.arc(0, 0, 22, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#7c3aed";
+        ctx.lineWidth = 4;
+        ctx.stroke();
+
+        // Orbiting Qubit Nodes flashing void lightning
+        for (let q = 0; q < 8; q++) {
+          const qa = t * 2.5 + (Math.PI / 4) * q;
+          const qx = Math.cos(qa) * (this.radius * 1.15);
+          const qy = Math.sin(qa) * (this.radius * 1.15);
+
+          ctx.fillStyle = "#f0abfc";
+          ctx.beginPath();
+          ctx.arc(qx, qy, 5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+      } else if (vis.chassis === "tank_rover") {
+        // Tank Rover Chassis
         ctx.rotate(this.aimAngle);
-        // Treads
         ctx.fillStyle = "#1e293b";
         ctx.fillRect(-this.radius, -this.radius * 0.8, this.radius * 2, this.radius * 0.35);
         ctx.fillRect(-this.radius, this.radius * 0.45, this.radius * 2, this.radius * 0.35);
-        // Chassis
         ctx.fillStyle = primary;
         ctx.beginPath();
         ctx.roundRect(-this.radius * 0.8, -this.radius * 0.5, this.radius * 1.6, this.radius, 4);
@@ -1065,11 +1505,11 @@
         ctx.strokeStyle = accent;
         ctx.lineWidth = 2;
         ctx.stroke();
-        // Barrel
         ctx.fillStyle = "#0f172a";
         ctx.fillRect(0, -4, this.radius * 1.2, 8);
+
       } else if (vis.chassis === "drone_sphere" || vis.chassis === "singularity_core") {
-        // Floating Core
+        // Floating Core Drone
         const pulse = Math.sin(Date.now() * 0.005) * 3;
         ctx.fillStyle = primary;
         ctx.beginPath();
@@ -1079,7 +1519,6 @@
         ctx.lineWidth = 3;
         ctx.stroke();
 
-        // Orbital Ring
         ctx.save();
         ctx.rotate(Date.now() * 0.002);
         ctx.strokeStyle = vis.auraColor || "#38bdf8";
@@ -1088,19 +1527,27 @@
         ctx.ellipse(0, 0, this.radius * 1.3, this.radius * 0.6, 0, 0, Math.PI * 2);
         ctx.stroke();
         ctx.restore();
+
       } else {
-        // Default Monolith / Executive Armor
+        // Default Heavy Armored Golem with Pauldrons & Core
         ctx.fillStyle = primary;
         ctx.beginPath();
-        ctx.roundRect(-this.radius, -this.radius, this.radius * 2, this.radius * 2, 8);
+        ctx.roundRect(-this.radius * 0.85, -this.radius * 0.85, this.radius * 1.7, this.radius * 1.7, 12);
         ctx.fill();
         ctx.strokeStyle = accent;
         ctx.lineWidth = 3;
         ctx.stroke();
 
-        // Decorative Header Banner
-        ctx.fillStyle = "#091a10";
-        ctx.fillRect(-this.radius, -this.radius, this.radius * 2, 18);
+        // Shoulder Pauldrons
+        ctx.fillStyle = "#334155";
+        ctx.fillRect(-this.radius, -this.radius * 0.9, 18, 24);
+        ctx.fillRect(this.radius - 18, -this.radius * 0.9, 18, 24);
+
+        // Core Reactor Glow
+        ctx.fillStyle = accent;
+        ctx.beginPath();
+        ctx.arc(0, 0, 14, 0, Math.PI * 2);
+        ctx.fill();
       }
 
       // Badge Text

@@ -1508,7 +1508,7 @@
         </button>
 
         <button id="titleAiConfigBtn" class="btn-pixel btn-pixel-cyan" style="font-size: 11px; width: 360px;" onclick="window.openAIConfigModal && window.openAIConfigModal()">
-          🤖 AI DIRECTOR SETTINGS (GEMINI 3.1 / FLASH)
+          🤖 AI DIRECTOR SETTINGS (GOOGLE GEMINI)
         </button>
 
         <div style="display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 4px;">
@@ -1563,14 +1563,14 @@
     </div>
   </div>
 
-  <!-- AI DIRECTOR CONFIGURATION MODAL (GEMINI 3.1 / FLASH) -->
+  <!-- AI DIRECTOR CONFIGURATION MODAL (GOOGLE GEMINI) -->
   <div id="aiConfigModal" class="modal-overlay" style="display: none; z-index: 100;">
     <div class="modal-content pixel-frame-cyan" style="max-width: 650px; padding: 22px;">
       <h2 style="font-size: 16px; font-family: var(--font-pixel-title); color: #38bdf8; margin-bottom: 6px;">
-        🤖 GEMINI AI DIRECTOR SETTINGS
+        🤖 GOOGLE GEMINI AI DIRECTOR SETTINGS
       </h2>
       <p style="color: #94a3b8; font-size: 12px; font-family: var(--font-pixel-body); margin-bottom: 14px;">
-        Connect Google Gemini (3.1 Turbo / 2.5 Flash) to dynamically power tactical voice comms, boss banter, and storyline events in real time. (100% Non-Mandatory)
+        Connect official Google Gemini models (Gemini 2.0 Flash / 1.5 Flash / 1.5 Pro) to dynamically power tactical High Command voice comms, boss banter, and storyline events in real time. (100% Non-Mandatory)
       </p>
 
       <div class="ai-config-row">
@@ -1584,14 +1584,15 @@
       <div class="ai-config-row">
         <label class="ai-config-label" for="geminiModelSelect">GEMINI MODEL SELECTION:</label>
         <select id="geminiModelSelect" class="pixel-select" onchange="window.onGeminiModelChange && window.onGeminiModelChange()">
-          <option value="gemini-2.5-flash">Gemini 2.5 Flash (Ultra Fast & Snappy - Recommended)</option>
-          <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-          <option value="gemini-1.5-pro">Gemini 1.5 Pro (Deep Narrative Reasoning)</option>
-          <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-          <option value="gemini-3.1-turbo">Gemini 3.1 Turbo (Custom Preview)</option>
+          <option value="gemini-2.0-flash">Gemini 2.0 Flash (Recommended - Ultra Fast, Production GA)</option>
+          <option value="gemini-1.5-flash">Gemini 1.5 Flash (Production Standard, High Quota)</option>
+          <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash-Lite (Lowest Latency)</option>
+          <option value="gemini-1.5-pro">Gemini 1.5 Pro (Deep Narrative & Reasoning)</option>
+          <option value="gemini-2.5-flash">Gemini 2.5 Flash (Preview)</option>
+          <option value="gemini-2.5-pro">Gemini 2.5 Pro (Preview)</option>
           <option value="custom">Custom Model ID...</option>
         </select>
-        <input type="text" id="geminiCustomModelInput" class="pixel-input" placeholder="e.g. gemini-3.1-turbo" style="display: none; margin-top: 6px;" />
+        <input type="text" id="geminiCustomModelInput" class="pixel-input" placeholder="e.g. gemini-2.0-flash" style="display: none; margin-top: 6px;" />
       </div>
 
       <div class="ai-config-row">

@@ -2276,6 +2276,22 @@ class PlayerBullet {
       return false;
     }
 
+    // Sentry Turret Friendly Fire Check! (Helldivers realism: crossing sentry stream damages Tux!)
+    if (this.label === "SENTRY" && player && (this.maxLifetime - this.lifetime) > 0.035) {
+      const pDist = Math.hypot(player.x - this.x, player.y - this.y);
+      if (pDist < this.radius + player.radius) {
+        player.takeDamage(this.damage, "FRIENDLY FIRE (SENTRY)");
+        if (window.soundEngine && window.soundEngine.playPlayerHurt) window.soundEngine.playPlayerHurt();
+        addFloatingText(player.x, player.y - 25, `FRIENDLY FIRE! -${Math.round(this.damage)}`, "#ef4444", 20);
+        addScreenShake(6);
+        for (let i = 0; i < 4; i++) {
+          particles.push(new SparkParticle(this.x, this.y, (Math.random() - 0.5) * 120, (Math.random() - 0.5) * 120, "#ef4444"));
+        }
+        if (this.onExpire) this.onExpire();
+        return false;
+      }
+    }
+
     // Check hit against objective targets (relays, etc.)
     for (const target of objectiveTargets) {
       if (Math.hypot(target.x - this.x, target.y - this.y) < this.radius + target.radius) {
@@ -3248,20 +3264,23 @@ class SentryTurret {
     this.x = x;
     this.y = y;
     this.radius = 26;
-    this.hp = 480;
-    this.maxHp = 480;
-    this.lifetime = 32.0;
+    this.hp = 180;
+    this.maxHp = 180;
+    this.lifetime = Infinity;
     this.angle = 0;
     this.fireTimer = 0;
     this.target = null;
   }
 
   update(dt) {
-    this.lifetime -= dt;
+    if (this.hp <= 0) {
+      this.destroy();
+      return false;
+    }
 
-    // Find closest enemy within 650px
+    // Find closest enemy within 720px
     let closest = null;
-    let minDist = 650;
+    let minDist = 720;
     for (const enemy of enemies) {
       const d = Math.hypot(enemy.x - this.x, enemy.y - this.y);
       if (d < minDist) {
@@ -3273,7 +3292,6 @@ class SentryTurret {
 
     if (this.target) {
       const targetAngle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
-      // Smoothly rotate turret
       this.angle = targetAngle;
 
       this.fireTimer += dt;
@@ -3283,7 +3301,15 @@ class SentryTurret {
       }
     }
 
-    if (this.hp <= 0 || this.lifetime <= 0) {
+    // Enemies in contact deal continuous melee damage to sentry
+    for (const enemy of enemies) {
+      const d = Math.hypot(enemy.x - this.x, enemy.y - this.y);
+      if (d < this.radius + enemy.radius) {
+        this.takeDamage((enemy.damage || 28) * dt * 2.0);
+      }
+    }
+
+    if (this.hp <= 0) {
       this.destroy();
       return false;
     }
@@ -3292,9 +3318,9 @@ class SentryTurret {
 
   fire() {
     window.soundEngine.playMinigunShot();
-    addScreenShake(1.5);
-    const speed = 980;
-    const spread = (Math.random() - 0.5) * 0.12;
+    addScreenShake(1.6);
+    const speed = 1180;
+    const spread = (Math.random() - 0.5) * 0.10;
     const pAngle = this.angle + spread;
     const nozzleX = this.x + Math.cos(this.angle) * 32;
     const nozzleY = this.y + Math.sin(this.angle) * 32;
@@ -3304,10 +3330,10 @@ class SentryTurret {
       nozzleY,
       Math.cos(pAngle) * speed,
       Math.sin(pAngle) * speed,
-      4.5,
-      24,
+      5.0,
+      48,
       "#facc15",
-      0.8,
+      0.9,
       false,
       0,
       1,
@@ -3321,17 +3347,32 @@ class SentryTurret {
 
   destroy() {
     window.soundEngine.playProprietaryDestroyed('normal');
-    addScreenShake(8);
-    for (let i = 0; i < 20; i++) {
+    addScreenShake(9);
+    for (let i = 0; i < 22; i++) {
       const a = Math.random() * Math.PI * 2;
-      const spd = 60 + Math.random() * 220;
+      const spd = 70 + Math.random() * 240;
       particles.push(new SparkParticle(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, "#94a3b8"));
     }
-    addFloatingText(this.x, this.y - 30, "SENTRY EXPIRED", "#94a3b8", 18);
+    addFloatingText(this.x, this.y - 30, "SENTRY DESTROYED", "#ef4444", 18);
   }
 
   draw(ctx) {
     ctx.save();
+
+    // Laser targeting sightline (Helldivers style - alert Tux to incoming crossfire!)
+    if (this.target) {
+      const nozzleX = this.x + Math.cos(this.angle) * 32;
+      const nozzleY = this.y + Math.sin(this.angle) * 32;
+      ctx.strokeStyle = "rgba(239, 68, 68, 0.45)";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 6]);
+      ctx.beginPath();
+      ctx.moveTo(nozzleX, nozzleY);
+      ctx.lineTo(this.target.x, this.target.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
     ctx.translate(this.x, this.y);
 
     // Tripod Base
@@ -3362,8 +3403,8 @@ class SentryTurret {
     // Overhead HP Bar
     ctx.fillStyle = "#0f172a";
     ctx.fillRect(this.x - 25, this.y - 34, 50, 6);
-    ctx.fillStyle = "#eab308";
-    ctx.fillRect(this.x - 25, this.y - 34, (this.hp / this.maxHp) * 50, 6);
+    ctx.fillStyle = this.hp > this.maxHp * 0.35 ? "#eab308" : "#ef4444";
+    ctx.fillRect(this.x - 25, this.y - 34, Math.max(0, (this.hp / this.maxHp)) * 50, 6);
   }
 }
 
@@ -4680,7 +4721,7 @@ class PaywallMortar {
 // --- ENEMY BULLETS / ATTACKS ---
 const enemyProjectiles = [];
 class EnemyProjectile {
-  constructor(x, y, vx, vy, label = "ERR", isHoming = false) {
+  constructor(x, y, vx, vy, label = "ERR", isHoming = false, damage = 26) {
     this.x = x;
     this.y = y;
     this.vx = vx;
@@ -4690,6 +4731,7 @@ class EnemyProjectile {
     this.lifetime = 4.5;
     this.isHoming = isHoming;
     this.homeTimer = 2.0;
+    this.damage = damage;
   }
 
   update(dt) {
@@ -4720,10 +4762,20 @@ class EnemyProjectile {
       return false;
     }
 
+    // Check hit against deployed sentry turrets
+    for (const sentry of sentryTurrets) {
+      const sDist = Math.hypot(sentry.x - this.x, sentry.y - this.y);
+      if (sDist < this.radius + sentry.radius) {
+        sentry.takeDamage(this.damage || 26);
+        this.destroy();
+        return false;
+      }
+    }
+
     // Check hit against player
     const dist = Math.hypot(player.x - this.x, player.y - this.y);
     if (dist < this.radius + player.radius) {
-      player.takeDamage(18, `PROPRIETARY ${this.label}`);
+      player.takeDamage(this.damage || 26, `PROPRIETARY ${this.label}`);
       return false;
     }
     return this.lifetime > 0;
@@ -5222,7 +5274,7 @@ class EnemyDRM extends EnemyBase {
     if (this.shootTimer <= 0) {
       this.shootTimer = 1.9;
       if (dist < 650) {
-        const baseAngle = Math.atan2(dy, dx);
+        const baseAngle = typeof calculateLeadAngle === 'function' ? calculateLeadAngle(this.x, this.y, player.x, player.y, player.vx, player.vy, 350, 0.75) : Math.atan2(dy, dx);
         const count = 3;
         const spread = 0.28;
         for (let i = 0; i < count; i++) {
@@ -5233,7 +5285,9 @@ class EnemyDRM extends EnemyBase {
             this.y + Math.sin(a) * 24,
             Math.cos(a) * spd,
             Math.sin(a) * spd,
-            "DRM"
+            "DRM",
+            false,
+            28
           ));
         }
         window.soundEngine.playNoiseBurst(0.12, 0.25, 2200, 600);
@@ -5887,13 +5941,16 @@ class EnemyEULAEnforcer extends EnemyBase {
     if (this.cannonTimer <= 0 && !this.isFiringLaser) {
       this.cannonTimer = 1.0;
       if (dist < 700) {
+        const fireAngle = typeof calculateLeadAngle === 'function' ? calculateLeadAngle(this.x, this.y, player.x, player.y, player.vx, player.vy, 340, 0.75) : this.facingAngle;
         const spd = 340;
         enemyProjectiles.push(new EnemyProjectile(
           this.x + Math.cos(this.facingAngle) * 32,
           this.y + Math.sin(this.facingAngle) * 32,
-          Math.cos(this.facingAngle) * spd,
-          Math.sin(this.facingAngle) * spd,
-          "FINE"
+          Math.cos(fireAngle) * spd,
+          Math.sin(fireAngle) * spd,
+          "FINE",
+          false,
+          30
         ));
         window.soundEngine.playNoiseBurst(0.14, 0.3, 1600, 300);
       }
@@ -6049,7 +6106,7 @@ class EnemySniper extends EnemyBase {
       this.aimTimer -= dt;
 
       if (this.aimTimer > 0.35) {
-        this.lockedAngle = Math.atan2(player.y - this.y, player.x - this.x);
+        this.lockedAngle = typeof calculateLeadAngle === 'function' ? calculateLeadAngle(this.x, this.y, player.x, player.y, player.vx, player.vy, 1800, 0.85) : Math.atan2(player.y - this.y, player.x - this.x);
       }
 
       if (this.aimTimer <= 0) {
@@ -8028,8 +8085,90 @@ if (typeof window !== 'undefined') {
 }
 
 // ============================================================================
-// --- TACTICAL IN-WORLD OBJECTIVE STRUCTURES ---
+// --- TACTICAL IN-WORLD OBJECTIVE STRUCTURES & TERMINAL SYSTEM ---
 // ============================================================================
+
+const ARROW_KEY_SYMBOLS = {
+  'ArrowUp': '▲',
+  'ArrowDown': '▼',
+  'ArrowLeft': '◀',
+  'ArrowRight': '▶'
+};
+
+function calculateLeadAngle(fromX, fromY, targetX, targetY, targetVx = 0, targetVy = 0, projectileSpeed = 400, leadFactor = 0.75) {
+  const dist = Math.hypot(targetX - fromX, targetY - fromY);
+  const timeToTarget = dist / Math.max(1, projectileSpeed);
+  const predX = targetX + targetVx * timeToTarget * leadFactor;
+  const predY = targetY + targetVy * timeToTarget * leadFactor;
+  return Math.atan2(predY - fromY, predX - fromX);
+}
+
+function getNearbyObjectiveTerminal() {
+  if (typeof player === 'undefined' || !player || typeof objectiveTargets === 'undefined' || !objectiveTargets) return null;
+  for (const target of objectiveTargets) {
+    if (target && target.arrowSequence && !target.arrowCompleted && !target.destroyed) {
+      const d = Math.hypot(player.x - target.x, player.y - target.y);
+      if (d <= (target.terminalRange || 140)) {
+        return target;
+      }
+    }
+  }
+  return null;
+}
+
+function drawObjectiveArrowTerminal(ctx, target, label = "TASK TERMINAL") {
+  if (!target || !target.arrowSequence || target.arrowCompleted || target.destroyed) return;
+  const dist = (typeof player !== 'undefined' && player) ? Math.hypot(player.x - target.x, player.y - target.y) : 9999;
+  if (dist > (target.terminalRange || 140) + 120) return;
+
+  const isNear = dist <= (target.terminalRange || 140);
+  ctx.save();
+  ctx.translate(target.x, target.y - (target.radius || 35) - 36);
+
+  const seq = target.arrowSequence;
+  const prog = target.arrowProgress || 0;
+  const boxW = Math.max(160, seq.length * 28 + 24);
+  const boxH = 46;
+
+  // Background terminal frame
+  ctx.fillStyle = "rgba(15, 23, 42, 0.94)";
+  ctx.fillRect(-boxW / 2, -boxH, boxW, boxH);
+  ctx.strokeStyle = isNear ? "#facc15" : "#475569";
+  ctx.lineWidth = isNear ? 2.5 : 1.5;
+  ctx.strokeRect(-boxW / 2, -boxH, boxW, boxH);
+
+  // Terminal Status Header
+  ctx.fillStyle = isNear ? "#facc15" : "#94a3b8";
+  ctx.font = "bold 10px monospace";
+  ctx.textAlign = "center";
+  const headerTxt = isNear ? `⚡ [ARROW CODE: ${label}] ⚡` : `[STEP CLOSER: ${label}]`;
+  ctx.fillText(headerTxt, 0, -boxH + 13);
+
+  // Arrow Glyphs Row
+  const startX = -((seq.length - 1) * 26) / 2;
+  for (let i = 0; i < seq.length; i++) {
+    const ax = startX + i * 26;
+    const ay = -12;
+    const glyph = ARROW_KEY_SYMBOLS[seq[i]] || "▲";
+
+    if (i < prog) {
+      ctx.fillStyle = "#22c55e";
+      ctx.font = "bold 20px monospace";
+      ctx.fillText(glyph, ax, ay);
+    } else if (i === prog && isNear) {
+      const pulse = Math.sin(Date.now() * 0.012) * 0.25 + 0.75;
+      ctx.fillStyle = `rgba(250, 204, 21, ${pulse})`;
+      ctx.font = "bold 22px monospace";
+      ctx.fillText(glyph, ax, ay);
+    } else {
+      ctx.fillStyle = "#475569";
+      ctx.font = "bold 18px monospace";
+      ctx.fillText(glyph, ax, ay);
+    }
+  }
+
+  ctx.restore();
+}
 
 // 1. DEFEND SERVERS OBJECTIVE: SERVER CLUSTER NODE
 class ServerClusterNode {
@@ -8049,6 +8188,44 @@ class ServerClusterNode {
     this.destroyed = false;
     this.warnCooldown = 0;
     this.ringSpinAngle = 0;
+
+    // Helldivers-style Arrow Sequence Terminal
+    this.arrowSequence = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowUp'];
+    this.arrowProgress = 0;
+    this.arrowCompleted = false;
+    this.terminalRange = 140;
+  }
+
+  onArrowInput(code) {
+    if (this.arrowCompleted || this.completed || this.destroyed) return false;
+    if (code === this.arrowSequence[this.arrowProgress]) {
+      this.arrowProgress++;
+      if (window.soundEngine && window.soundEngine.playStratagemBeep) window.soundEngine.playStratagemBeep(true);
+      for (let i = 0; i < 4; i++) {
+        particles.push(new SparkParticle(this.x, this.y - 20, (Math.random() - 0.5) * 60, (Math.random() - 0.5) * 60, "#22c55e"));
+      }
+      if (this.arrowProgress >= this.arrowSequence.length) {
+        this.onArrowSequenceSuccess();
+      }
+      return true;
+    } else {
+      this.arrowProgress = 0;
+      if (window.soundEngine && window.soundEngine.playCorporateErrorBeep) window.soundEngine.playCorporateErrorBeep();
+      addFloatingText(this.x, this.y - 50, "CODE MISMATCH - RESET!", "#ef4444", 18);
+      return false;
+    }
+  }
+
+  onArrowSequenceSuccess() {
+    this.arrowCompleted = true;
+    this.activated = true;
+    if (window.soundEngine && window.soundEngine.playObjectiveComplete) window.soundEngine.playObjectiveComplete();
+    addScreenShake(14);
+    addFloatingText(this.x, this.y - 60, "⭐ TERMINAL OVERRIDE ACCEPTED! HOLD THE RING! ⭐", "#38bdf8", 22);
+    if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
+      window.soundEngine.speakRobot("SERVER CLUSTER OVERRIDDEN! HOLD THE PERIMETER RING, TUX! DEMOCRACY WILL PREVAIL!", "HIGH COMMAND");
+    }
+    this.spawnAssaultWave(3);
   }
 
   takeDamage(amount, source = "") {
@@ -8073,17 +8250,17 @@ class ServerClusterNode {
     const distToPlayer = Math.hypot(player.x - this.x, player.y - this.y);
     this.inRing = distToPlayer <= this.defenseRingRadius;
 
-    // Mission only starts after Tux enters the tactical defense ring!
+    // Mission only activates after entering ring AND completing terminal arrow code!
     if (!this.activated) {
-      if (this.inRing) {
-        this.activated = true;
-        if (window.soundEngine && window.soundEngine.playAmbushAlarm) window.soundEngine.playAmbushAlarm();
-        addScreenShake(14);
-        addFloatingText(this.x, this.y - 60, "⭐ DEFENSE PERIMETER ENGAGED! HOLD THE RING! ⭐", "#38bdf8", 22);
-        if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
-          window.soundEngine.speakRobot("MISSION ENGAGED: DEFEND SERVER CLUSTER! HOLD THE PERIMETER RING, TUX! DEMOCRACY WILL PREVAIL!", "SUPER DESTROYER");
+      if (!this.arrowCompleted) {
+        if (this.inRing) {
+          this.warnCooldown -= dt;
+          if (this.warnCooldown <= 0) {
+            this.warnCooldown = 3.0;
+            addFloatingText(this.x, this.y - 50, "⌨️ INPUT TERMINAL CODE WITH ARROW KEYS [▲ ▼ ◀ ▶]!", "#facc15", 16);
+          }
         }
-        this.spawnAssaultWave(3);
+        return true;
       }
       return true;
     }
@@ -8130,7 +8307,7 @@ class ServerClusterNode {
       dropPods.push(new HostileDropPod(this.x + Math.cos(a) * dist, this.y + Math.sin(a) * dist));
     }
     if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
-      window.soundEngine.speakRobot("WARNING: PROPRIETARY REINFORCEMENTS TARGETING DEFENSE PERIMETER!", "SUPER DESTROYER");
+      window.soundEngine.speakRobot("WARNING: PROPRIETARY REINFORCEMENTS TARGETING DEFENSE PERIMETER!", "HIGH COMMAND");
     }
   }
 
@@ -8140,7 +8317,7 @@ class ServerClusterNode {
     addScreenShake(18);
     particles.push(new ShockwaveRing(this.x, this.y, 340, "#22c55e"));
 
-    // Rewards: 3 weapon caches and health
+    // Rewards: 2 weapon caches and health
     weaponChests.push(new WeaponChest(this.x - 55, this.y + 45));
     weaponChests.push(new WeaponChest(this.x + 55, this.y + 45));
     pickups.push(new Pickup(this.x, this.y + 60, 'hp'));
@@ -8153,7 +8330,7 @@ class ServerClusterNode {
       window.PixelCutscenes.play('server_sabotage');
     }
     if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
-      window.soundEngine.speakRobot("SERVER CLUSTER ENCRYPTED AND SECURED. ALL THREATS PURGED UNDER GPLv3!", "SUPER DESTROYER");
+      window.soundEngine.speakRobot("SERVER CLUSTER ENCRYPTED AND SECURED. ALL THREATS PURGED UNDER GPLv3!", "HIGH COMMAND");
     }
   }
 
@@ -8192,8 +8369,9 @@ class ServerClusterNode {
       ctx.textAlign = "center";
       ctx.lineWidth = 3;
       ctx.strokeStyle = "#000000";
-      ctx.strokeText("▸ [STEP IN RING TO ACTIVATE SERVER DEFENSE] ◂", 0, -r - 12);
-      ctx.fillText("▸ [STEP IN RING TO ACTIVATE SERVER DEFENSE] ◂", 0, -r - 12);
+      const standbyMsg = !this.arrowCompleted ? "▸ [STEP TO TERMINAL & ENTER ARROW CODE] ◂" : "▸ [HOLD DEFENSE RING] ◂";
+      ctx.strokeText(standbyMsg, 0, -r - 12);
+      ctx.fillText(standbyMsg, 0, -r - 12);
     } else if (this.completed) {
       // Completed: Solid green secured ring
       ctx.strokeStyle = "rgba(34, 197, 94, 0.75)";
@@ -8275,11 +8453,14 @@ class ServerClusterNode {
     ctx.textAlign = "center";
     ctx.lineWidth = 3;
     ctx.strokeStyle = "#000000";
-    const statusText = !this.activated ? "SERVER CLUSTER: STANDBY" : (this.completed ? "CLUSTER SECURED" : `DEFENSE: ${Math.round(pct * 100)}% [${Math.round(this.hp)} HP]`);
+    const statusText = !this.activated ? (!this.arrowCompleted ? "STANDBY: INPUT ARROW CODE" : "PERIMETER STANDBY") : (this.completed ? "CLUSTER SECURED" : `DEFENSE: ${Math.round(pct * 100)}% [${Math.round(this.hp)} HP]`);
     ctx.strokeText(statusText, 0, -this.radius - 28);
     ctx.fillText(statusText, 0, -this.radius - 28);
 
     ctx.restore();
+
+    // Floating Helldivers arrow code terminal HUD
+    drawObjectiveArrowTerminal(ctx, this, "SERVER CLUSTER");
   }
 }
 
@@ -8293,6 +8474,34 @@ class ShieldPylon {
     this.maxHp = 650;
     this.core = core;
     this.destroyed = false;
+
+    // Terminal Arrow Override sequence
+    this.arrowSequence = ['ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowUp'];
+    this.arrowProgress = 0;
+    this.arrowCompleted = false;
+    this.terminalRange = 125;
+  }
+
+  onArrowInput(code) {
+    if (this.arrowCompleted || this.destroyed) return false;
+    if (code === this.arrowSequence[this.arrowProgress]) {
+      this.arrowProgress++;
+      if (window.soundEngine && window.soundEngine.playStratagemBeep) window.soundEngine.playStratagemBeep(true);
+      for (let i = 0; i < 4; i++) {
+        particles.push(new SparkParticle(this.x, this.y - 10, (Math.random() - 0.5) * 60, (Math.random() - 0.5) * 60, "#38bdf8"));
+      }
+      if (this.arrowProgress >= this.arrowSequence.length) {
+        this.arrowCompleted = true;
+        this.takeDamage(this.hp + 20, "TERMINAL OVERLOAD");
+        addFloatingText(this.x, this.y - 40, "PYLON CORE SABOTAGED VIA TERMINAL!", "#ef4444", 22);
+      }
+      return true;
+    } else {
+      this.arrowProgress = 0;
+      if (window.soundEngine && window.soundEngine.playCorporateErrorBeep) window.soundEngine.playCorporateErrorBeep();
+      addFloatingText(this.x, this.y - 35, "OVERRIDE FAILED", "#ef4444", 16);
+      return false;
+    }
   }
 
   takeDamage(amount, source = "") {
@@ -8358,6 +8567,9 @@ class ShieldPylon {
     ctx.fillRect(-barW / 2, -this.radius - 12, barW * (this.hp / this.maxHp), 5);
 
     ctx.restore();
+
+    // Floating arrow code terminal HUD
+    drawObjectiveArrowTerminal(ctx, this, "PYLON OVERLOAD");
   }
 }
 
@@ -8575,6 +8787,57 @@ class UplinkRelay {
     this.ringSpinAngle = 0;
     this.warnCooldown = 0;
     this.waveSpawned = false;
+
+    // Helldivers-style Arrow Sequence Terminal
+    const relayCodes = [
+      ['ArrowUp', 'ArrowRight', 'ArrowDown'],
+      ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'],
+      ['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp']
+    ];
+    this.arrowSequence = relayCodes[(this.index || 0) % relayCodes.length];
+    this.arrowProgress = 0;
+    this.arrowCompleted = false;
+    this.terminalRange = 135;
+  }
+
+  onArrowInput(code) {
+    if (this.arrowCompleted || this.completed) return false;
+    if (code === this.arrowSequence[this.arrowProgress]) {
+      this.arrowProgress++;
+      if (window.soundEngine && window.soundEngine.playStratagemBeep) window.soundEngine.playStratagemBeep(true);
+      for (let i = 0; i < 4; i++) {
+        particles.push(new SparkParticle(this.x, this.y - 15, (Math.random() - 0.5) * 60, (Math.random() - 0.5) * 60, "#22c55e"));
+      }
+      if (this.arrowProgress >= this.arrowSequence.length) {
+        this.onArrowSequenceSuccess();
+      }
+      return true;
+    } else {
+      this.arrowProgress = 0;
+      if (window.soundEngine && window.soundEngine.playCorporateErrorBeep) window.soundEngine.playCorporateErrorBeep();
+      addFloatingText(this.x, this.y - 45, "CODE RESET!", "#ef4444", 16);
+      return false;
+    }
+  }
+
+  onArrowSequenceSuccess() {
+    this.arrowCompleted = true;
+    this.activated = true;
+    if (window.soundEngine && window.soundEngine.playObjectiveComplete) window.soundEngine.playObjectiveComplete();
+    addScreenShake(10);
+    addFloatingText(this.x, this.y - 45, `⚡ UPLINK ${this.index + 1} ONLINE! HOLD PERIMETER! ⚡`, "#38bdf8", 20);
+    if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
+      window.soundEngine.speakRobot(`UPLINK ${this.index + 1} LINKED. HOLD PERIMETER TO ROUTE PACKETS!`, "HIGH COMMAND");
+    }
+    if (dungeon && !this.waveSpawned) {
+      this.waveSpawned = true;
+      for (let i = 0; i < 3; i++) {
+        const a = (Math.PI * 2 / 3) * i + Math.random() * 0.4;
+        const ex = this.x + Math.cos(a) * 320;
+        const ey = this.y + Math.sin(a) * 320;
+        enemies.push(dungeon.createEnemyForSector(ex, ey));
+      }
+    }
   }
 
   update(dt) {
@@ -8585,25 +8848,13 @@ class UplinkRelay {
     const dist = Math.hypot(player.x - this.x, player.y - this.y);
     this.inRing = dist <= this.captureRadius;
 
-    // Mission engages ONLY when Tux enters the perimeter ring
+    // Mission engages ONLY after entering ring AND entering terminal arrow sequence!
     if (!this.activated) {
-      if (this.inRing) {
-        this.activated = true;
-        if (window.soundEngine && window.soundEngine.playAmbushAlarm) window.soundEngine.playAmbushAlarm();
-        addScreenShake(8);
-        addFloatingText(this.x, this.y - 45, "⚡ UPLINK ENGAGED! HOLD THE PERIMETER! ⚡", "#38bdf8", 18);
-        if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
-          window.soundEngine.speakRobot(`UPLINK ${this.index + 1} ENGAGED. HOLD PERIMETER TO ROUTE PACKETS!`, "SUPER DESTROYER");
-        }
-        // Spawn defensive ambush enforcers
-        if (dungeon && !this.waveSpawned) {
-          this.waveSpawned = true;
-          for (let i = 0; i < 3; i++) {
-            const a = (Math.PI * 2 / 3) * i + Math.random() * 0.4;
-            const ex = this.x + Math.cos(a) * 320;
-            const ey = this.y + Math.sin(a) * 320;
-            enemies.push(dungeon.createEnemyForSector(ex, ey));
-          }
+      if (!this.arrowCompleted && this.inRing) {
+        this.warnCooldown -= dt;
+        if (this.warnCooldown <= 0) {
+          this.warnCooldown = 3.0;
+          addFloatingText(this.x, this.y - 45, `⌨️ INPUT UPLINK ${this.index + 1} CODE WITH ARROWS!`, "#facc15", 16);
         }
       }
       return true;
@@ -8646,7 +8897,7 @@ class UplinkRelay {
       dungeon.onObjectiveProgress("SETUP_UPLINK", 1);
     }
     if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
-      window.soundEngine.speakRobot(`BEACON ${this.index + 1} ONLINE. MESH PACKETS ROUTED.`, "SUPER DESTROYER");
+      window.soundEngine.speakRobot(`BEACON ${this.index + 1} ONLINE. MESH PACKETS ROUTED.`, "HIGH COMMAND");
     }
   }
 
@@ -8672,7 +8923,8 @@ class UplinkRelay {
         ctx.fillStyle = "#38bdf8";
         ctx.font = "bold 10px monospace";
         ctx.textAlign = "center";
-        ctx.fillText(`[STEP IN RING TO CALIBRATE UPLINK ${this.index + 1}]`, 0, -this.captureRadius - 14);
+        const standbyTxt = !this.arrowCompleted ? `[INPUT ARROW CODE FOR UPLINK ${this.index + 1}]` : `[HOLD UPLINK ${this.index + 1} PERIMETER]`;
+        ctx.fillText(standbyTxt, 0, -this.captureRadius - 14);
       } else {
         // Active ring
         ctx.strokeStyle = this.inRing ? "rgba(34, 197, 94, 0.35)" : "rgba(239, 68, 68, 0.45)";
@@ -8726,6 +8978,338 @@ class UplinkRelay {
     ctx.fillText(this.completed ? `UPLINK ${this.index + 1}: CONNECTED` : `UPLINK ${this.index + 1}: ${Math.round(pct * 100)}%`, 0, -this.radius - 20);
 
     ctx.restore();
+
+    // Floating arrow code terminal HUD
+    drawObjectiveArrowTerminal(ctx, this, `UPLINK ${this.index + 1}`);
+  }
+}
+
+// 4. PURGE REACTOR OBJECTIVE: REACTOR PURGE MANIFOLD
+class ReactorPurgeManifold {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.radius = 46;
+    this.defenseRingRadius = 210;
+    this.hp = 2400;
+    this.maxHp = 2400;
+    this.progress = 0;
+    this.maxProgress = 18.0; // 18s cooling purge
+    this.activated = false;
+    this.inRing = false;
+    this.completed = false;
+    this.destroyed = false;
+    this.warnCooldown = 0;
+    this.steamTimer = 0;
+    this.waveSpawned = [false, false];
+
+    this.arrowSequence = ['ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight', 'ArrowUp', 'ArrowDown'];
+    this.arrowProgress = 0;
+    this.arrowCompleted = false;
+    this.terminalRange = 140;
+  }
+
+  onArrowInput(code) {
+    if (this.arrowCompleted || this.completed || this.destroyed) return false;
+    if (code === this.arrowSequence[this.arrowProgress]) {
+      this.arrowProgress++;
+      if (window.soundEngine && window.soundEngine.playStratagemBeep) window.soundEngine.playStratagemBeep(true);
+      for (let i = 0; i < 4; i++) {
+        particles.push(new SparkParticle(this.x, this.y - 20, (Math.random() - 0.5) * 60, (Math.random() - 0.5) * 60, "#ea580c"));
+      }
+      if (this.arrowProgress >= this.arrowSequence.length) {
+        this.onArrowSequenceSuccess();
+      }
+      return true;
+    } else {
+      this.arrowProgress = 0;
+      if (window.soundEngine && window.soundEngine.playCorporateErrorBeep) window.soundEngine.playCorporateErrorBeep();
+      addFloatingText(this.x, this.y - 50, "VALVE JAMMED - RESET!", "#ef4444", 18);
+      return false;
+    }
+  }
+
+  onArrowSequenceSuccess() {
+    this.arrowCompleted = true;
+    this.activated = true;
+    if (window.soundEngine && window.soundEngine.playObjectiveComplete) window.soundEngine.playObjectiveComplete();
+    addScreenShake(16);
+    addFloatingText(this.x, this.y - 60, "🔥 COOLANT MANIFOLD OPENED! VENT THE REACTOR! 🔥", "#ea580c", 22);
+    if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
+      window.soundEngine.speakRobot("COOLANT VALVES DISENGAGED! HOLD THE VENTILATION ZONE WHILE THE CORE STABILIZES!", "HIGH COMMAND");
+    }
+    this.spawnAssaultWave(4);
+  }
+
+  spawnAssaultWave(count) {
+    if (window.soundEngine && window.soundEngine.playAmbushAlarm) window.soundEngine.playAmbushAlarm();
+    addScreenShake(8);
+    for (let i = 0; i < count; i++) {
+      const a = (Math.PI * 2 / count) * i + Math.random() * 0.4;
+      const dist = 340 + Math.random() * 80;
+      dropPods.push(new HostileDropPod(this.x + Math.cos(a) * dist, this.y + Math.sin(a) * dist));
+    }
+  }
+
+  takeDamage(amount, source = "") {
+    if (this.completed || this.destroyed) return;
+    this.hp = Math.max(0, this.hp - amount);
+    addFloatingText(this.x + (Math.random() - 0.5) * 40, this.y - 20, `-${Math.round(amount)}`, "#ef4444", 16);
+    if (this.hp <= 0) {
+      this.destroyed = true;
+      if (window.soundEngine && window.soundEngine.playRocketExplode) window.soundEngine.playRocketExplode();
+      addScreenShake(20);
+      if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
+        window.soundEngine.speakRobot("REACTOR CORE BREACH DETECTED. MELTDOWN UNCONTAINED.", "ALERT AI");
+      }
+    }
+  }
+
+  update(dt) {
+    if (this.destroyed || this.completed) return true;
+    if (!player) return true;
+
+    const dist = Math.hypot(player.x - this.x, player.y - this.y);
+    this.inRing = dist <= this.defenseRingRadius;
+
+    // Steam vents while purging
+    if (this.activated) {
+      this.steamTimer += dt;
+      if (this.steamTimer > 0.12) {
+        this.steamTimer = 0;
+        for (let i = 0; i < 3; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const spd = 40 + Math.random() * 100;
+          particles.push(new SparkParticle(this.x, this.y - 10, Math.cos(a) * spd, Math.sin(a) * spd - 60, "#fdba74"));
+        }
+      }
+    }
+
+    if (!this.activated) {
+      if (!this.arrowCompleted && this.inRing) {
+        this.warnCooldown -= dt;
+        if (this.warnCooldown <= 0) {
+          this.warnCooldown = 3.0;
+          addFloatingText(this.x, this.y - 50, "⌨️ INPUT COOLING CODE WITH ARROWS [▲ ◀ ▼ ▶ ▲ ▼]!", "#ea580c", 16);
+        }
+      }
+      return true;
+    }
+
+    if (this.inRing) {
+      this.progress += dt;
+      const pct = this.progress / this.maxProgress;
+
+      if (pct >= 0.5 && !this.waveSpawned[0]) {
+        this.waveSpawned[0] = true;
+        this.spawnAssaultWave(4);
+      } else if (pct >= 0.85 && !this.waveSpawned[1]) {
+        this.waveSpawned[1] = true;
+        this.spawnAssaultWave(5);
+      }
+
+      if (this.progress >= this.maxProgress) {
+        this.complete();
+      }
+    } else {
+      this.warnCooldown -= dt;
+      if (this.warnCooldown <= 0) {
+        this.warnCooldown = 2.0;
+        addFloatingText(player.x, player.y - 45, "⚠️ RETURN TO REACTOR COOLING RING! ⚠️", "#ef4444", 18);
+        if (window.soundEngine && window.soundEngine.playStratagemBeep) window.soundEngine.playStratagemBeep(false);
+      }
+    }
+    return true;
+  }
+
+  complete() {
+    this.completed = true;
+    if (window.soundEngine && window.soundEngine.playObjectiveComplete) window.soundEngine.playObjectiveComplete();
+    addScreenShake(20);
+    particles.push(new ShockwaveRing(this.x, this.y, 360, "#ea580c"));
+
+    weaponChests.push(new WeaponChest(this.x - 50, this.y + 40));
+    weaponChests.push(new WeaponChest(this.x + 50, this.y + 40));
+    pickups.push(new Pickup(this.x, this.y + 55, 'hp'));
+
+    if (dungeon) {
+      dungeon.onObjectiveProgress("PURGE_REACTOR", 1);
+    }
+    if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
+      window.soundEngine.speakRobot("REACTOR MANIFOLD STABILIZED AND CONVERTED TO CLEAN OPEN-SOURCE POWER!", "HIGH COMMAND");
+    }
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    const r = this.defenseRingRadius;
+    const pct = Math.min(1.0, this.progress / this.maxProgress);
+
+    // Perimeter Ring
+    if (!this.completed) {
+      if (!this.activated) {
+        ctx.strokeStyle = "rgba(234, 88, 12, 0.45)";
+        ctx.lineWidth = 2.5;
+        ctx.setLineDash([8, 8]);
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      } else {
+        ctx.strokeStyle = this.inRing ? "#ea580c" : "#ef4444";
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(0, 0, r, -Math.PI / 2, -Math.PI / 2 + pct * Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+
+    // Heavy Industrial Reactor Chamber
+    ctx.fillStyle = "#1c1917";
+    ctx.beginPath();
+    ctx.roundRect(-36, -36, 72, 72, 12);
+    ctx.fill();
+    ctx.strokeStyle = this.completed ? "#22c55e" : (this.activated ? "#ea580c" : "#78716c");
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // Reactor Core Glow
+    const pulse = Math.sin(gameTime * 8) * 0.2 + 0.8;
+    ctx.fillStyle = this.completed ? "rgba(34, 197, 94, 0.85)" : `rgba(234, 88, 12, ${pulse})`;
+    ctx.beginPath();
+    ctx.arc(0, 0, 18, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Overhead Status
+    ctx.font = "bold 11px monospace";
+    ctx.fillStyle = "#ffffff";
+    ctx.textAlign = "center";
+    const statusTxt = !this.activated ? "REACTOR: VENT CODE REQUIRED" : (this.completed ? "REACTOR SECURED" : `COOLING: ${Math.round(pct * 100)}%`);
+    ctx.fillText(statusTxt, 0, -this.radius - 24);
+
+    ctx.restore();
+    drawObjectiveArrowTerminal(ctx, this, "REACTOR PURGE");
+  }
+}
+
+// 5. PRISON BREAK OBJECTIVE: PRISON BREAK CAGE
+class PrisonBreakCage {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.radius = 42;
+    this.hp = 1800;
+    this.maxHp = 1800;
+    this.completed = false;
+    this.destroyed = false;
+
+    this.arrowSequence = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+    this.arrowProgress = 0;
+    this.arrowCompleted = false;
+    this.terminalRange = 135;
+  }
+
+  onArrowInput(code) {
+    if (this.arrowCompleted || this.completed || this.destroyed) return false;
+    if (code === this.arrowSequence[this.arrowProgress]) {
+      this.arrowProgress++;
+      if (window.soundEngine && window.soundEngine.playStratagemBeep) window.soundEngine.playStratagemBeep(true);
+      for (let i = 0; i < 4; i++) {
+        particles.push(new SparkParticle(this.x, this.y - 10, (Math.random() - 0.5) * 60, (Math.random() - 0.5) * 60, "#38bdf8"));
+      }
+      if (this.arrowProgress >= this.arrowSequence.length) {
+        this.complete();
+      }
+      return true;
+    } else {
+      this.arrowProgress = 0;
+      if (window.soundEngine && window.soundEngine.playCorporateErrorBeep) window.soundEngine.playCorporateErrorBeep();
+      addFloatingText(this.x, this.y - 45, "CIPHER FAILED - RESET!", "#ef4444", 16);
+      return false;
+    }
+  }
+
+  takeDamage(amount, source = "") {
+    if (this.completed || this.destroyed) return;
+    this.hp = Math.max(0, this.hp - amount);
+    if (this.hp <= 0) {
+      this.complete();
+    }
+  }
+
+  update(dt) {
+    return !this.completed && !this.destroyed;
+  }
+
+  complete() {
+    if (this.completed) return;
+    this.completed = true;
+    this.arrowCompleted = true;
+    if (window.soundEngine && window.soundEngine.playObjectiveComplete) window.soundEngine.playObjectiveComplete();
+    addScreenShake(16);
+    particles.push(new ShockwaveRing(this.x, this.y, 280, "#38bdf8"));
+
+    // Spawn 3 Armed Allied Combat Penguins!
+    if (typeof helperPenguins !== 'undefined') {
+      helperPenguins.push(new HelperPenguin(this.x - 32, this.y + 20));
+      helperPenguins.push(new HelperPenguin(this.x + 32, this.y + 20));
+      helperPenguins.push(new HelperPenguin(this.x, this.y + 40));
+    }
+
+    addFloatingText(this.x, this.y - 50, "⭐ PRISONERS LIBERATED! SQUAD COMMITTED! ⭐", "#22c55e", 24);
+
+    if (dungeon) {
+      dungeon.onObjectiveProgress("PRISON_BREAK", 1);
+    }
+    if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
+      window.soundEngine.speakRobot("ALLIED COMBAT PENGUINS FREED FROM CLOSED-SOURCE DETENTION! THEY ARE FLANKING YOUR SQUAD!", "HIGH COMMAND");
+    }
+  }
+
+  draw(ctx) {
+    if (this.completed) return;
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    // Laser Prison Cage Base
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(-34, -30, 68, 60);
+    ctx.strokeStyle = "#38bdf8";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(-34, -30, 68, 60);
+
+    // Glowing Cyan Laser Bars
+    const barPulse = Math.sin(gameTime * 10) * 0.25 + 0.75;
+    ctx.strokeStyle = `rgba(56, 189, 248, ${barPulse})`;
+    ctx.lineWidth = 3;
+    for (let x = -24; x <= 24; x += 12) {
+      ctx.beginPath();
+      ctx.moveTo(x, -28);
+      ctx.lineTo(x, 28);
+      ctx.stroke();
+    }
+
+    // Mini penguin eyes looking through bars
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.arc(-10, -4, 4, 0, Math.PI * 2);
+    ctx.arc(10, -4, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#0284c7";
+    ctx.beginPath();
+    ctx.arc(-10, -4, 2, 0, Math.PI * 2);
+    ctx.arc(10, -4, 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.font = "bold 10px monospace";
+    ctx.fillStyle = "#38bdf8";
+    ctx.textAlign = "center";
+    ctx.fillText("CRYO-CAGE: [INPUT DECRYPTION CIPHER]", 0, -this.radius - 16);
+
+    ctx.restore();
+    drawObjectiveArrowTerminal(ctx, this, "PRISON BREAK");
   }
 }
 
@@ -9277,6 +9861,42 @@ class ObjectiveManager {
           }
         ];
         break;
+      case "PURGE_REACTOR":
+        this.objectives = [
+          {
+            id: "PURGE_REACTOR",
+            text: "Cool & Vent Overclocked Reactor Manifold",
+            current: 0,
+            required: 1,
+            done: false
+          },
+          {
+            id: "PURGE_ENEMIES",
+            text: "Eliminate Meltdown Containment Squads",
+            current: 0,
+            required: 12 + this.tier * 4,
+            done: false
+          }
+        ];
+        break;
+      case "PRISON_BREAK":
+        this.objectives = [
+          {
+            id: "PRISON_BREAK",
+            text: "Decrypt Cryo-Cage & Liberate Allied GNU Prisoners",
+            current: 0,
+            required: 1,
+            done: false
+          },
+          {
+            id: "PURGE_ENEMIES",
+            text: "Neutralize Prison Guard Sentinels",
+            current: 0,
+            required: 10 + this.tier * 3,
+            done: false
+          }
+        ];
+        break;
       case "ELITE_BOUNTY":
       case "PURGE_BOSS":
         const bossName = (this.biome && this.biome.bossId) ? this.biome.bossId.replace('_', ' ').toUpperCase() : "MONOPOLY BOSS";
@@ -9302,6 +9922,25 @@ class ObjectiveManager {
         return;
     }
     this.updateUI();
+    this.announceSectorBriefing();
+  }
+
+  announceSectorBriefing() {
+    if (!window.soundEngine || typeof window.soundEngine.speakRobot !== 'function') return;
+    let briefing = "";
+    if (this.tier <= 2) {
+      briefing = "ACT I: EMERALD REPO FRONTIER. Tux, proprietary cartels have locked down telemetry outposts! Crack their terminal ciphers and purge monopoly enforcers!";
+    } else if (this.tier <= 4) {
+      briefing = "ACT II: INDUSTRIAL FABRICATION. We dropped you into the Smelter Core and Heap Wastelands! Vent their overclocked reactors and sabotage hardware lock-in!";
+    } else if (this.tier <= 6) {
+      briefing = "ACT III: WALLED GARDEN SIEGE. You are breaching the executive citadel! Free our allied combat penguins from detention and shatter their proprietary perimeter!";
+    } else {
+      briefing = "ACT IV: RING-0 KERNEL SINGULARITY. The final battle! The Quantum Hypervisor is warping process space! Eliminate the monopoly apex and achieve universal Open Source Victory!";
+    }
+    window.soundEngine.speakRobot(briefing, "HIGH COMMAND");
+    if (player) {
+      addFloatingText(player.x, player.y - 75, `ACT BRIEFING: TIER ${this.tier} MISSION ACTIVE!`, "#facc15", 22);
+    }
   }
 
   generateForSector(sectorMajor, sectorMinor, sectorNum) {
@@ -9848,6 +10487,10 @@ class Dungeon {
       objectiveTargets.push(new UplinkRelay(centerX - 320, centerY - 200, 0));
       objectiveTargets.push(new UplinkRelay(centerX + 360, centerY - 220, 1));
       objectiveTargets.push(new UplinkRelay(centerX + 240, centerY + 320, 2));
+    } else if (this.currentObjectiveType === "PURGE_REACTOR") {
+      objectiveTargets.push(new ReactorPurgeManifold(centerX + 280, centerY));
+    } else if (this.currentObjectiveType === "PRISON_BREAK") {
+      objectiveTargets.push(new PrisonBreakCage(centerX + 260, centerY));
     } else if (this.currentObjectiveType === "ELITE_BOUNTY" || this.currentObjectiveType === "PURGE_BOSS" || this.currentBiome.id === "QUANTUM_VOID") {
       if (window.EnemyModelFactory && this.currentBiome.bossId) {
         const boss = window.EnemyModelFactory.createFromSpec(this.currentBiome.bossId, centerX + 400, centerY);
@@ -9942,7 +10585,15 @@ class Dungeon {
     const originX = player ? player.x : 8 * TILE_SIZE;
     const originY = player ? player.y : 8 * TILE_SIZE;
 
-    const objectivePool = ["DEFEND_SERVERS", "ATTACK_FORTRESS", "SETUP_UPLINK", "ELITE_BOUNTY"];
+    // Rich diverse objective missions (no repetitive single mission type!)
+    const objectivePool = [
+      "DEFEND_SERVERS",
+      "ATTACK_FORTRESS",
+      "SETUP_UPLINK",
+      "PURGE_REACTOR",
+      "PRISON_BREAK",
+      "ELITE_BOUNTY"
+    ];
 
     for (let i = 0; i < 3; i++) {
       const angle = (Math.PI * 2 / 3) * i - Math.PI / 2;
@@ -9952,7 +10603,7 @@ class Dungeon {
 
       const candidateBiomes = biomeKeys.filter(k => k !== (this.currentBiome ? this.currentBiome.id : ""));
       const chosenBiomeKey = candidateBiomes[(i + (this.objectiveManager ? this.objectiveManager.tier : 1)) % candidateBiomes.length] || "THERMAL_FOUNDRY";
-      const chosenObj = objectivePool[i % objectivePool.length];
+      const chosenObj = objectivePool[(i * 2 + (this.objectiveManager ? this.objectiveManager.tier : 1)) % objectivePool.length];
       const tierRating = Math.max(1, (this.objectiveManager ? this.objectiveManager.tier : 1) + (i === 2 ? 1 : 0));
 
       const portal = new ProceduralPortal(px, py, chosenBiomeKey, chosenObj, tierRating);
@@ -10106,9 +10757,21 @@ class Dungeon {
 
       const siteX = (chunkOriginX + 8) * TILE_SIZE;
       const siteY = (chunkOriginY + 8) * TILE_SIZE;
-      const isServer = chunkHash < 0.32;
-      const objTarget = isServer ? new ServerClusterNode(siteX, siteY) : new UplinkRelay(siteX, siteY, objectiveTargets.length);
-      objTarget.label = isServer ? "SERVER NODE" : "UPLINK RELAY";
+      const subRoll = (chunkHash - 0.28) / 0.08;
+      let objTarget;
+      if (subRoll < 0.25) {
+        objTarget = new ServerClusterNode(siteX, siteY);
+        objTarget.label = "SERVER CLUSTER";
+      } else if (subRoll < 0.50) {
+        objTarget = new UplinkRelay(siteX, siteY, objectiveTargets.length);
+        objTarget.label = "UPLINK RELAY";
+      } else if (subRoll < 0.75) {
+        objTarget = new ReactorPurgeManifold(siteX, siteY);
+        objTarget.label = "REACTOR PURGE";
+      } else {
+        objTarget = new PrisonBreakCage(siteX, siteY);
+        objTarget.label = "PRISON BREAK";
+      }
       objectiveTargets.push(objTarget);
 
       // Guards protecting the site
@@ -11190,6 +11853,14 @@ function updateTerminalDisplay() {
 function handleStratagemDirectionalInput(code) {
   if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(code)) return;
 
+  // PRIORITY 1: Active In-World Objective Task Terminal (Helldivers arrow tasks!)
+  const activeTaskTerminal = typeof getNearbyObjectiveTerminal === 'function' ? getNearbyObjectiveTerminal() : null;
+  if (activeTaskTerminal) {
+    activeTaskTerminal.onArrowInput(code);
+    return;
+  }
+
+  // PRIORITY 2: High Command Stratagem Terminal
   if (!isStratagemTerminalOpen) {
     toggleStratagemTerminal(true);
   }

@@ -844,11 +844,32 @@ class SoundEngine {
     osc.stop(now + 0.11);
   }
 
-  speakRobot(text, speaker = 'SUPER DESTROYER', customPitch, customRate) {
-    const isLibertyCommand = /SUPER DESTROYER|HELLDIVER|DEMOCRACY|HIGH COMMAND|TUX|EAGLE/i.test(speaker);
+  playCorporateErrorBeep() {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(320, now);
+    osc.frequency.setValueAtTime(160, now + 0.06);
+    gain.gain.setValueAtTime(0.16, now);
+    gain.gain.linearRampToValueAtTime(0.001, now + 0.14);
+    osc.connect(gain);
+    gain.connect(this.sfxGain);
+    osc.start(now);
+    osc.stop(now + 0.15);
+  }
 
-    if (isLibertyCommand) {
+  speakRobot(text, speaker = 'SUPER DESTROYER', customPitch, customRate) {
+    const spkUpper = (speaker || '').toUpperCase();
+    const isHighCommand = /SUPER DESTROYER|HELLDIVER|HIGH COMMAND|DEMOCRACY OFFICER|CENTRAL COMMAND/i.test(spkUpper);
+    const isTuxSide = isHighCommand || /TUX|EAGLE|REBEL|HACKER|ALLIED|COMMUNITY/i.test(spkUpper);
+    const isFemaleEnemy = /APPLE|WARDEN|EULA|CARTEL|MAINFRAME|OUTPOST ALARM|PROPRIETARY SEC|DRM CORE|CLOUD MONOPOLY|CLOSED-SOURCE|SIRI|CORTANA|AI OVERMIND/i.test(spkUpper);
+
+    if (isHighCommand || isTuxSide) {
       this.playLibertyRadioSquelch();
+    } else if (isFemaleEnemy) {
+      this.playCorporateErrorBeep();
     } else {
       this.playRadioStatic(0.08);
       this.playRobotVocoderChime();
@@ -858,21 +879,32 @@ class SoundEngine {
     setTimeout(() => {
       if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
       const now = performance.now();
-      if (window._lastSpeechBarkTime && now - window._lastSpeechBarkTime < 900) return;
+      if (window._lastSpeechBarkTime && now - window._lastSpeechBarkTime < 850) return;
       window._lastSpeechBarkTime = now;
 
       try {
         const utter = new SpeechSynthesisUtterance(text);
-        if (isLibertyCommand) {
-          // John Helldiver / High Command: Deep, booming, authoritative military liberty cadence
-          utter.pitch = customPitch !== undefined ? customPitch : 0.68;
-          utter.rate = customRate !== undefined ? customRate : 1.10;
+
+        if (isHighCommand) {
+          // John Helldiver / High Command: Deep, booming, authoritative military liberty cadence (MALE)
+          utter.pitch = customPitch !== undefined ? customPitch : 0.65;
+          utter.rate = customRate !== undefined ? customRate : 1.05;
           utter.volume = 1.0;
+        } else if (isTuxSide) {
+          // Tux / Allied resistance: Resolute, heroic, battle-hardened (MALE)
+          utter.pitch = customPitch !== undefined ? customPitch : 0.88;
+          utter.rate = customRate !== undefined ? customRate : 1.10;
+          utter.volume = 0.95;
+        } else if (isFemaleEnemy) {
+          // Cold, sterile, menacing corporate female DRM voice (FEMALE)
+          utter.pitch = customPitch !== undefined ? customPitch : 1.35;
+          utter.rate = customRate !== undefined ? customRate : 1.16;
+          utter.volume = 0.90;
         } else {
-          // Corporate drone: whiny, high, sterile, robotic synthesizer
-          utter.pitch = customPitch !== undefined ? customPitch : 1.48;
-          utter.rate = customRate !== undefined ? customRate : 1.18;
-          utter.volume = 0.85;
+          // Corporate male tyrant (Ballmer-bot, Patent Troll Sovereign, etc.)
+          utter.pitch = customPitch !== undefined ? customPitch : 0.78;
+          utter.rate = customRate !== undefined ? customRate : 1.22;
+          utter.volume = 0.90;
         }
 
         if (!window._cachedVoicesList || window._cachedVoicesList.length === 0) {
@@ -882,20 +914,38 @@ class SoundEngine {
 
         if (voices && voices.length > 0) {
           let chosen = null;
-          if (isLibertyCommand) {
+          if (isHighCommand || isTuxSide) {
+            // Tux / High Command: Always prioritize deep resonant MALE voices
             chosen = voices.find(v => 
               v.name.toLowerCase().includes('daniel') ||
               v.name.toLowerCase().includes('alex') ||
               v.name.toLowerCase().includes('fred') ||
               v.name.toLowerCase().includes('oliver') ||
-              (v.name.toLowerCase().includes('male') && v.lang && v.lang.startsWith('en'))
+              v.name.toLowerCase().includes('david') ||
+              v.name.toLowerCase().includes('mark') ||
+              v.name.toLowerCase().includes('george') ||
+              (v.name.toLowerCase().includes('male') && !v.name.toLowerCase().includes('female') && v.lang && v.lang.startsWith('en'))
+            ) || voices.find(v => v.lang && v.lang.startsWith('en'));
+          } else if (isFemaleEnemy) {
+            // Enemy corporate AI: Always prioritize sterile FEMALE voices
+            chosen = voices.find(v => 
+              v.name.toLowerCase().includes('samantha') ||
+              v.name.toLowerCase().includes('victoria') ||
+              v.name.toLowerCase().includes('karen') ||
+              v.name.toLowerCase().includes('zira') ||
+              v.name.toLowerCase().includes('serena') ||
+              v.name.toLowerCase().includes('fiona') ||
+              v.name.toLowerCase().includes('tessa') ||
+              v.name.toLowerCase().includes('female')
             ) || voices.find(v => v.lang && v.lang.startsWith('en'));
           } else {
+            // Male corporate tyrant / glitched voice
             chosen = voices.find(v => 
               v.name.toLowerCase().includes('zarvox') ||
               v.name.toLowerCase().includes('cellos') ||
-              v.name.toLowerCase().includes('robot') ||
-              v.name.toLowerCase().includes('trinoids')
+              v.name.toLowerCase().includes('trinoids') ||
+              v.name.toLowerCase().includes('ralph') ||
+              v.name.toLowerCase().includes('male')
             ) || voices.find(v => v.lang && v.lang.startsWith('en'));
           }
           if (chosen) utter.voice = chosen;
