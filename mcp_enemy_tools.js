@@ -814,6 +814,9 @@
       this.attackTimers = (spec.attacks || []).map(() => Math.random() * 0.8);
       this.aimAngle = 0;
       this.spawnSpoken = false;
+      this.isDead = false;
+      this.corrodedTimer = 0;
+      this.shockTimer = 0;
 
       // Broadcast spawn voice line if configured
       if (spec.dialogue && spec.dialogue.onSpawn && spec.dialogue.onSpawn.length > 0) {
@@ -827,8 +830,17 @@
       }
     }
 
+    shock(duration = 0.6) {
+      this.shockTimer = Math.max(this.shockTimer, duration);
+    }
+
     takeDamage(dmg, source = "TUX") {
-      if (this.hp <= 0) return;
+      if (this.isDead || this.hp <= 0) return;
+
+      // Corrosive acid shred
+      if (this.corrodedTimer > 0) {
+        dmg *= 1.5;
+      }
 
       // Absorb with shield first
       if (this.shield > 0) {
@@ -877,33 +889,67 @@
     }
 
     update(dt) {
-      if (this.hp <= 0) return false;
+      if (this.isDead || this.hp <= 0) return false;
 
       // Burn tick
       if (this.burnTimer > 0) {
         this.burnTimer -= dt;
-        this.hp -= 25 * dt;
+        this.hp -= 28 * dt;
+        if (Math.random() < 0.25 && window.particles && window.SparkParticle) {
+          window.particles.push(new window.SparkParticle(
+            this.x + (Math.random() - 0.5) * this.radius,
+            this.y + (Math.random() - 0.5) * this.radius,
+            (Math.random() - 0.5) * 30, -35, "#f97316"
+          ));
+        }
         if (this.hp <= 0) {
           this.die();
           return false;
         }
       }
 
-      if (typeof player !== 'undefined' && player) {
-        const dx = player.x - this.x;
-        const dy = player.y - this.y;
+      // Corroded acid tick
+      if (this.corrodedTimer > 0) {
+        this.corrodedTimer -= dt;
+        if (Math.random() < 0.25 && window.particles && window.SparkParticle) {
+          window.particles.push(new window.SparkParticle(
+            this.x + (Math.random() - 0.5) * this.radius,
+            this.y + (Math.random() - 0.5) * this.radius,
+            (Math.random() - 0.5) * 20, -25, "#22c55e"
+          ));
+        }
+      }
+
+      // Electric EMP shock stun
+      if (this.shockTimer > 0) {
+        this.shockTimer -= dt;
+        if (Math.random() < 0.35 && window.particles && window.SparkParticle) {
+          window.particles.push(new window.SparkParticle(
+            this.x + (Math.random() - 0.5) * this.radius * 1.4,
+            this.y + (Math.random() - 0.5) * this.radius * 1.4,
+            (Math.random() - 0.5) * 45, (Math.random() - 0.5) * 45,
+            Math.random() > 0.5 ? "#38bdf8" : "#facc15"
+          ));
+        }
+      }
+
+      const plyr = window.player || (typeof player !== 'undefined' ? player : null);
+      if (plyr) {
+        const dx = plyr.x - this.x;
+        const dy = plyr.y - this.y;
         const dist = Math.hypot(dx, dy);
         this.aimAngle = Math.atan2(dy, dx);
 
-        // Movement toward player (unless stationary outpost structure)
-        if (this.speed > 0 && dist > this.radius + player.radius) {
+        // Movement toward player (slowed by 50% if shocked)
+        const moveSpeed = this.shockTimer > 0 ? this.speed * 0.5 : this.speed;
+        if (moveSpeed > 0 && dist > this.radius + (plyr.radius || 24)) {
           // If within range, close in or circle
           const targetDist = this.isBoss ? 260 : 180;
           let moveFactor = 1.0;
           if (dist < targetDist) moveFactor = -0.5; // Backpedal slightly
 
-          this.vx = (dx / dist) * this.speed * moveFactor;
-          this.vy = (dy / dist) * this.speed * moveFactor;
+          this.vx = (dx / dist) * moveSpeed * moveFactor;
+          this.vy = (dy / dist) * moveSpeed * moveFactor;
 
           this.x += this.vx * dt;
           if (window.dungeon) window.dungeon.resolveCircle(this, this.radius, 'x');
@@ -911,15 +957,17 @@
           if (window.dungeon) window.dungeon.resolveCircle(this, this.radius, 'y');
         }
 
-        // Process Attack behaviors
-        const attacks = this.spec.attacks || [];
-        for (let i = 0; i < attacks.length; i++) {
-          const atk = attacks[i];
-          this.attackTimers[i] -= dt;
-          if (this.attackTimers[i] <= 0) {
-            this.attackTimers[i] = this.isEnraged ? atk.cooldown * 0.75 : atk.cooldown;
-            if (dist <= atk.range) {
-              this.executeAttack(atk, dx, dy, dist);
+        // Process Attack behaviors (delayed if EMP shocked)
+        if (this.shockTimer <= 0) {
+          const attacks = this.spec.attacks || [];
+          for (let i = 0; i < attacks.length; i++) {
+            const atk = attacks[i];
+            this.attackTimers[i] -= dt;
+            if (this.attackTimers[i] <= 0) {
+              this.attackTimers[i] = this.isEnraged ? atk.cooldown * 0.75 : atk.cooldown;
+              if (dist <= atk.range) {
+                this.executeAttack(atk, dx, dy, dist);
+              }
             }
           }
         }
@@ -931,6 +979,8 @@
     executeAttack(atk, dx, dy, dist) {
       const proj = atk.projectile || { label: "BYTE", color: "#ef4444", damage: 15, size: 7 };
       const baseAngle = Math.atan2(dy, dx);
+      const ProjClass = window.EnemyProjectile || (typeof EnemyProjectile !== 'undefined' ? EnemyProjectile : null);
+      const pList = window.enemyProjectiles || (typeof enemyProjectiles !== 'undefined' ? enemyProjectiles : null);
 
       if (atk.type === "bullet_burst") {
         const count = atk.count || 3;
@@ -938,8 +988,8 @@
         const spd = atk.speed || 340;
         for (let c = 0; c < count; c++) {
           const a = baseAngle + (c - (count - 1) / 2) * spread;
-          if (typeof window.enemyProjectiles !== 'undefined') {
-            window.enemyProjectiles.push(new window.EnemyProjectile(
+          if (ProjClass && pList) {
+            pList.push(new ProjClass(
               this.x + Math.cos(a) * (this.radius + 5),
               this.y + Math.sin(a) * (this.radius + 5),
               Math.cos(a) * spd,
@@ -955,8 +1005,8 @@
         const curTime = typeof window.gameTime !== 'undefined' ? window.gameTime : Date.now() * 0.001;
         for (let c = 0; c < count; c++) {
           const a = (Math.PI * 2 / count) * c + curTime * 2.5;
-          if (typeof window.enemyProjectiles !== 'undefined') {
-            window.enemyProjectiles.push(new window.EnemyProjectile(
+          if (ProjClass && pList) {
+            pList.push(new ProjClass(
               this.x + Math.cos(a) * (this.radius + 5),
               this.y + Math.sin(a) * (this.radius + 5),
               Math.cos(a) * spd,
@@ -1074,6 +1124,10 @@
     }
 
     die() {
+      if (this.isDead) return;
+      this.isDead = true;
+      this.hp = 0;
+
       // Play destruction sound & effects
       if (window.soundEngine) {
         window.soundEngine.playProprietaryDestroyed(this.isBoss ? 'boss' : 'normal');
@@ -1094,12 +1148,15 @@
         window.broadcastBossStoryDialogue(this.label, dyingQuote, "#94a3b8", "💀");
       }
 
-      // Drop pickups / loot
-      if (typeof window.pickups !== 'undefined') {
-        window.pickups.push(new window.Pickup(this.x, this.y, 'xp'));
+      // Drop pickups / loot safely
+      const PickupClass = window.Pickup || (typeof Pickup !== 'undefined' ? Pickup : null);
+      const pickupList = window.pickups || (typeof pickups !== 'undefined' ? pickups : null);
+
+      if (PickupClass && pickupList) {
+        pickupList.push(new PickupClass(this.x, this.y, 'xp'));
         if (this.isBoss) {
-          window.pickups.push(new window.Pickup(this.x + 20, this.y, 'hp'));
-          window.pickups.push(new window.Pickup(this.x - 20, this.y, 'fuel'));
+          pickupList.push(new PickupClass(this.x + 20, this.y, 'hp'));
+          pickupList.push(new PickupClass(this.x - 20, this.y, 'fuel'));
           // Drop rare weapon
           if (typeof window.dropRareWeaponAt === 'function') {
             window.dropRareWeaponAt(this.x, this.y);
@@ -1126,6 +1183,13 @@
             }
           }
         }
+      }
+
+      // Remove from enemies array
+      const enemyList = window.enemies || (typeof enemies !== 'undefined' ? enemies : null);
+      if (enemyList) {
+        const idx = enemyList.indexOf(this);
+        if (idx !== -1) enemyList.splice(idx, 1);
       }
     }
   }

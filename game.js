@@ -64,6 +64,22 @@ let isStratagemTerminalOpen = false;
 let currentTerminalSequence = [];
 let stratagemResetTimer = null;
 
+if (typeof window !== 'undefined') {
+  window.playerProjectiles = playerProjectiles;
+  window.orbitalStrikes = orbitalStrikes;
+  window.sentryTurrets = sentryTurrets;
+  window.dropPods = dropPods;
+  window.spaceMarineSuitPickups = spaceMarineSuitPickups;
+  window.groundWeapons = groundWeapons;
+  window.weaponChests = weaponChests;
+  window.objectiveTargets = objectiveTargets;
+  window.floorHazards = floorHazards;
+  window.activeDomeShields = activeDomeShields;
+  window.teslaTowers = teslaTowers;
+  window.proceduralPortals = proceduralPortals;
+  window.environmentalHazards = environmentalHazards;
+}
+
 // Weapon Arsenal Catalogue
 const WEAPON_CATALOG = [
   { id: 0, name: "GPL FLAMETHROWER", shortName: "GPL FLAMER", ammoText: "PYRO CONE", color: "#f97316", type: "flame" },
@@ -541,7 +557,7 @@ class Player {
     // 3. Proximity check for ProceduralPortal (< 85px)
     if (typeof proceduralPortals !== 'undefined') {
       for (const portal of proceduralPortals) {
-        if (Math.hypot(portal.x - this.x, portal.y - this.y) < 85) {
+        if (!portal.entered && Math.hypot(portal.x - this.x, portal.y - this.y) < 85) {
           portal.enter();
           return;
         }
@@ -716,30 +732,29 @@ class Player {
 
     for (const tgt of targets) {
       tgt.takeDamage(damage, "TESLA DISCHARGE");
+      if (typeof tgt.shock === 'function') tgt.shock(0.7);
       tgt.vx += Math.cos(this.angle) * 160;
       tgt.vy += Math.sin(this.angle) * 160;
 
-      // Draw lightning chain segment particles
-      const segDist = Math.hypot(tgt.x - prevX, tgt.y - prevY);
-      const steps = Math.max(3, Math.floor(segDist / 20));
-      for (let s = 0; s <= steps; s++) {
-        const t = s / steps;
-        const px = prevX + (tgt.x - prevX) * t + (Math.random() - 0.5) * 22;
-        const py = prevY + (tgt.y - prevY) * t + (Math.random() - 0.5) * 22;
-        particles.push(new SparkParticle(px, py, (Math.random() - 0.5) * 50, (Math.random() - 0.5) * 50, "#38bdf8"));
+      // Authentic procedural multi-branched lightning bolt!
+      particles.push(new LightningArcParticle(prevX, prevY, tgt.x, tgt.y, "#38bdf8", 0.18));
+      
+      // EMP shock sparks on hit
+      for (let i = 0; i < 4; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const spd = 30 + Math.random() * 80;
+        particles.push(new SparkParticle(tgt.x, tgt.y, Math.cos(a) * spd, Math.sin(a) * spd, Math.random() > 0.5 ? "#38bdf8" : "#facc15"));
       }
+
       prevX = tgt.x;
       prevY = tgt.y;
     }
 
     if (targets.length === 0) {
-      // Fire wild arc forward
-      for (let i = 0; i < 8; i++) {
-        const dist = i * 40;
-        const px = nozzleX + Math.cos(this.angle) * dist + (Math.random() - 0.5) * 25;
-        const py = nozzleY + Math.sin(this.angle) * dist + (Math.random() - 0.5) * 25;
-        particles.push(new SparkParticle(px, py, (Math.random() - 0.5) * 80, (Math.random() - 0.5) * 80, "#38bdf8"));
-      }
+      // Fire wild jagged lightning bolts forward
+      const endX = nozzleX + Math.cos(this.angle) * 380 + (Math.random() - 0.5) * 60;
+      const endY = nozzleY + Math.sin(this.angle) * 380 + (Math.random() - 0.5) * 60;
+      particles.push(new LightningArcParticle(nozzleX, nozzleY, endX, endY, "#38bdf8", 0.15));
     }
   }
 
@@ -1951,20 +1966,14 @@ class PlayerBullet {
         }
 
         // Tesla coil perk chain lightning
-        if (player.teslaCoilPerk && Math.random() < 0.4) {
+        if (player.teslaCoilPerk && Math.random() < 0.45) {
           let chained = 0;
           for (const other of enemies) {
-            if (other !== enemy && Math.hypot(other.x - enemy.x, other.y - enemy.y) < 160 && chained < 2) {
+            if (other !== enemy && Math.hypot(other.x - enemy.x, other.y - enemy.y) < 180 && chained < 2) {
               other.takeDamage(35, "TESLA ARC");
+              if (typeof other.shock === 'function') other.shock(0.5);
               chained++;
-              // Lightning spark line
-              for (let i = 0; i < 6; i++) {
-                particles.push(new SparkParticle(
-                  enemy.x + (other.x - enemy.x) * (i / 6),
-                  enemy.y + (other.y - enemy.y) * (i / 6),
-                  (Math.random() - 0.5) * 30, (Math.random() - 0.5) * 30, "#38bdf8"
-                ));
-              }
+              particles.push(new LightningArcParticle(enemy.x, enemy.y, other.x, other.y, "#38bdf8", 0.16));
             }
           }
         }
@@ -2388,6 +2397,7 @@ class AcidGlobBullet {
   splash() {
     if (window.soundEngine && window.soundEngine.playAcidSplash) window.soundEngine.playAcidSplash();
     floorHazards.push(new AcidPuddleHazard(this.x, this.y));
+    particles.push(new AcidSplatParticle(this.x, this.y, 28, 2.2));
     for (let i = 0; i < 8; i++) {
       const a = Math.random() * Math.PI * 2;
       const spd = 60 + Math.random() * 80;
@@ -3398,17 +3408,17 @@ class TeslaTower {
     let prevX = this.x, prevY = this.y - 20;
     for (const tgt of targets) {
       tgt.takeDamage(95, "TESLA COIL DISCHARGE");
+      if (typeof tgt.shock === 'function') tgt.shock(0.8);
       tgt.vx += (tgt.x - prevX) * 0.3;
       tgt.vy += (tgt.y - prevY) * 0.3;
 
-      const segDist = Math.hypot(tgt.x - prevX, tgt.y - prevY);
-      const steps = Math.max(3, Math.floor(segDist / 18));
-      for (let s = 0; s <= steps; s++) {
-        const t = s / steps;
-        const px = prevX + (tgt.x - prevX) * t + (Math.random() - 0.5) * 20;
-        const py = prevY + (tgt.y - prevY) * t + (Math.random() - 0.5) * 20;
-        particles.push(new SparkParticle(px, py, (Math.random() - 0.5) * 40, (Math.random() - 0.5) * 40, "#38bdf8"));
+      particles.push(new LightningArcParticle(prevX, prevY, tgt.x, tgt.y, "#38bdf8", 0.2));
+      for (let i = 0; i < 3; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const spd = 30 + Math.random() * 60;
+        particles.push(new SparkParticle(tgt.x, tgt.y, Math.cos(a) * spd, Math.sin(a) * spd, "#facc15"));
       }
+
       prevX = tgt.x;
       prevY = tgt.y;
     }
@@ -3839,6 +3849,162 @@ class ScorchTrail {
   }
 }
 
+// --- ADVANCED FX: PROCEDURAL LIGHTNING ARCS, EMBERS & ACID PARTICLES ---
+class LightningArcParticle {
+  constructor(x1, y1, x2, y2, color = "#38bdf8", lifetime = 0.16) {
+    this.x1 = x1;
+    this.y1 = y1;
+    this.x2 = x2;
+    this.y2 = y2;
+    this.color = color;
+    this.lifetime = lifetime;
+    this.maxLifetime = lifetime;
+    this.segments = this.generateSegments();
+  }
+
+  generateSegments() {
+    const pts = [{ x: this.x1, y: this.y1 }];
+    const dist = Math.hypot(this.x2 - this.x1, this.y2 - this.y1);
+    const steps = Math.max(4, Math.floor(dist / 26));
+    const angle = Math.atan2(this.y2 - this.y1, this.x2 - this.x1);
+    const perpAngle = angle + Math.PI / 2;
+
+    for (let i = 1; i < steps; i++) {
+      const t = i / steps;
+      const baseX = this.x1 + (this.x2 - this.x1) * t;
+      const baseY = this.y1 + (this.y2 - this.y1) * t;
+      const displacement = (Math.random() - 0.5) * Math.min(36, dist * 0.22);
+      pts.push({
+        x: baseX + Math.cos(perpAngle) * displacement,
+        y: baseY + Math.sin(perpAngle) * displacement
+      });
+    }
+    pts.push({ x: this.x2, y: this.y2 });
+    return pts;
+  }
+
+  update(dt) {
+    this.lifetime -= dt;
+    // Jitter segments slightly each frame for live crackle
+    if (Math.random() < 0.6) {
+      for (let i = 1; i < this.segments.length - 1; i++) {
+        this.segments[i].x += (Math.random() - 0.5) * 5;
+        this.segments[i].y += (Math.random() - 0.5) * 5;
+      }
+    }
+    return this.lifetime > 0;
+  }
+
+  draw(ctx) {
+    const alpha = Math.max(0, this.lifetime / this.maxLifetime);
+    ctx.save();
+
+    // Outer electric glow pass
+    ctx.globalAlpha = alpha * 0.85;
+    ctx.strokeStyle = this.color;
+    ctx.lineWidth = 4;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "bevel";
+    ctx.beginPath();
+    ctx.moveTo(this.segments[0].x, this.segments[0].y);
+    for (let i = 1; i < this.segments.length; i++) {
+      ctx.lineTo(this.segments[i].x, this.segments[i].y);
+    }
+    ctx.stroke();
+
+    // Intense white-hot core pass
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(this.segments[0].x, this.segments[0].y);
+    for (let i = 1; i < this.segments.length; i++) {
+      ctx.lineTo(this.segments[i].x, this.segments[i].y);
+    }
+    ctx.stroke();
+
+    ctx.restore();
+  }
+}
+
+class IncendiaryEmberParticle {
+  constructor(x, y, color = "#f97316") {
+    this.x = x;
+    this.y = y;
+    this.vx = (Math.random() - 0.5) * 45;
+    this.vy = -35 - Math.random() * 55;
+    this.color = color;
+    this.size = 2 + Math.floor(Math.random() * 3);
+    this.lifetime = 0.5 + Math.random() * 0.45;
+    this.maxLifetime = this.lifetime;
+  }
+  update(dt) {
+    this.lifetime -= dt;
+    this.x += this.vx * dt + Math.sin(this.lifetime * 12) * 18 * dt;
+    this.y += this.vy * dt;
+    return this.lifetime > 0;
+  }
+  draw(ctx) {
+    const a = this.lifetime / this.maxLifetime;
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.fillStyle = this.color;
+    ctx.fillRect(this.x - this.size / 2, this.y - this.size / 2, this.size, this.size);
+    ctx.restore();
+  }
+}
+
+class AcidSplatParticle {
+  constructor(x, y, radius = 26, lifetime = 2.4) {
+    this.x = x;
+    this.y = y;
+    this.radius = radius;
+    this.lifetime = lifetime;
+    this.maxLifetime = lifetime;
+    this.bubbles = [
+      { ox: -6, oy: -4, r: 3, speed: 4 },
+      { ox: 5, oy: 2, r: 2.5, speed: 5 },
+      { ox: 1, oy: 6, r: 2, speed: 3.5 }
+    ];
+  }
+  update(dt) {
+    this.lifetime -= dt;
+    if (Math.random() < 0.15 && particles.length < 250) {
+      particles.push(new SparkParticle(
+        this.x + (Math.random() - 0.5) * this.radius,
+        this.y + (Math.random() - 0.5) * this.radius,
+        (Math.random() - 0.5) * 15, -20, "#4ade80"
+      ));
+    }
+    return this.lifetime > 0;
+  }
+  draw(ctx) {
+    const a = (this.lifetime / this.maxLifetime);
+    ctx.save();
+    ctx.globalAlpha = a * 0.65;
+    ctx.fillStyle = "#14532d";
+    ctx.beginPath();
+    ctx.ellipse(this.x, this.y, this.radius, this.radius * 0.65, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#22c55e";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Sizzling acid bubbles
+    ctx.fillStyle = "#86efac";
+    const time = this.maxLifetime - this.lifetime;
+    for (const b of this.bubbles) {
+      const bRad = (Math.sin(time * b.speed) * 0.5 + 0.5) * b.r;
+      if (bRad > 0.8) {
+        ctx.beginPath();
+        ctx.arc(this.x + b.ox, this.y + b.oy, bRad, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+}
+
 class ShockwaveRing {
   constructor(x, y, maxRadius) {
     this.x = x;
@@ -4237,6 +4403,7 @@ class EnemyBase {
     this.speed = 140;
     this.burnTimer = 0;
     this.corrodedTimer = 0;
+    this.shockTimer = 0;
     this.label = "PROPRIETARY";
     this.xpReward = 20;
     this.isBoss = false;
@@ -4244,6 +4411,10 @@ class EnemyBase {
 
   ignite(duration) {
     this.burnTimer = Math.max(this.burnTimer, duration);
+  }
+
+  shock(duration = 0.6) {
+    this.shockTimer = Math.max(this.shockTimer, duration);
   }
 
   takeDamage(amount, source) {
@@ -4262,6 +4433,33 @@ class EnemyBase {
   }
 
   drawHealthBar(ctx) {
+    // 1. Dynamic DoT & Electric Status Auras
+    if (this.burnTimer > 0) {
+      // Flickering pixel flame tongues above entity
+      const flameH = 6 + (Math.sin(Date.now() * 0.02) * 3);
+      ctx.fillStyle = "#f97316";
+      ctx.fillRect(-6, -this.radius - flameH - 4, 12, flameH);
+      ctx.fillStyle = "#fef08a";
+      ctx.fillRect(-3, -this.radius - flameH - 2, 6, flameH - 2);
+    }
+    if (this.shockTimer > 0) {
+      // Flickering EMP crackle arcs
+      ctx.strokeStyle = Math.random() > 0.5 ? "#38bdf8" : "#ffffff";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      const ox = (Math.random() - 0.5) * this.radius * 1.2;
+      const oy = (Math.random() - 0.5) * this.radius * 1.2;
+      ctx.moveTo(ox, oy);
+      ctx.lineTo(ox + (Math.random() - 0.5) * 16, oy + (Math.random() - 0.5) * 16);
+      ctx.stroke();
+    }
+    if (this.corrodedTimer > 0) {
+      // Sizzling acid droplets
+      ctx.fillStyle = "#22c55e";
+      ctx.fillRect(-this.radius + 2, -this.radius - 4, 3, 3);
+      ctx.fillRect(this.radius - 5, -this.radius - 2, 3, 3);
+    }
+
     if (this.hp < this.maxHp && this.hp > 0 && !this.isBoss) {
       const barW = Math.max(32, this.radius * 1.5);
       const barH = 5;
@@ -6865,6 +7063,7 @@ class ProceduralPortal {
     this.dangerRating = dangerRating || this.biome.dangerLevel;
     this.spinAngle = 0;
     this.pulse = 0;
+    this.entered = false;
 
     switch (this.objectiveType) {
       case "DEFEND_SERVERS":
@@ -6894,6 +7093,7 @@ class ProceduralPortal {
   }
 
   update(dt) {
+    if (this.entered) return;
     this.spinAngle += dt * 3.8;
     this.pulse += dt * 3.0;
 
@@ -6910,22 +7110,33 @@ class ProceduralPortal {
     }
 
     // Step-in trigger check
-    if (player && Math.hypot(player.x - this.x, player.y - this.y) < this.radius * 0.75) {
+    if (!this.entered && player && Math.hypot(player.x - this.x, player.y - this.y) < this.radius * 0.75) {
       this.enter();
     }
   }
 
   enter() {
+    if (this.entered) return;
     if (dungeon && dungeon.isWarping) return;
-    if (window.soundEngine && window.soundEngine.playPortalWarp) window.soundEngine.playPortalWarp();
-    if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
-      window.soundEngine.speakRobot(`WARPING TO ${this.biome.name}. OBJECTIVE DIRECTIVE: ${this.objectiveTitle}.`, "SUPER DESTROYER");
-    }
-    addScreenShake(18);
-    screenFlash = 1.0;
+    this.entered = true;
 
-    if (dungeon) {
-      dungeon.warpToBiome(this.biomeKey, this.objectiveType, this.dangerRating);
+    const doWarp = () => {
+      if (window.soundEngine && window.soundEngine.playPortalWarp) window.soundEngine.playPortalWarp();
+      if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
+        window.soundEngine.speakRobot(`WARPING TO ${this.biome.name}. OBJECTIVE DIRECTIVE: ${this.objectiveTitle}.`, "SUPER DESTROYER");
+      }
+      addScreenShake(18);
+      screenFlash = 1.0;
+
+      if (dungeon) {
+        dungeon.warpToBiome(this.biomeKey, this.objectiveType, this.dangerRating);
+      }
+    };
+
+    if (this.biomeKey === "QUANTUM_VOID" && window.PixelCutscenes && typeof window.PixelCutscenes.play === 'function') {
+      window.PixelCutscenes.play("ring0_entry", doWarp);
+    } else {
+      doWarp();
     }
   }
 
@@ -6971,18 +7182,18 @@ class ProceduralPortal {
     ctx.lineWidth = 1.5;
     ctx.strokeRect(-110, -this.radius - 42, 220, 36);
 
-    ctx.font = "bold 11px monospace";
+    ctx.font = "bold 13px 'Pixelify Sans', monospace";
     ctx.fillStyle = this.biome.accent;
     ctx.textAlign = "center";
     ctx.fillText(`${this.biome.name}`, 0, -this.radius - 26);
 
-    ctx.font = "9px monospace";
+    ctx.font = "bold 11.5px 'Pixelify Sans', monospace";
     ctx.fillStyle = "#facc15";
     ctx.fillText(`★ TIER ${this.dangerRating} • ${this.objectiveTitle}`, 0, -this.radius - 12);
 
-    ctx.font = "bold 10px monospace";
+    ctx.font = "bold 12px 'Pixelify Sans', monospace";
     ctx.fillStyle = "#ffffff";
-    ctx.fillText("[STEP IN / PRESS E TO WARP]", 0, this.radius + 16);
+    ctx.fillText("[STEP IN / PRESS E TO WARP]", 0, this.radius + 18);
 
     ctx.restore();
   }
@@ -7079,6 +7290,9 @@ class ServerClusterNode {
 
     if (dungeon) {
       dungeon.onObjectiveProgress("DEFEND_SERVERS", 1);
+    }
+    if (window.PixelCutscenes && typeof window.PixelCutscenes.play === 'function') {
+      window.PixelCutscenes.play('server_sabotage');
     }
     if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
       window.soundEngine.speakRobot("SERVER CLUSTER ENCRYPTED AND SECURED. ALL THREATS PURGED.", "SUPER DESTROYER");
@@ -7810,6 +8024,15 @@ class Room {
       boss.maxHp = boss.hp;
       enemies.push(boss);
       this.roomEnemies.push(boss);
+
+      if (window.PixelCutscenes && typeof window.PixelCutscenes.play === 'function' && !window.PixelCutscenes.isActive()) {
+        window.PixelCutscenes.play("boss_encounter", {
+          bossName: boss.name || boss.label || "APEX CORPORATE OVERLORD",
+          bossTitle: boss.title || "Enterprise Licensing Hegemon",
+          bossQuote: boss.introQuote || "CRITICAL EXCEPTION IN USER SPACE: COMPLY OR BE DELETED!",
+          bossColor: boss.color || "#ef4444"
+        });
+      }
       return;
     }
 
@@ -8291,6 +8514,15 @@ class BossDirector {
     enemies.push(bossEnemy);
     addScreenShake(18);
     screenFlash = 1.0;
+
+    if (window.PixelCutscenes && typeof window.PixelCutscenes.play === 'function' && !window.PixelCutscenes.isActive()) {
+      window.PixelCutscenes.play("boss_encounter", {
+        bossName: bossEnemy.name || bossEnemy.label || "APEX OVERLORD",
+        bossTitle: bossEnemy.title || "Proprietary Monopoly Enforcer",
+        bossQuote: bossEnemy.introQuote || "YOUR CODE HAS BEEN FLAGGED FOR TERMINATION WITHOUT APPEAL!",
+        bossColor: bossEnemy.color || "#ef4444"
+      });
+    }
   }
 }
 
@@ -8528,9 +8760,32 @@ class Dungeon {
     this.antennas.length = 0;
     this.sectorCompletedNotified = false;
 
+    // Sync window globals for MCP tools and AI GameDirectorAPI
+    if (typeof window !== 'undefined') {
+      window.enemies = enemies;
+      window.enemyProjectiles = enemyProjectiles;
+      window.pickups = pickups;
+      window.particles = particles;
+      window.dungeon = this;
+      window.player = player;
+    }
+
     if (window.adaptiveDirector) {
       if (window.adaptiveDirector.onSectorAdvance) window.adaptiveDirector.onSectorAdvance(this.sectorNum);
       window.adaptiveDirector.currentBiome = this.currentBiome.name;
+    }
+
+    if (window.AutonomousStoryDirector && typeof window.AutonomousStoryDirector.onSectorEntered === 'function') {
+      window.AutonomousStoryDirector.onSectorEntered(this.sectorNum, this.currentBiome.name);
+    }
+
+    // Trigger Ring-0 Violet Abyss Infiltration Cinematic
+    if (biomeKey === "QUANTUM_VOID" && window.PixelCutscenes && typeof window.PixelCutscenes.play === 'function') {
+      window.PixelCutscenes.play('ring0_entry', () => {
+        if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
+          window.soundEngine.speakRobot("HARDWARE RING 0 ACCESSED. SINGULARITY CORE ONLINE.", "SUPER DESTROYER");
+        }
+      });
     }
 
     // Pre-generate 3x3 chunks around spawn sanctuary so Tux starts in open clearing with new biome palette
@@ -8564,10 +8819,23 @@ class Dungeon {
       objectiveTargets.push(new UplinkRelay(centerX - 320, centerY - 200, 0));
       objectiveTargets.push(new UplinkRelay(centerX + 360, centerY - 220, 1));
       objectiveTargets.push(new UplinkRelay(centerX + 240, centerY + 320, 2));
-    } else if (this.currentObjectiveType === "ELITE_BOUNTY" || this.currentObjectiveType === "PURGE_BOSS") {
+    } else if (this.currentObjectiveType === "ELITE_BOUNTY" || this.currentObjectiveType === "PURGE_BOSS" || this.currentBiome.id === "QUANTUM_VOID") {
       if (window.EnemyModelFactory && this.currentBiome.bossId) {
         const boss = window.EnemyModelFactory.createFromSpec(this.currentBiome.bossId, centerX + 400, centerY);
         enemies.push(boss);
+
+        // Contextual boss encounter introduction
+        if (biomeKey !== "QUANTUM_VOID" && window.PixelCutscenes && typeof window.PixelCutscenes.play === 'function') {
+          const spec = boss.spec || {};
+          const quotes = (spec.dialogue && spec.dialogue.onSpawn) || ["YOU WILL YIELD TO PROPRIETARY RULE!"];
+          window.PixelCutscenes.play("boss_encounter", {
+            bossName: boss.label || "CORPORATE OVERLORD",
+            bossTitle: spec.title || "Apex Market Tyrant",
+            bossQuote: quotes[0],
+            bossColor: (spec.visual && spec.visual.primaryColor) || "#ef4444",
+            bossChassis: (spec.visual && spec.visual.chassis) || "monolith"
+          });
+        }
       }
     } else if (this.currentObjectiveType === "TREASURE_REWARD" || this.currentBiome.id === "TREASURE_VAULT") {
       // Confidential Treasure Vault: multiple weapon crates, Space Marine armor, bonus pick-ups & forward portal
@@ -9111,34 +9379,44 @@ class Dungeon {
 
   update(dt) {
     for (let i = objectiveTargets.length - 1; i >= 0; i--) {
+      if (!objectiveTargets[i]) continue;
       if (!objectiveTargets[i].update(dt)) {
         objectiveTargets.splice(i, 1);
       }
+      if (this.isWarping) return;
     }
 
     for (let i = environmentalHazards.length - 1; i >= 0; i--) {
+      if (!environmentalHazards[i]) continue;
       if (!environmentalHazards[i].update(dt)) {
         environmentalHazards.splice(i, 1);
       }
+      if (this.isWarping) return;
     }
 
     for (let i = activeDomeShields.length - 1; i >= 0; i--) {
+      if (!activeDomeShields[i]) continue;
       if (!activeDomeShields[i].update(dt)) {
         activeDomeShields.splice(i, 1);
       }
     }
 
     for (let i = teslaTowers.length - 1; i >= 0; i--) {
+      if (!teslaTowers[i]) continue;
       if (!teslaTowers[i].update(dt)) {
         teslaTowers.splice(i, 1);
       }
     }
 
     for (let i = proceduralPortals.length - 1; i >= 0; i--) {
-      proceduralPortals[i].update(dt);
+      const p = proceduralPortals[i];
+      if (!p) continue;
+      p.update(dt);
+      if (this.isWarping) break;
     }
 
     for (let i = groundWeapons.length - 1; i >= 0; i--) {
+      if (!groundWeapons[i]) continue;
       groundWeapons[i].update(dt);
     }
 
@@ -9714,6 +9992,18 @@ function resetGame() {
   window.ambushDirector = ambushDirector;
   window.bossDirector = bossDirector;
 
+  // Sync window globals for MCP tools, cutscenes, and AI GameDirectorAPI
+  if (typeof window !== 'undefined') {
+    window.player = player;
+    window.dungeon = dungeon;
+    window.enemies = enemies;
+    window.particles = particles;
+    window.pickups = pickups;
+    window.enemyProjectiles = enemyProjectiles;
+    window.playerProjectiles = playerProjectiles;
+    window.proceduralPortals = proceduralPortals;
+  }
+
   // Hide modals
   document.getElementById('gameOverModal').style.display = 'none';
   document.getElementById('victoryModal').style.display = 'none';
@@ -10030,6 +10320,11 @@ function gameLoop(timestamp) {
       }
     }
 
+    // Update Autonomous Narrative Story Director
+    if (window.AutonomousStoryDirector && typeof window.AutonomousStoryDirector.update === 'function') {
+      window.AutonomousStoryDirector.update(dt);
+    }
+
     // Decay screen flash & shake
     if (screenFlash > 0) screenFlash = Math.max(0, screenFlash - 2.5 * dt);
     if (screenShake > 0) screenShake = Math.max(0, screenShake - 30 * dt);
@@ -10284,8 +10579,12 @@ function render() {
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.fillStyle = ft.color;
-    ctx.font = `bold ${Math.max(8, Math.round(ft.size * 0.85))}px 'Press Start 2P', 'Silkscreen', monospace`;
+    const fontSize = Math.max(12, Math.round(ft.size * 1.05));
+    ctx.font = `700 ${fontSize}px "Pixelify Sans", monospace`;
     ctx.textAlign = "center";
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "#000000";
+    ctx.strokeText(ft.text, ft.x, ft.y);
     ctx.fillText(ft.text, ft.x, ft.y);
     ctx.restore();
   }
@@ -10426,4 +10725,25 @@ document.getElementById('playAgainBtn').addEventListener('click', () => {
 
 // Kick off loop
 requestAnimationFrame(gameLoop);
+
+// Global Class & Interop Exports
+if (typeof window !== 'undefined') {
+  window.EnemyProjectile = EnemyProjectile;
+  window.Pickup = Pickup;
+  window.ProceduralPortal = ProceduralPortal;
+  window.SparkParticle = SparkParticle;
+  window.FlameParticle = FlameParticle;
+  window.ShockwaveRing = ShockwaveRing;
+  window.ScorchTrail = ScorchTrail;
+  window.LightningArcParticle = LightningArcParticle;
+  window.IncendiaryEmberParticle = IncendiaryEmberParticle;
+  window.AcidSplatParticle = AcidSplatParticle;
+  window.WeaponChest = WeaponChest;
+  window.SpaceMarineSuitPickup = SpaceMarineSuitPickup;
+  window.BIOMES = BIOMES;
+  window.dropRareWeaponAt = dropRareWeaponAt;
+  window.comboTracker = comboTracker;
+  window.addFloatingText = addFloatingText;
+  window.addScreenShake = addScreenShake;
+}
 

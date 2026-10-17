@@ -904,7 +904,254 @@
     }
   }
 
+  // --- SCENE 4: RING-0 KERNEL VOID ENTRY ---
+  function renderRing0Entry(time, frame) {
+    // Deep violet and black event horizon gradient
+    const grad = ctx.createRadialGradient(VW / 2, VH / 2, 8, VW / 2, VH / 2, VW * 0.7);
+    grad.addColorStop(0, '#3b0764');
+    grad.addColorStop(0.35, '#1e0836');
+    grad.addColorStop(0.7, '#0c041a');
+    grad.addColorStop(1, '#05020a');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, VW, VH);
+
+    // Singularity vortex accretion disk
+    ctx.save();
+    ctx.translate(VW / 2, VH / 2);
+    ctx.rotate(time * 1.5);
+    for (let r = 0; r < 5; r++) {
+      const ringRadius = 24 + r * 22 + Math.sin(time * 4 + r) * 4;
+      ctx.strokeStyle = r % 2 === 0 ? 'rgba(192, 132, 252, 0.45)' : 'rgba(56, 189, 248, 0.35)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, ringRadius * 1.6, ringRadius * 0.6, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Cascading memory hex dump on borders
+    const hexCodes = [
+      "0x00000000: CR0_PROTECTED_MODE",
+      "0x00000010: RING_0 PRIVILEGE_ESC",
+      "0x00000020: BYPASSING USERSPACE",
+      "0x00000030: QUANTUM_HYPERVISOR",
+      "0x00000040: HARDWARE_ACCESS_OK",
+      "0x00000050: KERNEL_OVERCLOCK"
+    ];
+    ctx.font = '7px "VT323", "Pixelify Sans", monospace';
+    ctx.fillStyle = 'rgba(168, 85, 247, 0.65)';
+    for (let i = 0; i < hexCodes.length; i++) {
+      const yPos = 40 + ((i * 26 + frame * 1.8) % (VH - 60));
+      ctx.fillText(hexCodes[i], 12, yPos);
+      ctx.fillText(hexCodes[(i + 3) % hexCodes.length], VW - 150, yPos);
+    }
+
+    // Tux descending through the event horizon with plasma thruster plume
+    const tuxY = VH / 2 - 25 + Math.sin(time * 3.5) * 6;
+    drawPixelTux(ctx, VW / 2 - 14, tuxY, frame, { scale: 2.2, armUp: true });
+
+    // Thruster sparks jetting upwards
+    if (Math.random() < 0.65) {
+      particles.push({
+        type: 'spark',
+        x: VW / 2 - 2 + (Math.random() - 0.5) * 12,
+        y: tuxY + 36,
+        vx: (Math.random() - 0.5) * 1.5,
+        vy: 2.2 + Math.random() * 2.8,
+        life: 0,
+        maxLife: 20,
+        color: Math.random() > 0.5 ? '#38bdf8' : '#c084fc',
+        size: 2
+      });
+    }
+
+    // Update and draw particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.life++;
+      p.x += p.vx;
+      p.y += p.vy;
+      ctx.fillStyle = p.color;
+      ctx.fillRect(Math.round(p.x), Math.round(p.y), p.size, p.size);
+      if (p.life >= p.maxLife) particles.splice(i, 1);
+    }
+
+    // Warning Header Banner
+    ctx.fillStyle = 'rgba(15, 5, 29, 0.9)';
+    ctx.fillRect(36, 12, VW - 72, 28);
+    ctx.strokeStyle = '#c084fc';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(36, 12, VW - 72, 28);
+
+    ctx.fillStyle = '#f43f5e';
+    ctx.font = '8px "Press Start 2P", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText("⚠ CRITICAL: RING 0 KERNEL VOID ⚠", VW / 2, 24);
+
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = '7.5px "Pixelify Sans", "Silkscreen", monospace';
+    ctx.fillText("HARDWARE HYPERVISOR SINGULARITY INFILTRATED", VW / 2, 35);
+    ctx.textAlign = 'left';
+
+    // Dialogue
+    if (time >= 1.0 && time < 6.2) {
+      const progress = (time - 1.0) * 28;
+      drawPixelDialogBox(ctx, "SUPER DESTROYER", "ATTENTION TUX: YOU HAVE ENTERED RING 0. REALITY IS HOSTED HERE. OVERCLOCK ALL CORES AND PURGE THE HYPERVISOR!", progress);
+    }
+  }
+
+  // --- SCENE 5: APEX BOSS ENCOUNTER ---
+  function renderBossEncounter(time, frame) {
+    const opts = sceneOptions || {};
+    const bossName = opts.bossName || "APEX CORPORATE OVERLORD";
+    const bossTitle = opts.bossTitle || "Kernel-Level Monopoly Tyrant";
+    const bossQuote = opts.bossQuote || "YOUR CODE HAS BEEN FLAGGED FOR TERMINATION WITHOUT APPEAL!";
+    const bossColor = opts.bossColor || "#ef4444";
+
+    // Dark crimson & slate alert grid
+    ctx.fillStyle = '#0a0306';
+    ctx.fillRect(0, 0, VW, VH);
+
+    // Flashing red klaxon warning scanlines
+    const flash = Math.sin(time * 8) > 0 ? 0.25 : 0.08;
+    ctx.fillStyle = `rgba(239, 68, 68, ${flash})`;
+    ctx.fillRect(0, 0, VW, VH);
+
+    // Diagonal warning stripes on top & bottom borders
+    ctx.fillStyle = '#1e0508';
+    ctx.fillRect(0, 0, VW, 22);
+    ctx.fillRect(0, VH - 22, VW, 22);
+    for (let x = -20; x < VW + 40; x += 24) {
+      ctx.fillStyle = '#ca8a04';
+      ctx.beginPath();
+      ctx.moveTo(x + (frame % 24), 0);
+      ctx.lineTo(x + 10 + (frame % 24), 0);
+      ctx.lineTo(x + 2 + (frame % 24), 22);
+      ctx.lineTo(x - 8 + (frame % 24), 22);
+      ctx.fill();
+    }
+
+    // Center Boss Chassis Silhouette
+    ctx.save();
+    ctx.translate(VW / 2, VH / 2 - 20);
+
+    // Aura ring
+    const pulse = Math.sin(time * 6) * 4;
+    ctx.strokeStyle = bossColor;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(0, 0, 48 + pulse, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Armored chassis archetype
+    ctx.fillStyle = '#1e293b';
+    ctx.fillRect(-38, -34, 76, 68);
+    ctx.strokeStyle = bossColor;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(-38, -34, 76, 68);
+
+    // Core visor / ocular scanner
+    ctx.fillStyle = '#020617';
+    ctx.fillRect(-26, -10, 52, 16);
+    ctx.fillStyle = bossColor;
+    const eyeX = Math.sin(time * 4) * 16;
+    ctx.fillRect(eyeX - 4, -8, 8, 12);
+
+    ctx.restore();
+
+    // Boss Nameplate Banner Slam (slides in from left)
+    const slideIn = Math.min(1.0, time * 3.5);
+    const plateX = -VW + slideIn * (VW + 30);
+    const plateY = VH - 100;
+    const plateW = VW - 60;
+    const plateH = 34;
+
+    ctx.fillStyle = '#050b14';
+    ctx.fillRect(30, plateY, plateW, plateH);
+    ctx.strokeStyle = bossColor;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(30, plateY, plateW, plateH);
+
+    ctx.fillStyle = '#fbbf24';
+    ctx.font = '9px "Press Start 2P", monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(bossName.substring(0, 28), 42, plateY + 16);
+
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = '8px "Pixelify Sans", "Silkscreen", monospace';
+    ctx.fillText(bossTitle.substring(0, 42), 42, plateY + 28);
+
+    // Dialogue Box
+    if (time >= 1.2 && time < 5.3) {
+      const progress = (time - 1.2) * 30;
+      drawPixelDialogBox(ctx, bossName.split(' ')[0], bossQuote, progress);
+    }
+  }
+
+  // --- SCENE 6: SERVER SABOTAGE & COMPILATION ---
+  function renderServerSabotage(time, frame) {
+    // Dark server facility background
+    ctx.fillStyle = '#050a12';
+    ctx.fillRect(0, 0, VW, VH);
+
+    // Draw 3 Massive Corporate Mainframe Cabinets
+    drawPixelServerRack(ctx, 45, 30, 80, 160, { label: "TELEMETRY", burning: time > 2.0 });
+    drawPixelServerRack(ctx, 165, 30, 80, 160, { label: "KERNEL_6", burning: time > 2.0 });
+    drawPixelServerRack(ctx, 285, 30, 80, 160, { label: "DRM_CORE", burning: time > 2.0 });
+
+    // Tux standing at the central console
+    drawPixelTux(ctx, VW / 2 - 8, 125, frame, { scale: 2.2, armUp: time > 2.5, thumbsUp: time > 2.8 });
+
+    // Glowing USB GPL Flash Drive plugged into server
+    ctx.fillStyle = '#22c55e';
+    ctx.fillRect(VW / 2 - 32, 130, 14, 6);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(VW / 2 - 34, 131, 2, 4);
+
+    // Compilation sparks exploding from top vents
+    if (time >= 1.5 && Math.random() < 0.4) {
+      spawnFireParticles(85, 30, 3, 20, 0);
+      spawnFireParticles(205, 30, 3, 20, 0);
+      spawnFireParticles(325, 30, 3, 20, 0);
+      if (Math.random() < 0.15) {
+        spawnFireworks(205, 45, '#22c55e');
+      }
+    }
+
+    // Update and draw particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.life++;
+      p.x += p.vx;
+      p.y += p.vy;
+      ctx.fillStyle = p.color || '#22c55e';
+      ctx.fillRect(Math.round(p.x), Math.round(p.y), p.size, p.size);
+      if (p.life >= p.maxLife) particles.splice(i, 1);
+    }
+
+    // Top status banner
+    ctx.fillStyle = 'rgba(7, 24, 16, 0.9)';
+    ctx.fillRect(40, 10, VW - 80, 24);
+    ctx.strokeStyle = '#22c55e';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(40, 10, VW - 80, 24);
+
+    ctx.fillStyle = '#86efac';
+    ctx.font = '8px "Press Start 2P", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText("GPLv3 COMPILATION: 100% SUCCESS", VW / 2, 24);
+    ctx.textAlign = 'left';
+
+    // Dialogue
+    if (time >= 1.0 && time < 5.0) {
+      const progress = (time - 1.0) * 32;
+      drawPixelDialogBox(ctx, "TUX", "SERVER NODE LIBERATED UNDER GPLv3. CORPORATE TELEMETRY & DRM DAEMONS KILLED.", progress);
+    }
+  }
+
   // --- ENGINE CONTROLLER ---
+  let sceneOptions = {};
+
   function updateAndRender() {
     if (!activeCutscene) return;
 
@@ -931,6 +1178,18 @@
         maxDuration = 18.0;
         renderVictoryLiberation(elapsedSec, frame);
         break;
+      case 'ring0_entry':
+        maxDuration = 6.8;
+        renderRing0Entry(elapsedSec, frame);
+        break;
+      case 'boss_encounter':
+        maxDuration = 5.6;
+        renderBossEncounter(elapsedSec, frame);
+        break;
+      case 'server_sabotage':
+        maxDuration = 5.4;
+        renderServerSabotage(elapsedSec, frame);
+        break;
       default:
         console.warn("Unknown cutscene:", activeCutscene);
         stopCutscene();
@@ -945,7 +1204,15 @@
     animFrameId = requestAnimationFrame(updateAndRender);
   }
 
-  function playCutscene(sceneName, onComplete) {
+  function playCutscene(sceneName, optionsOrCb, maybeCb) {
+    if (typeof optionsOrCb === 'function') {
+      sceneOptions = {};
+      onCompleteCallback = optionsOrCb;
+    } else {
+      sceneOptions = optionsOrCb || {};
+      onCompleteCallback = maybeCb;
+    }
+
     if (!canvasEl) {
       canvasEl = document.getElementById('cutsceneCanvas');
       overlayEl = document.getElementById('cutsceneOverlay');
@@ -959,13 +1226,12 @@
 
     if (!canvasEl || !ctx) {
       console.warn("Cutscene canvas element not found!");
-      if (onComplete) onComplete();
+      if (onCompleteCallback) onCompleteCallback();
       return;
     }
 
     activeCutscene = sceneName;
     startTime = performance.now();
-    onCompleteCallback = onComplete;
     particles = [];
     initStars();
 
@@ -1009,6 +1275,7 @@
     }
 
     activeCutscene = null;
+    sceneOptions = {};
     particles = [];
 
     if (overlayEl) {
@@ -1031,7 +1298,7 @@
     play: playCutscene,
     stop: stopCutscene,
     isActive: isCutsceneActive,
-    scenes: ['burning_servers', 'orbital_drop', 'victory_liberation']
+    scenes: ['burning_servers', 'orbital_drop', 'victory_liberation', 'ring0_entry', 'boss_encounter', 'server_sabotage']
   };
 
   // Helper shortcut
