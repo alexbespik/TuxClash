@@ -13,8 +13,37 @@ import sys
 PORT = 8080
 
 class Handler(http.server.SimpleHTTPRequestHandler):
+    def do_GET(self):
+        if self.path.startswith('/env.js'):
+            # Parse .env if it exists
+            env_vars = {}
+            if os.path.exists('.env'):
+                try:
+                    with open('.env', 'r') as f:
+                        for line in f:
+                            line = line.strip()
+                            if line and not line.startswith('#') and '=' in line:
+                                k, v = line.split('=', 1)
+                                env_vars[k.strip()] = v.strip().strip('"\'')
+                except Exception as e:
+                    print(f"⚠️ Error reading .env: {e}")
+
+            import json
+            js_content = f"window.ENV = Object.assign(window.ENV || {{}}, {json.dumps(env_vars)});\n"
+            data = js_content.encode('utf-8')
+
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/javascript')
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('Cache-Control', 'no-store, must-revalidate')
+            self.end_headers()
+            self.wfile.write(data)
+            return
+
+        super().do_GET()
+
     def end_headers(self):
-        # Enable caching-free development and cross-origin isolation if needed
+        # Enable caching-free development
         self.send_header('Cache-Control', 'no-store, must-revalidate')
         super().end_headers()
 

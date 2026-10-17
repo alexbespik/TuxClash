@@ -790,39 +790,211 @@ class SoundEngine {
     modulator.stop(now + 0.2);
   }
 
-  speakRobot(text, speaker = 'TACTICAL AI', pitch = 0.28, rate = 1.05) {
-    // 1. Tactile procedural digitized radio noise and robot chime
-    this.playRadioStatic(0.12);
-    this.playRobotVocoderChime();
+  playLibertyRadioSquelch() {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    // Military radio burst: bandpass white noise + tactical squelch beep
+    const bufferSize = Math.floor(this.ctx.sampleRate * 0.08);
+    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.4));
+    }
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = buffer;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(1400, now);
+    filter.Q.setValueAtTime(3.0, now);
 
-    // 2. Web Speech API synthesis with robotic voice parameters
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.25, now);
+    gain.gain.linearRampToValueAtTime(0.001, now + 0.08);
+
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.sfxGain);
+    noise.start(now);
+
+    // High command dual tactical chirp
+    const osc = this.ctx.createOscillator();
+    const oscGain = this.ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(880, now + 0.02);
+    osc.frequency.setValueAtTime(1320, now + 0.05);
+    oscGain.gain.setValueAtTime(0.18, now + 0.02);
+    oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.10);
+    osc.connect(oscGain);
+    oscGain.connect(this.sfxGain);
+    osc.start(now + 0.02);
+    osc.stop(now + 0.11);
+  }
+
+  speakRobot(text, speaker = 'SUPER DESTROYER', customPitch, customRate) {
+    const isLibertyCommand = /SUPER DESTROYER|HELLDIVER|DEMOCRACY|HIGH COMMAND|TUX|EAGLE/i.test(speaker);
+
+    if (isLibertyCommand) {
+      this.playLibertyRadioSquelch();
+    } else {
+      this.playRadioStatic(0.08);
+      this.playRobotVocoderChime();
+    }
+
+    // Asynchronous non-blocking dispatch: NEVER blocks 60 FPS gameplay!
+    setTimeout(() => {
+      if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+      const now = performance.now();
+      if (window._lastSpeechBarkTime && now - window._lastSpeechBarkTime < 900) return;
+      window._lastSpeechBarkTime = now;
+
       try {
-        // Cancel any pending speech so tactical barks don't queue endlessly
-        window.speechSynthesis.cancel();
         const utter = new SpeechSynthesisUtterance(text);
-        utter.pitch = Math.max(0.1, Math.min(2.0, pitch)); // Deep mechanical robotic pitch
-        utter.rate = Math.max(0.7, Math.min(1.6, rate));   // Fast, precise, clipped cadence
-        utter.volume = 0.95;
+        if (isLibertyCommand) {
+          // John Helldiver / High Command: Deep, booming, authoritative military liberty cadence
+          utter.pitch = customPitch !== undefined ? customPitch : 0.68;
+          utter.rate = customRate !== undefined ? customRate : 1.10;
+          utter.volume = 1.0;
+        } else {
+          // Corporate drone: whiny, high, sterile, robotic synthesizer
+          utter.pitch = customPitch !== undefined ? customPitch : 1.48;
+          utter.rate = customRate !== undefined ? customRate : 1.18;
+          utter.volume = 0.85;
+        }
 
-        // Try to pick a robotic or English voice
-        const voices = window.speechSynthesis.getVoices();
+        if (!window._cachedVoicesList || window._cachedVoicesList.length === 0) {
+          window._cachedVoicesList = window.speechSynthesis.getVoices() || [];
+        }
+        const voices = window._cachedVoicesList;
+
         if (voices && voices.length > 0) {
-          const robotVoice = voices.find(v => 
-            v.name.toLowerCase().includes('robot') || 
-            v.name.toLowerCase().includes('zarvox') ||
-            v.name.toLowerCase().includes('alex') ||
-            v.name.toLowerCase().includes('fred') ||
-            (v.lang && v.lang.startsWith('en'))
-          );
-          if (robotVoice) utter.voice = robotVoice;
+          let chosen = null;
+          if (isLibertyCommand) {
+            chosen = voices.find(v => 
+              v.name.toLowerCase().includes('daniel') ||
+              v.name.toLowerCase().includes('alex') ||
+              v.name.toLowerCase().includes('fred') ||
+              v.name.toLowerCase().includes('oliver') ||
+              (v.name.toLowerCase().includes('male') && v.lang && v.lang.startsWith('en'))
+            ) || voices.find(v => v.lang && v.lang.startsWith('en'));
+          } else {
+            chosen = voices.find(v => 
+              v.name.toLowerCase().includes('zarvox') ||
+              v.name.toLowerCase().includes('cellos') ||
+              v.name.toLowerCase().includes('robot') ||
+              v.name.toLowerCase().includes('trinoids')
+            ) || voices.find(v => v.lang && v.lang.startsWith('en'));
+          }
+          if (chosen) utter.voice = chosen;
         }
 
         window.speechSynthesis.speak(utter);
       } catch (err) {
-        console.warn("speechSynthesis error:", err);
+        // Silently catch so game loop is NEVER impacted
       }
-    }
+    }, 0);
+  }
+
+  // --- NEW WEAPONS PROCEDURAL AUDIO: AUTOCANNON, QUASAR, ARC THROWER, PLASMA ---
+
+  playAutocannonShot() {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    // Heavy concussive explosion thump
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(260, now);
+    osc.frequency.exponentialRampToValueAtTime(38, now + 0.28);
+    gain.gain.setValueAtTime(0.85, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.30);
+    osc.connect(gain);
+    gain.connect(this.sfxGain);
+    osc.start(now);
+    osc.stop(now + 0.32);
+
+    // Mechanical bolt clank
+    const clank = this.ctx.createOscillator();
+    const clankGain = this.ctx.createGain();
+    clank.type = 'triangle';
+    clank.frequency.setValueAtTime(1100, now + 0.08);
+    clank.frequency.setValueAtTime(450, now + 0.16);
+    clankGain.gain.setValueAtTime(0.28, now + 0.08);
+    clankGain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+    clank.connect(clankGain);
+    clankGain.connect(this.sfxGain);
+    clank.start(now + 0.08);
+    clank.stop(now + 0.24);
+  }
+
+  playQuasarCharge() {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(180, now);
+    osc.frequency.exponentialRampToValueAtTime(1600, now + 0.75);
+    gain.gain.setValueAtTime(0.12, now);
+    gain.gain.linearRampToValueAtTime(0.55, now + 0.70);
+    gain.gain.linearRampToValueAtTime(0.001, now + 0.80);
+    osc.connect(gain);
+    gain.connect(this.sfxGain);
+    osc.start(now);
+    osc.stop(now + 0.82);
+  }
+
+  playQuasarBlast() {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    // Massive laser disintegration blast
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(800, now);
+    osc.frequency.exponentialRampToValueAtTime(45, now + 0.45);
+    gain.gain.setValueAtTime(0.95, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.50);
+    osc.connect(gain);
+    gain.connect(this.sfxGain);
+    osc.start(now);
+    osc.stop(now + 0.52);
+    this.playNoiseBurst(0.4, 0.6, 2200, 300);
+  }
+
+  playArcThrowerDischarge() {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(520, now);
+    osc.frequency.setValueAtTime(220, now + 0.04);
+    osc.frequency.setValueAtTime(740, now + 0.08);
+    osc.frequency.setValueAtTime(140, now + 0.14);
+    gain.gain.setValueAtTime(0.65, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+    osc.connect(gain);
+    gain.connect(this.sfxGain);
+    osc.start(now);
+    osc.stop(now + 0.24);
+    this.playNoiseBurst(0.18, 0.45, 3200, 800);
+  }
+
+  playPlasmaMortar() {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(160, now);
+    osc.frequency.exponentialRampToValueAtTime(480, now + 0.08);
+    osc.frequency.exponentialRampToValueAtTime(90, now + 0.26);
+    gain.gain.setValueAtTime(0.70, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+    osc.connect(gain);
+    gain.connect(this.sfxGain);
+    osc.start(now);
+    osc.stop(now + 0.30);
   }
 
   // --- NEW WEAPONS & STRATAGEM PROCEDURAL AUDIO ---

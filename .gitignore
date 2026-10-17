@@ -20,5 +20,6 @@ ENV/
 # Sensitive files & logs
 .env
 .env.*
+!.env.example
 *.log
 scratch/

@@ -165,10 +165,9 @@
           banner.style.display = 'flex';
           setTimeout(() => { if (banner) banner.style.display = 'none'; }, 6500);
         }
-      }
-
-      if (playAudioVo && window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
-        window.soundEngine.speakRobot(message, speaker);
+        if (playAudioVo && window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
+          window.soundEngine.speakRobot(message, speaker);
+        }
       }
 
       return { status: "success", speaker, message };
@@ -467,9 +466,160 @@
     }
   };
 
+  // --- GEMINI AI DIRECTOR INTEGRATION ---
+  class GeminiDirector {
+    constructor() {
+      this.apiKey = "";
+      this.model = "gemini-2.5-flash";
+      this.persona = "JOHN_HELLDIVER";
+      this.enabled = false;
+      this.isRequestPending = false;
+      this.lastRequestTime = 0;
+      this.init();
+    }
+
+    init() {
+      // 1. Check window.ENV (from start.py / .env)
+      if (window.ENV) {
+        if (window.ENV.GEMINI_API_KEY && window.ENV.GEMINI_API_KEY !== 'your_gemini_api_key_here') {
+          this.apiKey = window.ENV.GEMINI_API_KEY;
+          this.enabled = true;
+        }
+        if (window.ENV.GEMINI_MODEL) this.model = window.ENV.GEMINI_MODEL;
+        if (window.ENV.AI_DIRECTOR_PERSONA) this.persona = window.ENV.AI_DIRECTOR_PERSONA;
+      }
+
+      // 2. LocalStorage overrides
+      try {
+        const storedKey = localStorage.getItem('TUX_GEMINI_API_KEY');
+        if (storedKey) this.apiKey = storedKey;
+        const storedModel = localStorage.getItem('TUX_GEMINI_MODEL');
+        if (storedModel) this.model = storedModel;
+        const storedPersona = localStorage.getItem('TUX_AI_PERSONA');
+        if (storedPersona) this.persona = storedPersona;
+        const storedEnabled = localStorage.getItem('TUX_GEMINI_ENABLED');
+        if (storedEnabled !== null) this.enabled = storedEnabled === 'true';
+      } catch (e) {}
+
+      if (this.apiKey && this.apiKey.length > 10 && this.enabled) {
+        GameDirectorAPI.setExternalAIControl(true);
+        console.log(`🤖 [GeminiDirector] Online! Model: ${this.model}, Persona: ${this.persona}`);
+      }
+    }
+
+    saveConfig(key, model, persona, enabled) {
+      this.apiKey = key || "";
+      this.model = model || "gemini-2.5-flash";
+      this.persona = persona || "JOHN_HELLDIVER";
+      this.enabled = !!enabled;
+
+      try {
+        localStorage.setItem('TUX_GEMINI_API_KEY', this.apiKey);
+        localStorage.setItem('TUX_GEMINI_MODEL', this.model);
+        localStorage.setItem('TUX_AI_PERSONA', this.persona);
+        localStorage.setItem('TUX_GEMINI_ENABLED', this.enabled ? 'true' : 'false');
+      } catch (e) {}
+
+      GameDirectorAPI.setExternalAIControl(this.enabled && this.apiKey.length > 10);
+    }
+
+    async testConnection(testKey, testModel) {
+      const key = testKey || this.apiKey;
+      const model = testModel || this.model || "gemini-2.5-flash";
+      if (!key) return { ok: false, error: "API Key is empty" };
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
+      const startTime = performance.now();
+
+      try {
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{ text: "High Command radio comms test. Give a 1-sentence John Helldiver democratic salute to Tux the penguin." }]
+            }],
+            generationConfig: {
+              maxOutputTokens: 60,
+              temperature: 0.7
+            }
+          })
+        });
+
+        const latency = Math.round(performance.now() - startTime);
+        if (!resp.ok) {
+          const errData = await resp.json().catch(() => ({}));
+          const errMsg = errData.error?.message || `HTTP ${resp.status} ${resp.statusText}`;
+          return { ok: false, error: errMsg, latency };
+        }
+
+        const data = await resp.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "DEMOCRACY PREVAILS! RADIO CHECK COMPLETE.";
+        return { ok: true, reply: text, latency };
+      } catch (err) {
+        return { ok: false, error: err.message || "Network Error", latency: Math.round(performance.now() - startTime) };
+      }
+    }
+
+    async generateLiveComms(situationPrompt, speakerName = "JOHN HELLDIVER", color = "#38bdf8", icon = "📻") {
+      if (!this.enabled || !this.apiKey || this.isRequestPending) return false;
+      const now = performance.now();
+      if (now - this.lastRequestTime < 8000) return false; // Rate limit 8s
+
+      this.isRequestPending = true;
+      this.lastRequestTime = now;
+
+      let systemInstruction = "";
+      if (this.persona === "JOHN_HELLDIVER") {
+        systemInstruction = "You are 'John Helldiver', High Command Democracy Officer commanding Tux the open-source Linux penguin. Speak in a gritty, hyper-patriotic, military radio voice about Managed Democracy, purging proprietary tech monopolists, calling stratagems, and liberating the kernel. Keep it to 1 or 2 punchy, intense sentences, suitable for 16-bit arcade combat radio.";
+      } else if (this.persona === "LINUS_TORVALDS") {
+        systemInstruction = "You are Linus Torvalds, blunt Linux kernel creator. Bark direct, sarcastic, no-nonsense code instructions to Tux. Demand clean code, purge bloated proprietary drivers, and merge pull requests with extreme prejudice. 1-2 punchy sentences.";
+      } else if (this.persona === "CORPORATE_NEMESIS") {
+        systemInstruction = "You are an infuriated Big Tech CEO / DRM enforcer barking over intercepted radio frequencies. Threaten Tux with DMCA lawsuits, cloud subscription audits, and vendor lock-in. 1-2 punchy sentences.";
+      } else {
+        systemInstruction = "You are the High Command Super Destroyer AI radio officer commanding Tux the penguin in battle against proprietary software monopolies. 1-2 punchy military sentences.";
+      }
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${encodeURIComponent(this.apiKey)}`;
+
+      try {
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{
+                text: `${systemInstruction}\n\nSITUATION: ${situationPrompt}\nRespond in character now:`
+              }]
+            }],
+            generationConfig: {
+              maxOutputTokens: 65,
+              temperature: 0.85
+            }
+          })
+        });
+
+        if (resp.ok) {
+          const data = await resp.json();
+          const line = data.candidates?.[0]?.content?.parts?.[0]?.text?.replace(/[\r\n]+/g, ' ').trim();
+          if (line) {
+            GameDirectorAPI.injectComms(speakerName, line, color, icon);
+            this.isRequestPending = false;
+            return true;
+          }
+        }
+      } catch (err) {
+        console.warn("[GeminiDirector] Live comms call failed:", err);
+      }
+
+      this.isRequestPending = false;
+      return false;
+    }
+  }
+
+  const geminiDirector = new GeminiDirector();
+
   // --- AUTONOMOUS NARRATIVE STORY DIRECTOR ---
-  // When no external AI connects, this autonomous director monitors sector events
-  // and dynamically advances the plot with voice lines, tactical alerts, and narrative chapters.
   class AutonomousStoryDirector {
     constructor() {
       this.lastCommsTime = 0;
@@ -478,10 +628,8 @@
     }
 
     update(dt) {
-      if (isExternalAIControlled) return; // Yield to external AI if connected!
-
       const now = performance.now();
-      if (now - this.lastCommsTime < 18000) return; // Comms cooldown
+      if (now - this.lastCommsTime < 18000) return;
 
       const p = window.player;
       if (!p) return;
@@ -490,12 +638,22 @@
       if (p.hp < p.maxHp * 0.28 && !this.hasGivenLowHpAdvice) {
         this.hasGivenLowHpAdvice = true;
         this.lastCommsTime = now;
-        GameDirectorAPI.injectComms(
-          "SUPER DESTROYER",
-          "TUX, SYSTEM INTEGRITY CRITICAL! CALL IN ORBITAL DOME SHIELD OR GATLING SENTRY IMMEDIATELY!",
-          "#ef4444",
-          "⚠️"
-        );
+
+        if (geminiDirector.enabled && geminiDirector.apiKey) {
+          geminiDirector.generateLiveComms(
+            "Tux is critically wounded below 25% HP! Bark urgent tactical orders to call in orbital shield or sentries!",
+            "JOHN HELLDIVER",
+            "#ef4444",
+            "⚠️"
+          );
+        } else {
+          GameDirectorAPI.injectComms(
+            "JOHN HELLDIVER",
+            "TUX, SYSTEM INTEGRITY CRITICAL! CALL IN ORBITAL DOME SHIELD OR GATLING SENTRY IMMEDIATELY!",
+            "#ef4444",
+            "⚠️"
+          );
+        }
         return;
       }
       if (p.hp >= p.maxHp * 0.6) {
@@ -505,13 +663,22 @@
       // 2. Kill streak combat recognition
       if (window.comboTracker && window.comboTracker.count >= 15 && Math.random() < 0.25) {
         this.lastCommsTime = now;
-        const quotes = [
-          "TACTICAL LOG: EXCEPTIONAL ROOT PURGE EFFICIENCY CONFIRMED.",
-          "COMMITS MERGED WITH EXTREME PREJUDICE. KEEP PRESSURE ON THE MONOPOLY!",
-          "GPLv3 COMPILER OPERATING AT 200% EFFICIENCY. PURGE ALL CLOSED SOURCE!"
-        ];
-        const quote = quotes[Math.floor(Math.random() * quotes.length)];
-        GameDirectorAPI.injectComms("SUPER DESTROYER", quote, "#38bdf8", "🛰️");
+        if (geminiDirector.enabled && geminiDirector.apiKey) {
+          geminiDirector.generateLiveComms(
+            "Tux just scored a 15-kill purge streak destroying proprietary monopolies! Celebrate his victory!",
+            "JOHN HELLDIVER",
+            "#38bdf8",
+            "🛰️"
+          );
+        } else {
+          const quotes = [
+            "TACTICAL LOG: EXCEPTIONAL ROOT PURGE EFFICIENCY CONFIRMED. FOR MANAGED DEMOCRACY!",
+            "COMMITS MERGED WITH EXTREME PREJUDICE. KEEP PRESSURE ON THE MONOPOLY!",
+            "GPLv3 COMPILER OPERATING AT 200% EFFICIENCY. PURGE ALL CLOSED SOURCE!"
+          ];
+          const quote = quotes[Math.floor(Math.random() * quotes.length)];
+          GameDirectorAPI.injectComms("JOHN HELLDIVER", quote, "#38bdf8", "🛰️");
+        }
       }
     }
 
@@ -521,7 +688,16 @@
         currentStoryActIndex = (sectorNum - 1) % STORY_ACTS.length;
         storyNarrativePhase = act.title;
         setTimeout(() => {
-          GameDirectorAPI.injectComms("SUPER DESTROYER", `${act.title}: ${act.radioIntro}`, "#facc15", "🎖️");
+          if (geminiDirector.enabled && geminiDirector.apiKey) {
+            geminiDirector.generateLiveComms(
+              `Tux deployed into ${act.title} (${biomeName || act.biome}). Brief Tux with gritty democratic resolve!`,
+              "JOHN HELLDIVER",
+              "#facc15",
+              "🎖️"
+            );
+          } else {
+            GameDirectorAPI.injectComms("JOHN HELLDIVER", `${act.title}: ${act.radioIntro}`, "#facc15", "🎖️");
+          }
         }, 1200);
       }
     }
@@ -543,6 +719,7 @@
   // Export to window
   window.GameDirectorAPI = GameDirectorAPI;
   window.AutonomousStoryDirector = autonomousDirector;
+  window.GeminiDirector = geminiDirector;
 
   console.log("🚀 [GameDirectorAPI] Dynamic AI / Extensible Story Controller Initialized.");
 })();

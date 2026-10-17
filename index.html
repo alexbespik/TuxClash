@@ -1145,6 +1145,64 @@
       transform: translateY(3px);
       box-shadow: none;
     }
+
+    /* AI DIRECTOR CONFIGURATION MODAL STYLES */
+    .pixel-input {
+      background: #020617;
+      border: 3px solid #1e293b;
+      color: #38bdf8;
+      font-family: var(--font-pixel-mono);
+      font-size: 13px;
+      padding: 8px 12px;
+      width: 100%;
+      outline: none;
+      box-shadow: inset 2px 2px 0 #000000;
+    }
+    .pixel-input:focus {
+      border-color: #38bdf8;
+      box-shadow: inset 2px 2px 0 #000000, 0 0 8px rgba(56, 189, 248, 0.4);
+    }
+    .pixel-select {
+      background: #020617;
+      border: 3px solid #1e293b;
+      color: #f8fafc;
+      font-family: var(--font-pixel-body);
+      font-size: 12px;
+      padding: 8px 10px;
+      width: 100%;
+      outline: none;
+      cursor: pointer;
+    }
+    .pixel-select:focus {
+      border-color: #38bdf8;
+    }
+    .ai-config-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 12px;
+      text-align: left;
+    }
+    .ai-config-label {
+      font-family: var(--font-pixel-title);
+      font-size: 9px;
+      color: #94a3b8;
+      letter-spacing: 0.5px;
+    }
+    .ai-terminal-output {
+      background: #030712;
+      border: 2px solid #1e293b;
+      color: #4ade80;
+      font-family: var(--font-pixel-mono);
+      font-size: 11px;
+      padding: 8px 12px;
+      min-height: 48px;
+      max-height: 90px;
+      overflow-y: auto;
+      text-align: left;
+      line-height: 1.4;
+      white-space: pre-wrap;
+    }
   </style>
 </head>
 <body>
@@ -1299,6 +1357,9 @@
           <div class="wave-title" id="waveDisplay">SECTOR: 1-1</div>
           <div style="font-size: 13px; font-family: var(--font-pixel-body); font-weight: 700; color: #94a3b8; margin-top: 2px;" id="levelDisplay">LVL: 1</div>
           <div class="combo-badge" id="comboDisplay">COMBO x2 (5 PURGES)</div>
+          <button id="hudAiConfigBtn" class="btn-pixel btn-pixel-cyan" style="font-size: 9px; padding: 4px 8px; margin-top: 6px;" onclick="window.openAIConfigModal && window.openAIConfigModal()">
+            🤖 AI DIRECTOR
+          </button>
         </div>
 
         <!-- Minimap Radar Container -->
@@ -1446,6 +1507,10 @@
           ▶ INITIALIZE PURGE [SPACE]
         </button>
 
+        <button id="titleAiConfigBtn" class="btn-pixel btn-pixel-cyan" style="font-size: 11px; width: 360px;" onclick="window.openAIConfigModal && window.openAIConfigModal()">
+          🤖 AI DIRECTOR SETTINGS (GEMINI 3.1 / FLASH)
+        </button>
+
         <div style="display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 4px;">
           <button class="btn-pixel btn-pixel-amber" onclick="window.PixelCutscenes && window.PixelCutscenes.play('burning_servers')">
             🔥 WATCH: BURNING SERVERS
@@ -1498,10 +1563,187 @@
     </div>
   </div>
 
+  <!-- AI DIRECTOR CONFIGURATION MODAL (GEMINI 3.1 / FLASH) -->
+  <div id="aiConfigModal" class="modal-overlay" style="display: none; z-index: 100;">
+    <div class="modal-content pixel-frame-cyan" style="max-width: 650px; padding: 22px;">
+      <h2 style="font-size: 16px; font-family: var(--font-pixel-title); color: #38bdf8; margin-bottom: 6px;">
+        🤖 GEMINI AI DIRECTOR SETTINGS
+      </h2>
+      <p style="color: #94a3b8; font-size: 12px; font-family: var(--font-pixel-body); margin-bottom: 14px;">
+        Connect Google Gemini (3.1 Turbo / 2.5 Flash) to dynamically power tactical voice comms, boss banter, and storyline events in real time. (100% Non-Mandatory)
+      </p>
+
+      <div class="ai-config-row">
+        <label class="ai-config-label" for="geminiApiKeyInput">GOOGLE GEMINI API KEY:</label>
+        <div style="display: flex; gap: 8px;">
+          <input type="password" id="geminiApiKeyInput" class="pixel-input" placeholder="Paste your API key here (saved locally)" />
+          <button type="button" class="btn-pixel" style="padding: 6px 12px; font-size: 10px;" id="toggleKeyVisibilityBtn">SHOW</button>
+        </div>
+      </div>
+
+      <div class="ai-config-row">
+        <label class="ai-config-label" for="geminiModelSelect">GEMINI MODEL SELECTION:</label>
+        <select id="geminiModelSelect" class="pixel-select" onchange="window.onGeminiModelChange && window.onGeminiModelChange()">
+          <option value="gemini-2.5-flash">Gemini 2.5 Flash (Ultra Fast & Snappy - Recommended)</option>
+          <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+          <option value="gemini-1.5-pro">Gemini 1.5 Pro (Deep Narrative Reasoning)</option>
+          <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+          <option value="gemini-3.1-turbo">Gemini 3.1 Turbo (Custom Preview)</option>
+          <option value="custom">Custom Model ID...</option>
+        </select>
+        <input type="text" id="geminiCustomModelInput" class="pixel-input" placeholder="e.g. gemini-3.1-turbo" style="display: none; margin-top: 6px;" />
+      </div>
+
+      <div class="ai-config-row">
+        <label class="ai-config-label" for="geminiPersonaSelect">HIGH COMMAND VOICE PERSONA:</label>
+        <select id="geminiPersonaSelect" class="pixel-select">
+          <option value="JOHN_HELLDIVER">John Helldiver (Democracy Officer - Gritty Patriotic Military Timbre)</option>
+          <option value="LINUS_TORVALDS">Linus Torvalds (Kernel Creator - Blunt, Sarcastic Code Overlord)</option>
+          <option value="CORPORATE_NEMESIS">Corporate Nemesis (Glitchy Proprietary CEO / DRM Auditor)</option>
+        </select>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 10px; margin: 10px 0; text-align: left;">
+        <input type="checkbox" id="geminiEnableToggle" style="width: 18px; height: 18px; cursor: pointer;" />
+        <label for="geminiEnableToggle" style="font-family: var(--font-pixel-title); font-size: 10px; color: #f8fafc; cursor: pointer;">
+          ENABLE LIVE GEMINI GAME DIRECTOR (AUTO-COMMS & NARRATIVE)
+        </label>
+      </div>
+
+      <!-- Test Terminal Box -->
+      <div class="ai-config-row">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span class="ai-config-label">LIVE STATUS TERMINAL:</span>
+          <button type="button" class="btn-pixel btn-pixel-cyan" id="testGeminiBtn" style="padding: 4px 10px; font-size: 9px;">
+            ⚡ TEST CONNECTION / PING
+          </button>
+        </div>
+        <div id="aiTerminalOutput" class="ai-terminal-output">> Ready. Enter API key and click TEST to verify.</div>
+      </div>
+
+      <!-- Actions -->
+      <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px;">
+        <button type="button" class="btn-pixel btn-pixel-amber" onclick="window.closeAIConfigModal && window.closeAIConfigModal()">
+          CLOSE
+        </button>
+        <button type="button" class="btn-pixel" id="saveGeminiConfigBtn">
+          💾 SAVE & APPLY
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/env.js" onerror="window.ENV=window.ENV||{};"></script>
   <script src="audio.js"></script>
   <script src="cutscenes.js"></script>
   <script src="mcp_enemy_tools.js"></script>
   <script src="api.js"></script>
   <script src="game.js"></script>
+  <script>
+    // Wire up AI Director modal events
+    window.openAIConfigModal = function() {
+      const modal = document.getElementById('aiConfigModal');
+      if (!modal) return;
+      const keyInput = document.getElementById('geminiApiKeyInput');
+      const modelSelect = document.getElementById('geminiModelSelect');
+      const customInput = document.getElementById('geminiCustomModelInput');
+      const personaSelect = document.getElementById('geminiPersonaSelect');
+      const enableToggle = document.getElementById('geminiEnableToggle');
+      const term = document.getElementById('aiTerminalOutput');
+
+      if (window.GeminiDirector) {
+        if (keyInput) keyInput.value = window.GeminiDirector.apiKey || '';
+        if (modelSelect) {
+          const m = window.GeminiDirector.model || 'gemini-2.5-flash';
+          let found = false;
+          for (let opt of modelSelect.options) {
+            if (opt.value === m) { opt.selected = true; found = true; break; }
+          }
+          if (!found) {
+            modelSelect.value = 'custom';
+            if (customInput) { customInput.style.display = 'block'; customInput.value = m; }
+          } else {
+            if (customInput) customInput.style.display = 'none';
+          }
+        }
+        if (personaSelect) personaSelect.value = window.GeminiDirector.persona || 'JOHN_HELLDIVER';
+        if (enableToggle) enableToggle.checked = !!window.GeminiDirector.enabled;
+        if (term) term.textContent = `> Ready. Active Model: ${window.GeminiDirector.model}. Status: ${window.GeminiDirector.enabled ? 'ACTIVE' : 'IDLE'}.`;
+      }
+      modal.style.display = 'flex';
+    };
+
+    window.closeAIConfigModal = function() {
+      const modal = document.getElementById('aiConfigModal');
+      if (modal) modal.style.display = 'none';
+    };
+
+    window.onGeminiModelChange = function() {
+      const sel = document.getElementById('geminiModelSelect');
+      const custom = document.getElementById('geminiCustomModelInput');
+      if (sel && custom) {
+        custom.style.display = (sel.value === 'custom') ? 'block' : 'none';
+      }
+    };
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const toggleBtn = document.getElementById('toggleKeyVisibilityBtn');
+      const keyInput = document.getElementById('geminiApiKeyInput');
+      if (toggleBtn && keyInput) {
+        toggleBtn.addEventListener('click', () => {
+          keyInput.type = keyInput.type === 'password' ? 'text' : 'password';
+          toggleBtn.textContent = keyInput.type === 'password' ? 'SHOW' : 'HIDE';
+        });
+      }
+
+      const testBtn = document.getElementById('testGeminiBtn');
+      const term = document.getElementById('aiTerminalOutput');
+      if (testBtn) {
+        testBtn.addEventListener('click', async () => {
+          const key = keyInput ? keyInput.value.trim() : '';
+          const sel = document.getElementById('geminiModelSelect');
+          const custom = document.getElementById('geminiCustomModelInput');
+          const model = (sel && sel.value === 'custom' && custom && custom.value.trim()) ? custom.value.trim() : (sel ? sel.value : 'gemini-2.5-flash');
+
+          if (!key) {
+            if (term) term.textContent = "❌ ERROR: Please enter a Google Gemini API key first!";
+            return;
+          }
+
+          if (term) term.textContent = `> Connecting to Google Gemini (${model})...\n> Sending High Command radio check ping...`;
+          if (window.GeminiDirector) {
+            const res = await window.GeminiDirector.testConnection(key, model);
+            if (res.ok) {
+              if (term) term.textContent = `✅ SUCCESS! (Latency: ${res.latency}ms)\n> Radio Reply: "${res.reply}"`;
+              if (window.soundEngine && typeof window.soundEngine.playLibertyRadioSquelch === 'function') {
+                window.soundEngine.playLibertyRadioSquelch();
+              }
+            } else {
+              if (term) term.textContent = `❌ CONNECTION FAILED (${res.latency}ms):\n> ${res.error}`;
+            }
+          }
+        });
+      }
+
+      const saveBtn = document.getElementById('saveGeminiConfigBtn');
+      if (saveBtn) {
+        saveBtn.addEventListener('click', () => {
+          const key = keyInput ? keyInput.value.trim() : '';
+          const sel = document.getElementById('geminiModelSelect');
+          const custom = document.getElementById('geminiCustomModelInput');
+          const model = (sel && sel.value === 'custom' && custom && custom.value.trim()) ? custom.value.trim() : (sel ? sel.value : 'gemini-2.5-flash');
+          const persona = document.getElementById('geminiPersonaSelect') ? document.getElementById('geminiPersonaSelect').value : 'JOHN_HELLDIVER';
+          const enabled = document.getElementById('geminiEnableToggle') ? document.getElementById('geminiEnableToggle').checked : false;
+
+          if (window.GeminiDirector) {
+            window.GeminiDirector.saveConfig(key, model, persona, enabled);
+            if (term) term.textContent = `✅ CONFIG SAVED!\n> Live Director: ${enabled ? 'ENABLED' : 'DISABLED'}\n> Model: ${model}\n> Persona: ${persona}`;
+            setTimeout(() => { window.closeAIConfigModal(); }, 750);
+          }
+        });
+      }
+    });
+  </script>
 </body>
 </html>
+
