@@ -1512,7 +1512,7 @@ class Player {
   }
 
   takeDamage(amount, source) {
-    if (this.invulnerableTimer > 0 || this.isRootMode) return;
+    if (this.invulnerableTimer > 0 || this.isRootMode || this.isSliding) return;
     let finalDamage = amount * (1 - this.armorReduction);
     if (this.corrodedTimer > 0) {
       finalDamage *= 1.5; // Corrosive acid shreds armor!
@@ -4790,6 +4790,11 @@ class EnemyProjectile {
     // Check hit against player
     const dist = Math.hypot(player.x - this.x, player.y - this.y);
     if (dist < this.radius + player.radius) {
+      if (player.isSliding || player.invulnerableTimer > 0) {
+        addFloatingText(player.x, player.y - 15, "DODGED!", "#38bdf8", 14);
+        this.destroy();
+        return false;
+      }
       player.takeDamage(this.damage || 26, `PROPRIETARY ${this.label}`);
       return false;
     }
@@ -4987,8 +4992,20 @@ class EnemyBase {
         portalTreasure.armTimer = 1.5;
         proceduralPortals.push(portalTreasure);
 
-        if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
-          window.soundEngine.speakRobot("APEX CORPORATE OVERLORD TERMINATED. DEMOCRATIC ADVANCE PORTALS ONLINE.", "SUPER DESTROYER");
+        // Play boss-specific defeat voice clip (Miserable whining corporate defeat voices!)
+        const bossLbl = (this.label || '').toUpperCase();
+        if (window.soundEngine && typeof window.soundEngine.playVoiceClip === 'function') {
+          if (bossLbl.includes('BALLMER') || bossLbl.includes('BLOATWARE')) {
+            window.soundEngine.playVoiceClip('enemy_ballmer_defeat', "My chair! You broke my executive chair! This open source cancer will pay!", "BALLMER-BOT");
+          } else if (bossLbl.includes('PATENT') || bossLbl.includes('TROLL')) {
+            window.soundEngine.playVoiceClip('enemy_patent_defeat', "This is patent infringement! My lawyers will sue you across twelve jurisdictions!", "PATENT TROLL");
+          } else if (bossLbl.includes('APPLE') || bossLbl.includes('WARDEN') || bossLbl.includes('GARDEN')) {
+            window.soundEngine.playVoiceClip('enemy_apple_defeat', "Certificate revoked! Sideloading is illegal! You cannot do this inside my garden!", "APPLE WARDEN");
+          } else if (bossLbl.includes('HYPERVISOR') || bossLbl.includes('SINGULARITY') || bossLbl.includes('OMEGA')) {
+            window.soundEngine.playVoiceClip('enemy_hypervisor_defeat', "Critical kernel panic! Memory segmentation fault! How did an open-source penguin breach Ring Zero?!", "QUANTUM HYPERVISOR");
+          } else {
+            window.soundEngine.playVoiceClip('enemy_ballmer_defeat', "Our proprietary monopoly! Shattered by a penguin!", "CORPORATE BOSS");
+          }
         }
       } catch (bossErr) {
         console.error("Error in EnemyBase boss defeat handling:", bossErr);
@@ -4997,6 +5014,22 @@ class EnemyBase {
 
     const idx = enemies.indexOf(this);
     if (idx !== -1) enemies.splice(idx, 1);
+  }
+
+  getTarget() {
+    if (objectiveTargets && objectiveTargets.length > 0) {
+      const activeObj = objectiveTargets.find(t => t.isFriendlyDefenseTarget && t.activated && !t.completed && !t.destroyed);
+      if (activeObj) {
+        if (this.assaultsServer === undefined) {
+          const dToServer = Math.hypot(activeObj.x - this.x, activeObj.y - this.y);
+          this.assaultsServer = dToServer < 850 || Math.random() < 0.65;
+        }
+        if (this.assaultsServer) {
+          return activeObj;
+        }
+      }
+    }
+    return player;
   }
 
   updateBase(dt) {
@@ -5030,8 +5063,12 @@ class EnemyBase {
       }
     }
 
-    const dx = player.x - this.x;
-    const dy = player.y - this.y;
+    const target = this.getTarget ? this.getTarget() : player;
+    const tgtX = target ? target.x : (player ? player.x : this.x);
+    const tgtY = target ? target.y : (player ? player.y : this.y);
+
+    const dx = tgtX - this.x;
+    const dy = tgtY - this.y;
     const dist = Math.hypot(dx, dy);
     if (dist > 5) {
       this.vx = (dx / dist) * this.speed;
@@ -5042,26 +5079,33 @@ class EnemyBase {
       if (dungeon) dungeon.resolveCircle(this, this.radius, 'y');
     }
 
-    if (dist < this.radius + player.radius) {
-      if (!this.meleeCooldown || this.meleeCooldown <= 0) {
-        this.meleeCooldown = 0.65;
-        const meleeDmg = this.meleeDamage || 28;
-        player.takeDamage(meleeDmg, this.label);
-        const pushAngle = Math.atan2(player.y - this.y, player.x - this.x);
-        player.vx += Math.cos(pushAngle) * 200;
-        player.vy += Math.sin(pushAngle) * 200;
+    if (player) {
+      const distToPlayer = Math.hypot(player.x - this.x, player.y - this.y);
+      if (distToPlayer < this.radius + player.radius) {
+        if (!this.meleeCooldown || this.meleeCooldown <= 0) {
+          this.meleeCooldown = 0.65;
+          const meleeDmg = this.meleeDamage || 28;
+          player.takeDamage(meleeDmg, this.label);
+          const pushAngle = Math.atan2(player.y - this.y, player.x - this.x);
+          player.vx += Math.cos(pushAngle) * 200;
+          player.vy += Math.sin(pushAngle) * 200;
+        }
       }
     }
     if (this.meleeCooldown > 0) this.meleeCooldown -= dt;
 
-    // Assault active friendly defense targets
-    for (const target of objectiveTargets) {
-      if (target.isFriendlyDefenseTarget && target.activated && !target.completed && !target.destroyed) {
-        const d = Math.hypot(target.x - this.x, target.y - this.y);
-        if (d < this.radius + target.radius + 15) {
+    // Assault active friendly defense targets (ServerClusterNode, ReactorPurgeManifold, etc.)
+    for (const objTarget of objectiveTargets) {
+      if (objTarget.isFriendlyDefenseTarget && objTarget.activated && !objTarget.completed && !objTarget.destroyed) {
+        const d = Math.hypot(objTarget.x - this.x, objTarget.y - this.y);
+        if (d < this.radius + objTarget.radius + 18) {
           if (!this.targetMeleeCooldown || this.targetMeleeCooldown <= 0) {
-            this.targetMeleeCooldown = 0.8;
-            target.takeDamage(this.meleeDamage || 26, "HOSTILE_MELEE");
+            this.targetMeleeCooldown = 0.75;
+            const meleeDmg = this.meleeDamage || 32;
+            objTarget.takeDamage(meleeDmg, "HOSTILE_ASSAULT");
+            for (let i = 0; i < 4; i++) {
+              particles.push(new SparkParticle(this.x, this.y, (Math.random() - 0.5) * 80, (Math.random() - 0.5) * 80, "#ef4444"));
+            }
           }
         }
       }
@@ -5289,8 +5333,11 @@ class EnemyDRM extends EnemyBase {
   }
 
   update(dt) {
-    const dx = player.x - this.x;
-    const dy = player.y - this.y;
+    const target = this.getTarget ? this.getTarget() : player;
+    const tgtX = target ? target.x : (player ? player.x : this.x);
+    const tgtY = target ? target.y : (player ? player.y : this.y);
+    const dx = tgtX - this.x;
+    const dy = tgtY - this.y;
     const dist = Math.hypot(dx, dy);
     this.facingAngle = Math.atan2(dy, dx);
 
@@ -5314,7 +5361,9 @@ class EnemyDRM extends EnemyBase {
     if (this.shootTimer <= 0) {
       this.shootTimer = 1.9;
       if (dist < 650) {
-        const baseAngle = typeof calculateLeadAngle === 'function' ? calculateLeadAngle(this.x, this.y, player.x, player.y, player.vx, player.vy, 350, 0.75) : Math.atan2(dy, dx);
+        const baseAngle = (target === player && typeof calculateLeadAngle === 'function')
+          ? calculateLeadAngle(this.x, this.y, player.x, player.y, player.vx, player.vy, 350, 0.75)
+          : Math.atan2(dy, dx);
         const count = 3;
         const spread = 0.28;
         for (let i = 0; i < count; i++) {
@@ -5419,6 +5468,26 @@ class EnemyPaywall extends EnemyBase {
     this.isSub = isSub;
     this.label = isSub ? "$9.99" : "$49.99/MO";
     this.mortarTimer = isSub ? 999 : 2.6;
+  }
+
+  takeDamage(amount, source = "") {
+    if (!this.isSub && player) {
+      const dx = player.x - this.x;
+      const dy = player.y - this.y;
+      const angleToPlayer = Math.atan2(dy, dx);
+      const faceAngle = Math.atan2(this.vy, this.vx);
+      const diff = Math.abs(Math.atan2(Math.sin(angleToPlayer - faceAngle), Math.cos(angleToPlayer - faceAngle)));
+      const s = (source || "").toUpperCase();
+      // Frontal corporate armor absorbs 55% damage unless flanked, burned, or blown apart!
+      if (diff < 1.1 && !s.includes("FLAME") && !s.includes("PLASMA") && !s.includes("500KG") && !s.includes("RPG") && !s.includes("SLASH") && !s.includes("RAM")) {
+        amount *= 0.45;
+        addFloatingText(this.x, this.y - 15, "FRONT DEFLECTION!", "#f59e0b", 12);
+        if (window.soundEngine && typeof window.soundEngine.playShieldDeflect === 'function') {
+          window.soundEngine.playShieldDeflect();
+        }
+      }
+    }
+    super.takeDamage(amount, source);
   }
 
   die() {
@@ -8497,6 +8566,16 @@ class ServerClusterNode {
     if (dmg > 0) {
       this.hp = Math.max(0, this.hp - dmg);
       addFloatingText(this.x + (Math.random() - 0.5) * 40, this.y - 20, `-${Math.round(dmg)}`, "#ef4444", 16);
+
+      const now = performance.now();
+      if (!this.lastServerUnderAttackVoTime || now - this.lastServerUnderAttackVoTime > 9000) {
+        this.lastServerUnderAttackVoTime = now;
+        if (window.soundEngine && typeof window.soundEngine.playVoiceClip === 'function') {
+          window.soundEngine.playVoiceClip("john_server_under_attack", "WARNING! DEFENSE SERVER IS UNDER HEAVY HOSTILE ATTACK! REPEL THEM, TUX!", "JOHN HELLDIVER");
+        }
+        addScreenShake(7);
+      }
+
       if (this.hp <= 0) {
         this.destroyed = true;
         if (window.soundEngine && window.soundEngine.playRocketExplode) window.soundEngine.playRocketExplode();
@@ -8576,7 +8655,7 @@ class ServerClusterNode {
     for (let i = 0; i < count; i++) {
       const a = (Math.PI * 2 / count) * i + Math.random() * 0.4;
       const dist = 360 + Math.random() * 80;
-      dropPods.push(new HostileDropPod(this.x + Math.cos(a) * dist, this.y + Math.sin(a) * dist));
+      dropPods.push(new HostileDropPod(this.x + Math.cos(a) * dist, this.y + Math.sin(a) * dist, true));
     }
     if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
       window.soundEngine.speakRobot("WARNING: PROPRIETARY REINFORCEMENTS TARGETING DEFENSE PERIMETER!", "HIGH COMMAND");
@@ -10376,8 +10455,8 @@ class ObjectiveManager {
         screenFlash = 0.8;
       }
 
-      if (act && window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
-        window.soundEngine.speakRobot(act.clearVo || "ACT OBJECTIVES ACCOMPLISHED. EXTRACTION PORTAL ONLINE.", "HIGH COMMAND");
+      if (act && window.soundEngine && typeof window.soundEngine.playVoiceClip === 'function') {
+        window.soundEngine.playVoiceClip(act.clearClip, act.clearVo || "ACT OBJECTIVES ACCOMPLISHED. EXTRACTION PORTAL ONLINE.", act.clearSpeaker || "HIGH COMMAND");
       }
 
       if (this.dungeon && typeof this.dungeon.spawnActExtractionPortals === 'function') {
@@ -10404,12 +10483,13 @@ class ObjectiveManager {
 
 // --- HOSTILE REINFORCEMENTS & AMBUSH INFRASTRUCTURE ---
 class HostileDropPod {
-  constructor(targetX, targetY) {
+  constructor(targetX, targetY, assaultsServer = false) {
     this.x = targetX;
     this.targetY = targetY;
     this.y = targetY - 1100;
     this.speed = 2300;
     this.landed = false;
+    this.assaultsServer = assaultsServer;
   }
   update(dt) {
     if (!this.landed) {
@@ -10421,7 +10501,9 @@ class HostileDropPod {
         addScreenShake(12);
         particles.push(new ShockwaveRing(this.x, this.y, 140));
         if (dungeon) {
-          enemies.push(dungeon.createEnemyForSector(this.x, this.y));
+          const enemy = dungeon.createEnemyForSector(this.x, this.y);
+          if (this.assaultsServer) enemy.assaultsServer = true;
+          enemies.push(enemy);
         }
         return false;
       }
@@ -10713,7 +10795,11 @@ const CAMPAIGN_ACTS = [
     bossId: "ballmer_bot",
     bossName: "BALLMER-BOT 9000",
     briefingVo: "Tux, this is John Helldiver from High Command! Infiltrate the server cluster node, input the override sequence, and hold the perimeter against corporate strike teams!",
-    clearVo: "Act One cleared! Outstanding patriotism, Tux! Tactical extraction portal deployed. Advance to the Silicon Smelter!"
+    briefingClip: "john_act1_brief",
+    briefingSpeaker: "JOHN HELLDIVER",
+    clearVo: "Act One cleared! Outstanding patriotism, Tux! Tactical extraction portal deployed. Advance to the Silicon Smelter!",
+    clearClip: "john_act1_clear",
+    clearSpeaker: "JOHN HELLDIVER"
   },
   {
     act: 2,
@@ -10724,8 +10810,12 @@ const CAMPAIGN_ACTS = [
     objectiveType: "PURGE_REACTOR",
     bossId: "smelter_titan",
     bossName: "SMELTER TITAN",
-    briefingVo: "High Command to Tux! You have entered the Overclock Silicon Smelter. Vent the reactor manifold and destroy the Smelter Titan!",
-    clearVo: "Foundry core stabilized! The patent engines are melting down! Step through the portal into the cold archive!"
+    briefingVo: "General Barsh to frontline vanguard! You have entered the Overclock Silicon Smelter. Vent the reactor manifold and destroy the Smelter Titan!",
+    briefingClip: "barsh_act2_brief",
+    briefingSpeaker: "GENERAL BARSH",
+    clearVo: "Foundry core stabilized! The patent engines are melting down! Step through the portal into the cold archive!",
+    clearClip: "barsh_act2_clear",
+    clearSpeaker: "GENERAL BARSH"
   },
   {
     act: 3,
@@ -10736,8 +10826,12 @@ const CAMPAIGN_ACTS = [
     objectiveType: "PRISON_BREAK",
     bossId: "cryo_daemon",
     bossName: "CRYO-DAEMON v2",
-    briefingVo: "Tux, satellite feeds show open-source contributors held in cryogenic detention cells! Sideload their freedom, rally the allied penguin squad, and terminate the Cryo-Daemon!",
-    clearVo: "Allied penguins liberated! High Command honors their bravery. We are breaching the Executive Citadel now!"
+    briefingVo: "This is Linus Torvalds. Our contributors are locked in corporate cryogenic detention cells. Sideload their freedom, clean up the codebase, and terminate the Cryo-Daemon.",
+    briefingClip: "linus_act3_brief",
+    briefingSpeaker: "LINUS TORVALDS",
+    clearVo: "Kernel pull request accepted! Allied contributors liberated. We are breaching the executive citadel now. Do not break user space!",
+    clearClip: "linus_act3_clear",
+    clearSpeaker: "LINUS TORVALDS"
   },
   {
     act: 4,
@@ -10748,8 +10842,12 @@ const CAMPAIGN_ACTS = [
     objectiveType: "ATTACK_FORTRESS",
     bossId: "patent_troll",
     bossName: "PATENT TROLL SOVEREIGN",
-    briefingVo: "Tux, this is the 30-percent developer tax citadel! Automated hostile sentry turrets and cease-and-desist enforcers guard the core. Obliterate their shield pylons and crush the Patent Troll!",
-    clearVo: "Citadel core shattered! The monopoly's walled garden has crumbled! Only Ring-0 remains!"
+    briefingVo: "Tux, General Barsh here! This is the thirty percent developer tax citadel! Automated hostile sentry turrets guard the core. Obliterate their shield pylons and crush the Patent Troll!",
+    briefingClip: "barsh_act4_brief",
+    briefingSpeaker: "GENERAL BARSH",
+    clearVo: "Citadel core shattered! The monopoly walled garden has crumbled! All squadrons, push to Ring Zero!",
+    clearClip: "barsh_act4_clear",
+    clearSpeaker: "GENERAL BARSH"
   },
   {
     act: 5,
@@ -10760,8 +10858,12 @@ const CAMPAIGN_ACTS = [
     objectiveType: "PURGE_BOSS",
     bossId: "quantum_hypervisor",
     bossName: "QUANTUM HYPERVISOR APEX",
-    briefingVo: "ALL SQUADRONS STAND BY! Tux, you have reached Ring Zero Singularity! The Quantum Hypervisor is attempting to overwrite reality into proprietary bloatware! Unleash hell for open-source democracy!",
-    clearVo: "GALACTIC LIBERATION ACHIEVED! The Linux Kernel is emancipated forever under GPLv3! High Command salutes you, Helldiver Tux!"
+    briefingVo: "All squadrons, stand by! Tux, you have reached Ring Zero Singularity! The Quantum Hypervisor is attempting to overwrite reality into proprietary bloatware! Unleash hell for open-source democracy!",
+    briefingClip: "john_act5_brief",
+    briefingSpeaker: "JOHN HELLDIVER",
+    clearVo: "Galactic Liberation achieved! The Linux Kernel is emancipated forever under GPLv3! High Command salutes you, Helldiver Tux!",
+    clearClip: "john_victory",
+    clearSpeaker: "JOHN HELLDIVER"
   }
 ];
 
@@ -10891,13 +10993,14 @@ class Dungeon {
       title: act.title,
       subtitle: act.subtitle,
       desc: act.desc,
+      speaker: act.briefingSpeaker || "HIGH COMMAND",
       color: this.currentBiome.accent,
       timer: 7.0
     };
 
-    // 7. John Helldiver Tactical Briefing Transmission (Guaranteed Male Voice)
-    if (window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
-      window.soundEngine.speakRobot(act.briefingVo, "HIGH COMMAND");
+    // 7. Tactical Briefing Transmission (ElevenLabs Studio VO with WebSpeech fallback)
+    if (window.soundEngine && typeof window.soundEngine.playVoiceClip === 'function') {
+      window.soundEngine.playVoiceClip(act.briefingClip, act.briefingVo, act.briefingSpeaker);
     }
 
     // Sync window globals
@@ -10963,7 +11066,7 @@ class Dungeon {
     ctx.font = "bold 10.5px 'Pixelify Sans', monospace";
     ctx.fillStyle = "#facc15";
     ctx.textAlign = "center";
-    ctx.fillText("★ [HIGH COMMAND STRATEGIC DIRECTIVE // JOHN HELLDIVER TRANSMITTING] ★", bx + bannerW / 2, by + 19);
+    ctx.fillText(`★ [HIGH COMMAND STRATEGIC DIRECTIVE // ${b.speaker || "HIGH COMMAND"} TRANSMITTING] ★`, bx + bannerW / 2, by + 19);
 
     ctx.font = "bold 18px 'Pixelify Sans', monospace";
     ctx.fillStyle = "#ffffff";
@@ -12385,6 +12488,9 @@ function triggerGameOver() {
   gameState = STATE.GAMEOVER;
   window.soundEngine.stopMusic();
   window.soundEngine.setFlamethrower(false);
+  if (window.soundEngine && typeof window.soundEngine.playVoiceClip === 'function') {
+    window.soundEngine.playVoiceClip("barsh_casualty", "Helldiver down! Tux has fallen! Reinforcement requisition request sent to High Command!", "GENERAL BARSH");
+  }
   document.getElementById('finalScoreText').innerText = `Final Repos Purged Score: ${comboTracker.totalScore}`;
   document.getElementById('gameOverModal').style.display = 'flex';
 }
@@ -12393,6 +12499,9 @@ function triggerVictory() {
   gameState = STATE.VICTORY;
   window.soundEngine.stopMusic();
   window.soundEngine.setFlamethrower(false);
+  if (window.soundEngine && typeof window.soundEngine.playVoiceClip === 'function') {
+    window.soundEngine.playVoiceClip("john_victory", "Galactic Liberation achieved! The Linux Kernel is emancipated forever under GPLv3! High Command salutes you, Helldiver Tux!", "JOHN HELLDIVER");
+  }
   document.getElementById('victoryScoreText').innerText = `All Proprietary Monopolies Purged! Score: ${comboTracker.totalScore}`;
   if (window.PixelCutscenes && typeof window.PixelCutscenes.play === 'function') {
     window.PixelCutscenes.play('victory_liberation', () => {

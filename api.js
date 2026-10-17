@@ -470,7 +470,7 @@
   class GeminiDirector {
     constructor() {
       this.apiKey = "";
-      this.model = "gemini-2.5-flash";
+      this.model = "gemini-3.1-flash-lite";
       this.persona = "JOHN_HELLDIVER";
       this.enabled = false;
       this.isRequestPending = false;
@@ -509,7 +509,7 @@
 
     saveConfig(key, model, persona, enabled) {
       this.apiKey = key || "";
-      this.model = model || "gemini-2.5-flash";
+      this.model = model || "gemini-3.1-flash-lite";
       this.persona = persona || "JOHN_HELLDIVER";
       this.enabled = !!enabled;
 
@@ -525,7 +525,7 @@
 
     async testConnection(testKey, testModel) {
       const key = testKey || this.apiKey;
-      const model = testModel || this.model || "gemini-2.5-flash";
+      const model = testModel || this.model || "gemini-3.1-flash-lite";
       if (!key) return { ok: false, error: "API Key is empty" };
 
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
@@ -571,9 +571,11 @@
 
       let systemInstruction = "";
       if (this.persona === "JOHN_HELLDIVER") {
-        systemInstruction = "You are 'John Helldiver', High Command Democracy Officer commanding Tux the open-source Linux penguin. Speak in a gritty, hyper-patriotic, military radio voice about Managed Democracy, purging proprietary tech monopolists, calling stratagems, and liberating the kernel. Keep it to 1 or 2 punchy, intense sentences, suitable for 16-bit arcade combat radio.";
+        systemInstruction = "You are 'John Helldiver', High Command Democracy Officer commanding Tux the open-source Linux penguin. Speak in a booming, heroic, hyper-patriotic military radio baritone about Managed Democracy, purging proprietary tech monopolists, calling stratagems, and liberating the kernel. Keep it to 1 or 2 punchy, intense sentences, suitable for 16-bit arcade combat radio.";
+      } else if (this.persona === "GENERAL_BARSH") {
+        systemInstruction = "You are General Barsh, gruff and battle-hardened Field Marshal of the open-source vanguard. Bark uncompromising frontline orders to Tux. Demand perimeter defense, tactical air support, and holding the servers at all costs against corporate assault squads. 1-2 punchy military sentences.";
       } else if (this.persona === "LINUS_TORVALDS") {
-        systemInstruction = "You are Linus Torvalds, blunt Linux kernel creator. Bark direct, sarcastic, no-nonsense code instructions to Tux. Demand clean code, purge bloated proprietary drivers, and merge pull requests with extreme prejudice. 1-2 punchy sentences.";
+        systemInstruction = "You are Linus Torvalds, blunt Linux kernel creator. Bark direct, sarcastic, no-nonsense code directives to Tux. Demand clean code, purge bloated proprietary drivers, and merge pull requests with extreme prejudice. 1-2 punchy sentences.";
       } else if (this.persona === "CORPORATE_NEMESIS") {
         systemInstruction = "You are an infuriated Big Tech CEO / DRM enforcer barking over intercepted radio frequencies. Threaten Tux with DMCA lawsuits, cloud subscription audits, and vendor lock-in. 1-2 punchy sentences.";
       } else {

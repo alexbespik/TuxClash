@@ -15,6 +15,8 @@ class SoundEngine {
     this.musicStep = 0;
     this.musicTimer = null;
     this.bpm = 142; // Fast, driving adrenaline tempo
+    this.currentVoiceAudio = null;
+    this.voiceAudioCache = new Map();
     this.initialized = false;
   }
 
@@ -860,9 +862,84 @@ class SoundEngine {
     osc.stop(now + 0.15);
   }
 
+  /**
+   * Play studio-grade ElevenLabs voice audio clip from assets/audio/vo/
+   * Ducks BGM music gain while speaking, falls back to Web Speech API if audio is unavailable.
+   */
+  playVoiceClip(clipName, fallbackText, fallbackSpeaker = 'SUPER DESTROYER') {
+    if (!clipName) {
+      if (fallbackText) this.speakRobot(fallbackText, fallbackSpeaker);
+      return;
+    }
+
+    const spkUpper = (fallbackSpeaker || '').toUpperCase();
+    const isEnemy = /BALLMER|PATENT|APPLE|WARDEN|HYPERVISOR|CORPORATE|EULA/i.test(spkUpper);
+
+    if (isEnemy) {
+      this.playCorporateErrorBeep();
+    } else {
+      this.playLibertyRadioSquelch();
+    }
+
+    try {
+      if (this.currentVoiceAudio) {
+        this.currentVoiceAudio.pause();
+        this.currentVoiceAudio.currentTime = 0;
+        this.currentVoiceAudio = null;
+      }
+
+      let audio = this.voiceAudioCache.get(clipName);
+      if (!audio) {
+        audio = new Audio(`assets/audio/vo/${clipName}.mp3`);
+        audio.preload = 'auto';
+        this.voiceAudioCache.set(clipName, audio);
+      }
+
+      audio.volume = 1.0;
+      this.currentVoiceAudio = audio;
+
+      // Duck BGM music gain while voice clip is playing
+      if (this.musicGain && this.ctx) {
+        const curTime = this.ctx.currentTime;
+        this.musicGain.gain.cancelScheduledValues(curTime);
+        this.musicGain.gain.linearRampToValueAtTime(0.20, curTime + 0.08);
+      }
+
+      const restoreMusic = () => {
+        if (this.musicGain && this.ctx) {
+          const curTime = this.ctx.currentTime;
+          this.musicGain.gain.cancelScheduledValues(curTime);
+          this.musicGain.gain.linearRampToValueAtTime(0.80, curTime + 0.35);
+        }
+        if (this.currentVoiceAudio === audio) {
+          this.currentVoiceAudio = null;
+        }
+      };
+
+      audio.onended = restoreMusic;
+      audio.onerror = () => {
+        restoreMusic();
+        if (fallbackText) this.speakRobot(fallbackText, fallbackSpeaker);
+      };
+
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(() => {
+          restoreMusic();
+          if (fallbackText) this.speakRobot(fallbackText, fallbackSpeaker);
+        });
+      }
+    } catch (err) {
+      if (fallbackText) this.speakRobot(fallbackText, fallbackSpeaker);
+    }
+  }
+
   speakRobot(text, speaker = 'SUPER DESTROYER', customPitch, customRate) {
     const spkUpper = (speaker || '').toUpperCase();
-    const isHighCommand = /SUPER DESTROYER|HELLDIVER|HIGH COMMAND|DEMOCRACY OFFICER|CENTRAL COMMAND/i.test(spkUpper);
+    const isJohnHelldiver = /HELLDIVER/i.test(spkUpper);
+    const isGeneralBarsh = /BARSH/i.test(spkUpper);
+    const isLinusTorvalds = /LINUS/i.test(spkUpper);
+    const isHighCommand = isJohnHelldiver || isGeneralBarsh || isLinusTorvalds || /SUPER DESTROYER|HIGH COMMAND|DEMOCRACY OFFICER|CENTRAL COMMAND/i.test(spkUpper);
     const isTuxSide = isHighCommand || /TUX|EAGLE|REBEL|HACKER|ALLIED|COMMUNITY/i.test(spkUpper);
     const isFemaleEnemy = /APPLE|WARDEN|EULA|CARTEL|MAINFRAME|OUTPOST ALARM|PROPRIETARY SEC|DRM CORE|CLOUD MONOPOLY|CLOSED-SOURCE|SIRI|CORTANA|AI OVERMIND/i.test(spkUpper);
 
@@ -885,26 +962,41 @@ class SoundEngine {
       try {
         const utter = new SpeechSynthesisUtterance(text);
 
-        if (isHighCommand) {
-          // John Helldiver / High Command: Deep, booming, authoritative military liberty cadence (STRICTLY MALE)
-          utter.pitch = customPitch !== undefined ? customPitch : 0.52;
+        if (isJohnHelldiver) {
+          // John Helldiver: Booming, resonant, heroic patriotic baritone (NEVER WHISPER!)
+          utter.pitch = customPitch !== undefined ? customPitch : 0.95;
+          utter.rate = customRate !== undefined ? customRate : 1.02;
+          utter.volume = 1.0;
+        } else if (isGeneralBarsh) {
+          // General Barsh: Gruff, battle-hardened field marshal
+          utter.pitch = customPitch !== undefined ? customPitch : 0.85;
+          utter.rate = customRate !== undefined ? customRate : 0.98;
+          utter.volume = 1.0;
+        } else if (isLinusTorvalds) {
+          // Linus Torvalds: Sarcastic, sharp, articulate code mastermind
+          utter.pitch = customPitch !== undefined ? customPitch : 1.02;
+          utter.rate = customRate !== undefined ? customRate : 1.08;
+          utter.volume = 1.0;
+        } else if (isHighCommand) {
+          // High Command / Super Destroyer: Deep masculine military timbre
+          utter.pitch = customPitch !== undefined ? customPitch : 0.92;
           utter.rate = customRate !== undefined ? customRate : 1.02;
           utter.volume = 1.0;
         } else if (isTuxSide) {
-          // Tux / Allied resistance: Resolute, heroic, battle-hardened (STRICTLY MALE)
-          utter.pitch = customPitch !== undefined ? customPitch : 0.76;
-          utter.rate = customRate !== undefined ? customRate : 1.08;
+          // Tux / Allied resistance: Resolute, heroic, battle-hardened
+          utter.pitch = customPitch !== undefined ? customPitch : 0.88;
+          utter.rate = customRate !== undefined ? customRate : 1.06;
           utter.volume = 0.95;
         } else if (isFemaleEnemy) {
-          // Cold, sterile, menacing corporate female DRM voice (FEMALE)
-          utter.pitch = customPitch !== undefined ? customPitch : 1.35;
-          utter.rate = customRate !== undefined ? customRate : 1.16;
-          utter.volume = 0.90;
+          // Cold, sterile, menacing corporate female DRM voice
+          utter.pitch = customPitch !== undefined ? customPitch : 1.30;
+          utter.rate = customRate !== undefined ? customRate : 1.14;
+          utter.volume = 0.95;
         } else {
-          // Corporate male tyrant (Ballmer-bot, Patent Troll Sovereign, etc.)
-          utter.pitch = customPitch !== undefined ? customPitch : 0.74;
-          utter.rate = customRate !== undefined ? customRate : 1.20;
-          utter.volume = 0.90;
+          // Corporate male tyrant (Ballmer-bot, Patent Troll, Hypervisor) - Whining / miserable corporate tone
+          utter.pitch = customPitch !== undefined ? customPitch : 0.78;
+          utter.rate = customRate !== undefined ? customRate : 1.15;
+          utter.volume = 0.92;
         }
 
         if (!window._cachedVoicesList || window._cachedVoicesList.length === 0) {
@@ -923,11 +1015,21 @@ class SoundEngine {
           'yuna', 'kyoko', 'stephanie', 'carmit', 'claire', 'amelie', 'anna', 'alva',
           'monica', 'paulina', 'ioana', 'laura', 'helena', 'agnes', 'alice', 'zoe', 'kendra'
         ];
+
+        // NOVELTY & WHISPER VOICES STRICTLY EXCLUDED!
+        const NOVELTY_EXCLUDED = [
+          'whisper', 'deranged', 'novelty', 'bad news', 'good news', 'organ', 'bells',
+          'boing', 'bubbles', 'cellos', 'pipe', 'trinoids', 'zarvox', 'albert', 'ralph'
+        ];
+
         const isStrictlyMale = (v) => {
           if (!v || !v.name) return false;
           const n = v.name.toLowerCase();
           for (const fem of FEMALE_NAMES) {
             if (n.includes(fem)) return false;
+          }
+          for (const nov of NOVELTY_EXCLUDED) {
+            if (n.includes(nov)) return false;
           }
           return true;
         };
@@ -935,19 +1037,16 @@ class SoundEngine {
         if (voices && voices.length > 0) {
           let chosen = null;
           if (isHighCommand || isTuxSide) {
-            // Tux / John Helldiver: Strict male voice priority (Alex, Fred, Daniel, Oliver, Tom, David, etc.)
-            // NEVER allow Samantha or any female voice under any circumstance!
-            const maleNames = ['alex', 'fred', 'daniel', 'oliver', 'tom', 'david', 'mark', 'george', 'richard', 'ralph', 'bruce', 'junior', 'albert', 'lee', 'rishi', 'arthur'];
+            // High Command & Tux: Strictly powerful male voices (Daniel, Alex, Tom, Oliver, Fred, David, Bruce)
+            const maleNames = ['daniel', 'alex', 'tom', 'oliver', 'fred', 'david', 'mark', 'george', 'richard', 'bruce'];
             chosen = voices.find(v => {
               const n = v.name.toLowerCase();
               return isStrictlyMale(v) && maleNames.some(m => n.includes(m));
             });
             if (!chosen) {
-              // Find ANY English voice that is NOT female
               chosen = voices.find(v => v.lang && v.lang.startsWith('en') && isStrictlyMale(v));
             }
             if (!chosen) {
-              // Any language voice that is NOT female
               chosen = voices.find(v => isStrictlyMale(v));
             }
           } else if (isFemaleEnemy) {
@@ -957,11 +1056,8 @@ class SoundEngine {
               return FEMALE_NAMES.some(fem => n.includes(fem));
             }) || voices.find(v => v.lang && v.lang.startsWith('en'));
           } else {
-            // Corporate male tyrant / glitch voice
-            chosen = voices.find(v => {
-              const n = v.name.toLowerCase();
-              return isStrictlyMale(v) && (n.includes('zarvox') || n.includes('cellos') || n.includes('trinoids') || n.includes('ralph') || n.includes('fred'));
-            }) || voices.find(v => isStrictlyMale(v));
+            // Corporate male tyrant
+            chosen = voices.find(v => isStrictlyMale(v)) || voices.find(v => v.lang && v.lang.startsWith('en'));
           }
           if (chosen) utter.voice = chosen;
         }

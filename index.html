@@ -1584,22 +1584,23 @@
       <div class="ai-config-row">
         <label class="ai-config-label" for="geminiModelSelect">GEMINI MODEL SELECTION:</label>
         <select id="geminiModelSelect" class="pixel-select" onchange="window.onGeminiModelChange && window.onGeminiModelChange()">
-          <option value="gemini-2.5-flash">Gemini 2.5 Flash (Cutting-Edge Fast, Recommended)</option>
+          <option value="gemini-3.1-flash-lite" selected>Gemini 3.1 Flash-Lite (Primary Recommended - Ultra Fast & Precise)</option>
+          <option value="gemini-2.5-flash">Gemini 2.5 Flash (Cutting-Edge Fast Multimodal)</option>
           <option value="gemini-2.5-pro">Gemini 2.5 Pro (Deep Reasoning & Narrative)</option>
           <option value="gemini-3.0-flash-preview">Gemini 3.0 Flash Preview (Experimental Next-Gen)</option>
-          <option value="gemini-3.1-turbo">Gemini 3.1 Turbo (Ultra-Fast Preview)</option>
           <option value="gemini-2.0-flash">Gemini 2.0 Flash (Stable Production GA)</option>
-          <option value="custom">Custom Model ID (Enter any model e.g. gemini-3.1-turbo)...</option>
+          <option value="custom">Custom Model ID (Enter any model e.g. gemini-3.1-flash-lite)...</option>
         </select>
-        <input type="text" id="geminiCustomModelInput" class="pixel-input" placeholder="e.g. gemini-3.1-turbo or gemini-2.5-flash" style="display: none; margin-top: 6px;" />
+        <input type="text" id="geminiCustomModelInput" class="pixel-input" placeholder="e.g. gemini-3.1-flash-lite or gemini-2.5-flash" style="display: none; margin-top: 6px;" />
       </div>
 
       <div class="ai-config-row">
         <label class="ai-config-label" for="geminiPersonaSelect">HIGH COMMAND VOICE PERSONA:</label>
         <select id="geminiPersonaSelect" class="pixel-select">
-          <option value="JOHN_HELLDIVER">John Helldiver (Democracy Officer - Gritty Patriotic Military Timbre)</option>
+          <option value="JOHN_HELLDIVER">John Helldiver (Democracy Officer - Booming Military Liberty Baritone)</option>
+          <option value="GENERAL_BARSH">General Barsh (Field Marshal - Gruff Battle-Hardened Veteran)</option>
           <option value="LINUS_TORVALDS">Linus Torvalds (Kernel Creator - Blunt, Sarcastic Code Overlord)</option>
-          <option value="CORPORATE_NEMESIS">Corporate Nemesis (Glitchy Proprietary CEO / DRM Auditor)</option>
+          <option value="CORPORATE_NEMESIS">Corporate Nemesis (Glitchy Proprietary CEO / Whining Patent Troll)</option>
         </select>
       </div>
 
@@ -1654,7 +1655,7 @@
       if (window.GeminiDirector) {
         if (keyInput) keyInput.value = window.GeminiDirector.apiKey || '';
         if (modelSelect) {
-          const m = window.GeminiDirector.model || 'gemini-2.5-flash';
+          const m = window.GeminiDirector.model || 'gemini-3.1-flash-lite';
           let found = false;
           for (let opt of modelSelect.options) {
             if (opt.value === m) { opt.selected = true; found = true; break; }
@@ -1703,7 +1704,7 @@
           const key = keyInput ? keyInput.value.trim() : '';
           const sel = document.getElementById('geminiModelSelect');
           const custom = document.getElementById('geminiCustomModelInput');
-          const model = (sel && sel.value === 'custom' && custom && custom.value.trim()) ? custom.value.trim() : (sel ? sel.value : 'gemini-2.5-flash');
+          const model = (sel && sel.value === 'custom' && custom && custom.value.trim()) ? custom.value.trim() : (sel ? sel.value : 'gemini-3.1-flash-lite');
 
           if (!key) {
             if (term) term.textContent = "❌ ERROR: Please enter a Google Gemini API key first!";
@@ -1731,7 +1732,7 @@
           const key = keyInput ? keyInput.value.trim() : '';
           const sel = document.getElementById('geminiModelSelect');
           const custom = document.getElementById('geminiCustomModelInput');
-          const model = (sel && sel.value === 'custom' && custom && custom.value.trim()) ? custom.value.trim() : (sel ? sel.value : 'gemini-2.5-flash');
+          const model = (sel && sel.value === 'custom' && custom && custom.value.trim()) ? custom.value.trim() : (sel ? sel.value : 'gemini-3.1-flash-lite');
           const persona = document.getElementById('geminiPersonaSelect') ? document.getElementById('geminiPersonaSelect').value : 'JOHN_HELLDIVER';
           const enabled = document.getElementById('geminiEnableToggle') ? document.getElementById('geminiEnableToggle').checked : false;
 
