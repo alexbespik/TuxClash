@@ -3301,21 +3301,25 @@ class SentryTurret {
     this.radius = 26;
     this.hp = 180;
     this.maxHp = 180;
-    this.lifetime = Infinity;
+    this.lifetime = 25.0; // 25s tactical deployment lifespan (prevents lingering across map)
+    this.maxLifetime = 25.0;
+    this.ammo = 160;      // 160 round ammo drum
+    this.maxAmmo = 160;
     this.angle = 0;
     this.fireTimer = 0;
     this.target = null;
   }
 
   update(dt) {
-    if (this.hp <= 0) {
+    this.lifetime -= dt;
+    if (this.hp <= 0 || this.lifetime <= 0 || this.ammo <= 0) {
       this.destroy();
       return false;
     }
 
-    // Find closest enemy within 720px
+    // Find closest enemy within 640px (balanced line of sight, not cross-map sniping)
     let closest = null;
-    let minDist = 720;
+    let minDist = 640;
     for (const enemy of enemies) {
       const d = Math.hypot(enemy.x - this.x, enemy.y - this.y);
       if (d < minDist) {
@@ -3333,7 +3337,7 @@ class SentryTurret {
         this.angle = targetAngle;
 
         this.fireTimer += dt;
-        if (this.fireTimer >= 0.08) {
+        if (this.fireTimer >= 0.09) {
           this.fireTimer = 0;
           this.fire();
         }
@@ -3348,7 +3352,7 @@ class SentryTurret {
       }
     }
 
-    if (this.hp <= 0) {
+    if (this.hp <= 0 || this.lifetime <= 0 || this.ammo <= 0) {
       this.destroy();
       return false;
     }
@@ -3356,8 +3360,11 @@ class SentryTurret {
   }
 
   fire() {
+    if (this.ammo <= 0) return;
+    this.ammo--;
+
     window.soundEngine.playMinigunShot();
-    addScreenShake(1.6);
+    addScreenShake(1.4);
     const speed = 1180;
     const spread = (Math.random() - 0.5) * 0.10;
     const pAngle = this.angle + spread;
@@ -3370,7 +3377,7 @@ class SentryTurret {
       Math.cos(pAngle) * speed,
       Math.sin(pAngle) * speed,
       5.0,
-      48,
+      32, // Rebalanced from 48 down to 32 dmg so it supports Tux without instant-melting bosses
       "#facc15",
       0.9,
       false,
@@ -3398,7 +3405,8 @@ class SentryTurret {
       const spd = 70 + Math.random() * 240;
       particles.push(new SparkParticle(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, "#94a3b8"));
     }
-    addFloatingText(this.x, this.y - 30, "SENTRY DESTROYED", "#ef4444", 18);
+    const msg = this.ammo <= 0 ? "SENTRY OUT OF AMMO" : (this.lifetime <= 0 ? "SENTRY EXPIRED" : "SENTRY DESTROYED");
+    addFloatingText(this.x, this.y - 30, msg, "#ef4444", 18);
   }
 
   draw(ctx) {
@@ -11900,6 +11908,16 @@ class Dungeon {
     floatingTexts.length = 0;
     proceduralPortals.length = 0;
     environmentalHazards.length = 0;
+    sentryTurrets.length = 0;
+    helperPenguins.length = 0;
+    teslaTowers.length = 0;
+    activeDomeShields.length = 0;
+    quarantineLockdownArenas.length = 0;
+    resupplyDropPods.length = 0;
+    pickups.length = 0;
+    if (player) {
+      player.holdingStratagem = null;
+    }
     this.sectorCompletedNotified = false;
 
     const centerX = 8 * TILE_SIZE; // 512px
@@ -11935,7 +11953,7 @@ class Dungeon {
     weaponChests.push(new WeaponChest(centerX - 92, centerY, shuffledStarters[0] || WEAPON_CATALOG[1]));
     weaponChests.push(new WeaponChest(centerX + 92, centerY, shuffledStarters[1] || WEAPON_CATALOG[2]));
 
-    // Spawn Linux Terminal Station for Act Objective
+    // Spawn Linux Terminal Station for Act Objective in Sanctuary
     linuxTerminalStations.length = 0;
     linuxTerminalStations.push(new LinuxTerminalStation(
       centerX + 180,
@@ -11945,21 +11963,25 @@ class Dungeon {
       act.terminalDesc || "Purge proprietary DRM daemon holding server cluster hostage"
     ));
 
-    // 1. Primary Objective Spawns
+    // 1. Midfield Primary Objective Spawns
+    const midX = centerX + 420;
+    const midY = centerY;
     if (act.objectiveType === "DEFEND_SERVERS") {
-      objectiveTargets.push(new ServerClusterNode(centerX + 260, centerY));
+      objectiveTargets.push(new ServerClusterNode(midX, midY));
     } else if (act.objectiveType === "PURGE_REACTOR") {
-      objectiveTargets.push(new ReactorPurgeManifold(centerX + 260, centerY));
+      objectiveTargets.push(new ReactorPurgeManifold(midX, midY));
     } else if (act.objectiveType === "PRISON_BREAK") {
-      objectiveTargets.push(new PrisonBreakCage(centerX + 260, centerY));
+      objectiveTargets.push(new PrisonBreakCage(midX, midY));
     } else if (act.objectiveType === "ATTACK_FORTRESS") {
-      const core = new FortressCore(centerX + 460, centerY + 100);
+      const core = new FortressCore(midX + 180, midY + 100);
       objectiveTargets.push(core);
-      objectiveTargets.push(new ShieldPylon(centerX + 340, centerY - 80, core));
-      objectiveTargets.push(new ShieldPylon(centerX + 340, centerY + 280, core));
+      objectiveTargets.push(new ShieldPylon(midX + 60, midY - 80, core));
+      objectiveTargets.push(new ShieldPylon(midX + 60, midY + 280, core));
     }
 
-    // 2. Spawn Act Boss (Randomized Act 1 boss pool for variety like Soul Knight)
+    // 2. Spawn Act Boss in Dedicated Boss Arena Chamber (Soul Knight style: at far end of sector, NOT at spawn!)
+    const bossX = centerX + 1150;
+    const bossY = centerY;
     let selectedBossId = act.bossId;
     let selectedBossName = act.bossName;
     if (this.currentActIndex === 0) {
@@ -11974,30 +11996,30 @@ class Dungeon {
     }
 
     if (window.EnemyModelFactory && selectedBossId) {
-      const boss = window.EnemyModelFactory.createFromSpec(selectedBossId, centerX + 520, centerY);
+      const boss = window.EnemyModelFactory.createFromSpec(selectedBossId, bossX, bossY);
       enemies.push(boss);
     } else {
-      enemies.push(new BossBloatware(centerX + 520, centerY));
+      enemies.push(new BossBloatware(bossX, bossY));
     }
 
-    // 3. Station Hostile Sentry Turrets in Acts 2, 3, 4, 5, 6
+    // 3. Station Hostile Sentry Turrets guarding the Boss Arena in Acts 2, 3, 4, 5, 6 (NOT at Tux's sanctuary spawn!)
     if (act.act >= 2) {
-      const turretCount = act.act >= 5 ? 6 : Math.min(4, act.act);
+      const turretCount = act.act >= 5 ? 4 : Math.min(3, act.act);
       for (let i = 0; i < turretCount; i++) {
         const a = (Math.PI * 2 / turretCount) * i + 0.4;
-        const dist = 360 + Math.random() * 90;
-        enemies.push(new EnemySentryTurret(centerX + Math.cos(a) * dist, centerY + Math.sin(a) * dist));
+        const dist = 260 + Math.random() * 60;
+        enemies.push(new EnemySentryTurret(bossX + Math.cos(a) * dist, bossY + Math.sin(a) * dist));
       }
     }
 
-    // Act 5: Fortified Void-0 Bunker Mainframe Bastion (Brutal, high damage, elite phalanxes)
+    // Act 5: Fortified Void-0 Bunker Mainframe Bastion guarding the ring0 boss arena
     if (act.act === 5) {
       for (let i = 0; i < 3; i++) {
         const a = (Math.PI * 2 / 3) * i;
-        enemies.push(new EnemyRiotShield(centerX + 480 + Math.cos(a) * 120, centerY + Math.sin(a) * 120));
+        enemies.push(new EnemyRiotShield(bossX + Math.cos(a) * 140, bossY + Math.sin(a) * 140));
       }
       for (let i = 0; i < 2; i++) {
-        enemies.push(new EnemyHeadhunter(centerX + 320, centerY + (i === 0 ? -160 : 160)));
+        enemies.push(new EnemyHeadhunter(bossX - 180, bossY + (i === 0 ? -140 : 140)));
       }
     }
 
@@ -12163,6 +12185,17 @@ class Dungeon {
     floatingTexts.length = 0;
     proceduralPortals.length = 0;
     environmentalHazards.length = 0;
+    sentryTurrets.length = 0;
+    helperPenguins.length = 0;
+    teslaTowers.length = 0;
+    activeDomeShields.length = 0;
+    quarantineLockdownArenas.length = 0;
+    resupplyDropPods.length = 0;
+    linuxTerminalStations.length = 0;
+    pickups.length = 0;
+    if (player) {
+      player.holdingStratagem = null;
+    }
     this.antennas.length = 0;
     this.sectorCompletedNotified = false;
 
