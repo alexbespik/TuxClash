@@ -10,7 +10,9 @@ const STATE = {
   PLAYING: 1,
   UPGRADE: 2,
   GAMEOVER: 3,
-  VICTORY: 4
+  VICTORY: 4,
+  PAUSED: 5,
+  TERMINAL: 6
 };
 
 let gameState = STATE.TITLE;
@@ -61,6 +63,7 @@ const proceduralPortals = [];
 const environmentalHazards = [];
 const quarantineLockdownArenas = [];
 const resupplyDropPods = [];
+const linuxTerminalStations = [];
 let dungeon = null;
 let isStratagemTerminalOpen = false;
 let currentTerminalSequence = [];
@@ -82,6 +85,7 @@ if (typeof window !== 'undefined') {
   window.environmentalHazards = environmentalHazards;
   window.quarantineLockdownArenas = quarantineLockdownArenas;
   window.resupplyDropPods = resupplyDropPods;
+  window.linuxTerminalStations = linuxTerminalStations;
 }
 
 // Weapon Arsenal Catalogue
@@ -545,6 +549,16 @@ class Player {
   }
 
   interact() {
+    // 0. Proximity check for LinuxTerminalStation (< 85px)
+    if (typeof linuxTerminalStations !== 'undefined') {
+      for (const station of linuxTerminalStations) {
+        if (!station.destroyed && Math.hypot(station.x - this.x, station.y - this.y) < 85) {
+          openLinuxTerminal(station);
+          return;
+        }
+      }
+    }
+
     // 1. Proximity check for GroundWeapon (< 75px)
     for (let i = groundWeapons.length - 1; i >= 0; i--) {
       const gw = groundWeapons[i];
@@ -4752,16 +4766,16 @@ class PaywallMortar {
 // --- ENEMY BULLETS / ATTACKS ---
 const enemyProjectiles = [];
 class EnemyProjectile {
-  constructor(x, y, vx, vy, label = "ERR", isHoming = false, damage = 26) {
+  constructor(x, y, vx, vy, label = "ERR", isHoming = false, damage = 32) {
     this.x = x;
     this.y = y;
     this.vx = vx;
     this.vy = vy;
-    this.radius = 9;
+    this.radius = 12;
     this.label = label;
     this.lifetime = 4.5;
     this.isHoming = isHoming;
-    this.homeTimer = 2.0;
+    this.homeTimer = 1.6;
     this.damage = damage;
   }
 
@@ -4797,7 +4811,7 @@ class EnemyProjectile {
     for (const sentry of sentryTurrets) {
       const sDist = Math.hypot(sentry.x - this.x, sentry.y - this.y);
       if (sDist < this.radius + sentry.radius) {
-        sentry.takeDamage(this.damage || 26);
+        sentry.takeDamage(this.damage || 32);
         this.destroy();
         return false;
       }
@@ -4808,7 +4822,7 @@ class EnemyProjectile {
       if (target.isFriendlyDefenseTarget && target.activated && !target.completed && !target.destroyed) {
         const d = Math.hypot(target.x - this.x, target.y - this.y);
         if (d < this.radius + target.radius) {
-          target.takeDamage(this.damage || 26, "HOSTILE_PROJECTILE");
+          target.takeDamage(this.damage || 32, "HOSTILE_PROJECTILE");
           this.destroy();
           return false;
         }
@@ -4823,7 +4837,7 @@ class EnemyProjectile {
         this.destroy();
         return false;
       }
-      player.takeDamage(this.damage || 26, `PROPRIETARY ${this.label}`, this.vx, this.vy);
+      player.takeDamage(this.damage || 32, `PROPRIETARY ${this.label}`, this.vx, this.vy);
       return false;
     }
     return this.lifetime > 0;
@@ -4838,21 +4852,35 @@ class EnemyProjectile {
   draw(ctx) {
     ctx.save();
     let col = "#ef4444";
-    if (this.label === "DRM") col = "#f59e0b";
-    else if (this.label === "PING") col = "#06b6d4";
-    else if (this.label === "POD") col = "#38bdf8";
-    else if (this.label === "PAGE_FAULT") col = "#3b82f6";
-    else if (this.label.length >= 3 && ["AGI", "SLOP", "10X", "SYNERGY", "HALLUCINATE"].includes(this.label)) col = "#d946ef";
+    let glow = "rgba(239, 68, 68, 0.4)";
+    if (this.label === "DRM") { col = "#f59e0b"; glow = "rgba(245, 158, 11, 0.4)"; }
+    else if (this.label === "PING") { col = "#06b6d4"; glow = "rgba(6, 182, 212, 0.4)"; }
+    else if (this.label === "POD") { col = "#38bdf8"; glow = "rgba(56, 189, 248, 0.4)"; }
+    else if (this.label === "PAGE_FAULT") { col = "#3b82f6"; glow = "rgba(59, 130, 246, 0.4)"; }
+    else if (this.label.length >= 3 && ["AGI", "SLOP", "10X", "SYNERGY", "HALLUCINATE"].includes(this.label)) { col = "#d946ef"; glow = "rgba(217, 70, 239, 0.4)"; }
 
+    // Outer glow aura (weight & presence)
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius + 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Solid core
     ctx.fillStyle = col;
     ctx.beginPath();
     ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
     ctx.fill();
 
+    // White hot center
     ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 8px monospace";
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, Math.max(3, this.radius * 0.45), 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 8.5px monospace";
     ctx.textAlign = "center";
-    ctx.fillText(this.label, this.x, this.y + 3);
+    ctx.fillText((this.label || '').substring(0, 5), this.x, this.y + 3);
     ctx.restore();
   }
 }
@@ -4871,6 +4899,9 @@ class EnemyBase {
     this.burnTimer = 0;
     this.corrodedTimer = 0;
     this.shockTimer = 0;
+    this.isVulnerable = false;
+    this.vulnerableTimer = 0;
+    this.vulnerableMultiplier = 2.5;
     this.meleeCooldown = 0;
     this.meleeDamage = 28;
     this.targetMeleeCooldown = 0;
@@ -4892,9 +4923,16 @@ class EnemyBase {
     if (this.corrodedTimer > 0) {
       amount *= 1.5;
     }
+
+    if (this.isVulnerable) {
+      amount *= (this.vulnerableMultiplier || 2.5);
+      addFloatingText(this.x + (Math.random() - 0.5) * 30, this.y - this.radius - 20, `CRIT! -${Math.round(amount)}`, "#facc15", 22);
+      if (typeof addScreenShake === 'function') addScreenShake(6);
+    }
+
     this.hp -= amount;
     if (Math.random() < 0.3) {
-      const dmgColor = this.corrodedTimer > 0 ? "#4ade80" : "#f97316";
+      const dmgColor = this.isVulnerable ? "#facc15" : (this.corrodedTimer > 0 ? "#4ade80" : "#f97316");
       addFloatingText(this.x + (Math.random() - 0.5) * 30, this.y - 15, `-${Math.round(amount)}`, dmgColor, 14);
     }
 
@@ -5000,25 +5038,6 @@ class EnemyBase {
     if (this.isBoss) {
       try {
         if (window.bossDirector) window.bossDirector.bossTiersDefeated++;
-
-        const currentTier = (dungeon && dungeon.sectorNum) ? dungeon.sectorNum : 1;
-        const nextTier = currentTier + 1;
-        const harderBiomes = ["THERMAL_FOUNDRY", "CRYO_GLACIER", "TOXIC_HEAP", "WALLED_GARDEN", "QUANTUM_VOID"];
-        const nextBiomeKey = harderBiomes[Math.min(harderBiomes.length - 1, nextTier - 1)] || "QUANTUM_VOID";
-        const objectivePool = ["DEFEND_SERVERS", "ATTACK_FORTRESS", "SETUP_UPLINK", "ELITE_BOUNTY"];
-        const nextObj = objectivePool[Math.floor(Math.random() * objectivePool.length)];
-
-        // Drop Portal to harder sector at detonation site with safety distance and arming delay
-        const portalHarder = new ProceduralPortal(this.x - 75, this.y, nextBiomeKey, nextObj, nextTier);
-        portalHarder.label = `TIER ${nextTier} ADVANCE`;
-        portalHarder.armTimer = 1.5;
-        proceduralPortals.push(portalHarder);
-
-        // Drop Secret Treasure Vault portal right beside it
-        const portalTreasure = new ProceduralPortal(this.x + 75, this.y, "TREASURE_VAULT", "TREASURE_REWARD", nextTier);
-        portalTreasure.label = "TREASURE VAULT";
-        portalTreasure.armTimer = 1.5;
-        proceduralPortals.push(portalTreasure);
 
         // Play boss-specific defeat voice clip (Miserable whining corporate defeat voices!)
         const bossLbl = (this.label || '').toUpperCase();
@@ -5263,10 +5282,8 @@ class EnemyBSOD extends EnemyBase {
   }
 
   die() {
-    for (let i = 0; i < 4; i++) {
-      const a = (Math.PI / 2) * i;
-      const spd = 270;
-      enemyProjectiles.push(new EnemyProjectile(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, "PAGE_FAULT"));
+    for (let i = 0; i < 8; i++) {
+      particles.push(new SparkParticle(this.x, this.y, (Math.random() - 0.5) * 100, (Math.random() - 0.5) * 100, "#38bdf8"));
     }
     super.die();
   }
@@ -5424,27 +5441,20 @@ class EnemyDRM extends EnemyBase {
     this.shootTimer -= dt;
     if (this.shootTimer <= 0) {
       this.shootTimer = 1.9;
-      if (dist < 650 && (!dungeon || dungeon.hasLineOfSight(this.x, this.y, tgtX, tgtY))) {
-        const baseAngle = (target === player && typeof calculateLeadAngle === 'function')
-          ? calculateLeadAngle(this.x, this.y, player.x, player.y, player.vx, player.vy, 350, 0.75)
+        const fireAngle = (target === player && typeof calculateLeadAngle === 'function')
+          ? calculateLeadAngle(this.x, this.y, player.x, player.y, player.vx, player.vy, 280, 0.6)
           : Math.atan2(dy, dx);
-        const count = 3;
-        const spread = 0.28;
-        for (let i = 0; i < count; i++) {
-          const a = baseAngle + (i - (count - 1) / 2) * spread;
-          const spd = 350;
-          enemyProjectiles.push(new EnemyProjectile(
-            this.x + Math.cos(a) * 24,
-            this.y + Math.sin(a) * 24,
-            Math.cos(a) * spd,
-            Math.sin(a) * spd,
-            "DRM",
-            false,
-            28
-          ));
-        }
+        const spd = 280;
+        enemyProjectiles.push(new EnemyProjectile(
+          this.x + Math.cos(fireAngle) * 24,
+          this.y + Math.sin(fireAngle) * 24,
+          Math.cos(fireAngle) * spd,
+          Math.sin(fireAngle) * spd,
+          "DRM",
+          false,
+          34
+        ));
         window.soundEngine.playNoiseBurst(0.12, 0.25, 2200, 600);
-      }
     }
 
     if (this.burnTimer > 0) {
@@ -5819,17 +5829,18 @@ class EnemyAISlop extends EnemyBase {
       this.shootTimer = 2.1;
       const dist = Math.hypot(player.x - this.x, player.y - this.y);
       if (dist < 650 && (!dungeon || dungeon.hasLineOfSight(this.x, this.y, player.x, player.y))) {
-        const count = 8;
-        const baseAngle = gameTime * 3;
-        for (let i = 0; i < count; i++) {
-          const a = baseAngle + (Math.PI * 2 / count) * i;
-          const spd = 270;
+        const baseAngle = Math.atan2(player.y - this.y, player.x - this.x);
+        for (let i = 0; i < 2; i++) {
+          const a = baseAngle + (i === 0 ? -0.16 : 0.16);
+          const spd = 220;
           enemyProjectiles.push(new EnemyProjectile(
             this.x,
             this.y,
             Math.cos(a) * spd,
             Math.sin(a) * spd,
-            this.buzzwords[i % this.buzzwords.length]
+            this.buzzwords[i % this.buzzwords.length],
+            false,
+            34
           ));
         }
         window.soundEngine.playNoiseBurst(0.12, 0.25, 1200, 2200);
@@ -5915,21 +5926,17 @@ class EnemyPatentTroll extends EnemyBase {
       if (dist < 650 && (!dungeon || dungeon.hasLineOfSight(this.x, this.y, player.x, player.y))) {
         floorHazards.push(new PatentTrapWeb(player.x + (Math.random() - 0.5) * 40, player.y + (Math.random() - 0.5) * 40));
         const baseAngle = Math.atan2(dy, dx);
-        for (let i = 0; i < 3; i++) {
-          setTimeout(() => {
-            if (this.hp > 0) {
-              const spd = 380;
-              enemyProjectiles.push(new EnemyProjectile(
-                this.x,
-                this.y,
-                Math.cos(baseAngle) * spd,
-                Math.sin(baseAngle) * spd,
-                "DMCA"
-              ));
-              window.soundEngine.playNoiseBurst(0.06, 0.18, 3000, 1000);
-            }
-          }, i * 90);
-        }
+        const spd = 280;
+        enemyProjectiles.push(new EnemyProjectile(
+          this.x,
+          this.y,
+          Math.cos(baseAngle) * spd,
+          Math.sin(baseAngle) * spd,
+          "DMCA",
+          false,
+          36
+        ));
+        window.soundEngine.playNoiseBurst(0.08, 0.22, 2800, 900);
       }
     }
     return this.updateBase(dt);
@@ -6392,6 +6399,9 @@ class EnemyRiotShield extends EnemyBase {
         for (let i = 0; i < 4; i++) {
           particles.push(new SparkParticle(this.x + Math.cos(this.facingAngle) * 26, this.y + Math.sin(this.facingAngle) * 26, (Math.random() - 0.5) * 80, (Math.random() - 0.5) * 80, "#06b6d4"));
         }
+      } else if (angleDiff > 2.0) {
+        amount *= 2.0;
+        addFloatingText(this.x, this.y - 25, `BACKSTAB! ${Math.round(amount)}`, "#facc15", 18);
       }
     }
     super.takeDamage(amount, source);
@@ -6406,24 +6416,19 @@ class EnemyRiotShield extends EnemyBase {
     this.vy += Math.sin(this.facingAngle) * this.speed * dt;
 
     this.burstTimer += dt;
-    if (this.burstTimer >= 2.2) {
+    if (this.burstTimer >= 2.5) {
       this.burstTimer = 0;
       if (!dungeon || dungeon.hasLineOfSight(this.x, this.y, player.x, player.y)) {
-        const spd = 420;
-        for (let i = -1; i <= 1; i++) {
-          const a = this.facingAngle + i * 0.14;
-          enemyProjectiles.push(new EnemyProjectile(
-            this.x + Math.cos(this.facingAngle) * 32,
-            this.y + Math.sin(this.facingAngle) * 32,
-            Math.cos(a) * spd,
-            Math.sin(a) * spd,
-            5,
-            16,
-            "#f59e0b",
-            1.6,
-            "RIOT_BURST"
-          ));
-        }
+        const spd = 320;
+        enemyProjectiles.push(new EnemyProjectile(
+          this.x + Math.cos(this.facingAngle) * 32,
+          this.y + Math.sin(this.facingAngle) * 32,
+          Math.cos(this.facingAngle) * spd,
+          Math.sin(this.facingAngle) * spd,
+          "RIOT",
+          false,
+          32
+        ));
       }
     }
 
@@ -7835,11 +7840,12 @@ class GroundWeapon {
 }
 
 class WeaponChest {
-  constructor(x, y) {
+  constructor(x, y, presetWeapon = null) {
     this.x = x;
     this.y = y;
     this.opened = false;
     this.radius = 30;
+    this.presetWeapon = presetWeapon;
   }
 
   open() {
@@ -7850,15 +7856,20 @@ class WeaponChest {
     for (let i = 0; i < 18; i++) {
       particles.push(new SparkParticle(this.x, this.y, (Math.random() - 0.5) * 220, (Math.random() - 0.5) * 220, "#fbbf24"));
     }
-    // Drop random weapon not currently held
-    const available = WEAPON_CATALOG.filter(w => w.id !== player.heldWeapons[0].id && w.id !== player.heldWeapons[1].id);
-    const chosen = available[Math.floor(Math.random() * available.length)] || WEAPON_CATALOG[2];
+    // Drop preset weapon or random weapon not currently held
+    let chosen = this.presetWeapon;
+    if (!chosen) {
+      const held0Id = (player && player.heldWeapons && player.heldWeapons[0]) ? player.heldWeapons[0].id : -1;
+      const held1Id = (player && player.heldWeapons && player.heldWeapons[1]) ? player.heldWeapons[1].id : -1;
+      const available = WEAPON_CATALOG.filter(w => w.id !== held0Id && w.id !== held1Id);
+      chosen = available[Math.floor(Math.random() * available.length)] || WEAPON_CATALOG[2];
+    }
     groundWeapons.push(new GroundWeapon(this.x, this.y + 22, chosen));
 
     pickups.push(new Pickup(this.x - 25, this.y, 'xp'));
     pickups.push(new Pickup(this.x + 25, this.y, 'xp'));
     pickups.push(new Pickup(this.x, this.y - 25, Math.random() < 0.5 ? 'hp' : 'fuel'));
-    addFloatingText(this.x, this.y - 45, "CACHE UNLOCKED!", "#fbbf24", 22);
+    addFloatingText(this.x, this.y - 45, `CACHE: ${chosen.name}!`, "#fbbf24", 20);
   }
 
   draw(ctx) {
@@ -10485,7 +10496,7 @@ class ObjectiveManager {
     }
   }
 
-  setupActObjectives(act) {
+  setupActObjectives(act, bossNameOverride = null) {
     this.tier = act.act;
     this.biome = (this.dungeon && this.dungeon.currentBiome) ? this.dungeon.currentBiome : null;
     this.objectiveType = act.objectiveType;
@@ -10498,6 +10509,8 @@ class ObjectiveManager {
       "PURGE_BOSS": "Slay Ring-0 Hypervisor Core"
     }[act.objectiveType] || "Complete Primary Directive";
 
+    const targetBoss = bossNameOverride || act.bossName || "Act Boss";
+
     this.objectives = [
       {
         id: act.objectiveType,
@@ -10507,8 +10520,15 @@ class ObjectiveManager {
         done: false
       },
       {
+        id: "TERMINAL_OVERRIDE",
+        text: `Bash Console: ${act.terminalCmd || 'sudo systemctl stop cartel-drm'}`,
+        current: 0,
+        required: 1,
+        done: false
+      },
+      {
         id: "PURGE_BOSS",
-        text: `Defeat ${act.bossName}`,
+        text: `Defeat ${targetBoss}`,
         current: 0,
         required: 1,
         done: false
@@ -11180,6 +11200,531 @@ class ReinforcementAntenna {
 }
 
 // ============================================================================
+// --- RETRO CRT LINUX BASH TERMINAL STATION & OBJECTIVE ENGINE ---
+// ============================================================================
+
+class LinuxTerminalStation {
+  constructor(x, y, requiredCmd = "sudo systemctl stop cartel-drm", targetService = "cartel-drm.service", description = "Purge proprietary DRM daemon holding server cluster hostage") {
+    this.x = x;
+    this.y = y;
+    this.radius = 42;
+    this.requiredCmd = requiredCmd;
+    this.targetService = targetService;
+    this.description = description;
+    this.completed = false;
+    this.destroyed = false;
+    this.pulse = 0;
+    this.blinkTimer = 0;
+    this.ledState = true;
+  }
+
+  update(dt) {
+    this.pulse += dt * 3.0;
+    this.blinkTimer += dt;
+    if (this.blinkTimer > 0.45) {
+      this.blinkTimer = 0;
+      this.ledState = !this.ledState;
+    }
+    return true;
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    const isNear = player && Math.hypot(player.x - this.x, player.y - this.y) < 85;
+
+    // Terminal workstation shadow
+    ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
+    ctx.beginPath();
+    ctx.ellipse(0, 16, 34, 14, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Chassis Base
+    ctx.fillStyle = "#1e293b";
+    ctx.fillRect(-24, -10, 48, 28);
+    ctx.strokeStyle = "#0f172a";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(-24, -10, 48, 28);
+
+    // CRT Monitor Bezel (Chunky retro workstation)
+    ctx.fillStyle = "#334155";
+    ctx.fillRect(-20, -38, 40, 30);
+    ctx.strokeStyle = "#475569";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(-20, -38, 40, 30);
+
+    // Glowing Phosphor Screen
+    const screenColor = this.completed ? "#14532d" : "#022c22";
+    const textColor = this.completed ? "#86efac" : "#22c55e";
+    ctx.fillStyle = screenColor;
+    ctx.fillRect(-16, -34, 32, 22);
+
+    // Screen scanline glow
+    ctx.fillStyle = textColor;
+    ctx.font = "bold 6.5px monospace";
+    ctx.textAlign = "left";
+    ctx.fillText(">root", -14, -26);
+    if (this.ledState) {
+      ctx.fillRect(-14, -21, 5, 2);
+    }
+    if (this.completed) {
+      ctx.fillStyle = "#facc15";
+      ctx.fillText("GPLv3", -14, -16);
+    }
+
+    // Keyboard shelf & Keyboard keys
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(-18, 6, 36, 10);
+    ctx.fillStyle = "#64748b";
+    for (let k = 0; k < 4; k++) {
+      ctx.fillRect(-14 + k * 7, 8, 5, 6);
+    }
+
+    // Status LED
+    ctx.fillStyle = this.completed ? "#22c55e" : (this.ledState ? "#ef4444" : "#7f1d1d");
+    ctx.beginPath();
+    ctx.arc(14, -12, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Proximity Interaction Prompt
+    if (isNear && !isStratagemTerminalOpen && gameState === STATE.PLAYING) {
+      const bob = Math.sin(this.pulse) * 4;
+      ctx.save();
+      ctx.fillStyle = "rgba(10, 15, 29, 0.94)";
+      ctx.strokeStyle = "#22c55e";
+      ctx.lineWidth = 1.5;
+      const bw = 155;
+      const bh = 26;
+      ctx.fillRect(-bw / 2, -66 + bob, bw, bh);
+      ctx.strokeRect(-bw / 2, -66 + bob, bw, bh);
+
+      ctx.fillStyle = "#facc15";
+      ctx.font = "bold 11px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("[E] BASH CONSOLE", 0, -49 + bob);
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+}
+
+// --- LINUX TERMINAL CONTROLLER ---
+let activeTerminalStation = null;
+const terminalHistory = [];
+let terminalHistoryIndex = -1;
+
+function openLinuxTerminal(station) {
+  if (gameState !== STATE.PLAYING && gameState !== STATE.PAUSED) return;
+  activeTerminalStation = station || (linuxTerminalStations[0] || null);
+  gameState = STATE.TERMINAL;
+
+  const modal = document.getElementById('linuxTerminalModal');
+  const targetInfo = document.getElementById('terminalTargetInfo');
+  const input = document.getElementById('terminalInput');
+  const log = document.getElementById('terminalScreenLog');
+
+  if (targetInfo && activeTerminalStation) {
+    targetInfo.innerText = `TARGET: ${activeTerminalStation.targetService || 'kernel.service'}`;
+  }
+
+  if (log) {
+    const act = (dungeon && CAMPAIGN_ACTS) ? CAMPAIGN_ACTS[dungeon.currentActIndex || 0] : null;
+    const actTitle = act ? act.title : "ACT I";
+    const reqCmd = activeTerminalStation ? activeTerminalStation.requiredCmd : "sudo systemctl stop cartel-drm";
+    const desc = activeTerminalStation ? activeTerminalStation.description : "Purge proprietary service";
+
+    log.innerHTML = `
+      <div class="terminal-log-row terminal-log-info">Linux 6.12.8-arch1-1-tux (x86_64) • Root Purge Terminal Console</div>
+      <div class="terminal-log-row terminal-log-info">Session: ${actTitle} • Mainframe node active</div>
+      <div class="terminal-log-row" style="color: #64748b;">----------------------------------------------------------------</div>
+      <div class="terminal-log-row terminal-log-warn">MISSION OBJECTIVE DIRECTIVE:</div>
+      <div class="terminal-log-row terminal-log-warn">» ${desc}</div>
+      <div class="terminal-log-row terminal-log-cmd">» REQUIRED: '${reqCmd}'</div>
+      <div class="terminal-log-row" style="color: #64748b;">----------------------------------------------------------------</div>
+      <div class="terminal-log-row" style="color: #94a3b8;">TIP: Secret root bash commands grant tactical powerups! Type 'help' for manual.</div>
+      <div class="terminal-log-row terminal-log-success">[READY] Awaiting kernel instructions...</div>
+    `;
+    log.scrollTop = log.scrollHeight;
+  }
+
+  if (modal) modal.style.display = 'flex';
+  if (input) {
+    input.value = '';
+    setTimeout(() => input.focus(), 60);
+  }
+
+  if (window.soundEngine && typeof window.soundEngine.playStratagemBeep === 'function') {
+    window.soundEngine.playStratagemBeep(true);
+  }
+}
+
+function closeLinuxTerminal() {
+  const modal = document.getElementById('linuxTerminalModal');
+  if (modal) modal.style.display = 'none';
+  if (gameState === STATE.TERMINAL) {
+    gameState = STATE.PLAYING;
+    lastTimestamp = performance.now();
+  }
+}
+
+function executeTerminalCommand(rawCmd) {
+  const cmd = (rawCmd || '').trim();
+  if (!cmd) return;
+
+  const log = document.getElementById('terminalScreenLog');
+  const input = document.getElementById('terminalInput');
+
+  // Push to history
+  terminalHistory.push(cmd);
+  terminalHistoryIndex = terminalHistory.length;
+
+  const appendLog = (html) => {
+    if (log) {
+      log.innerHTML += html;
+      log.scrollTop = log.scrollHeight;
+    }
+  };
+
+  appendLog(`<div class="terminal-log-row"><span class="terminal-log-cmd">root@archlinux:~# ${cmd}</span></div>`);
+  if (input) input.value = '';
+
+  if (window.soundEngine && typeof window.soundEngine.playNoiseBurst === 'function') {
+    window.soundEngine.playNoiseBurst(0.04, 0.15, 1800, 2400);
+  }
+
+  const lower = cmd.toLowerCase().replace(/\s+/g, ' ');
+
+  // 1. Check Act Objective Command
+  if (activeTerminalStation && !activeTerminalStation.completed) {
+    const req = (activeTerminalStation.requiredCmd || '').toLowerCase();
+    const reqClean = req.replace('sudo ', '').replace('--force', '').trim();
+    if (lower === req || lower.includes(reqClean) || lower.includes("stop cartel-drm") || lower.includes("vent-reactor") || lower.includes("chmod 777") || lower.includes("iptables -f") || lower.includes("gpl_override") || lower.includes("reboot --gpl")) {
+      activeTerminalStation.completed = true;
+      appendLog(`
+        <div class="terminal-log-row terminal-log-success">[OK] Daemon intercepted and terminated successfully.</div>
+        <div class="terminal-log-row terminal-log-success">[OK] Proprietary lock bypassed. Kernel node liberated under GPLv3!</div>
+        <div class="terminal-log-row terminal-log-warn">⭐ OBJECTIVE ACCOMPLISHED: BASH CONSOLE OVERRIDDEN! ⭐</div>
+      `);
+
+      if (dungeon && dungeon.objectiveManager) {
+        dungeon.objectiveManager.progress("DEFEND_SERVERS", 1);
+        dungeon.objectiveManager.progress("PURGE_REACTOR", 1);
+        dungeon.objectiveManager.progress("PRISON_BREAK", 1);
+        dungeon.objectiveManager.progress("ATTACK_FORTRESS", 1);
+        dungeon.objectiveManager.progress("TERMINAL_OVERRIDE", 1);
+      }
+
+      if (player) {
+        addFloatingText(player.x, player.y - 70, "⭐ BASH CONSOLE OVERRIDDEN! +250 XP ⭐", "#22c55e", 24);
+        player.addXp(250);
+        addScreenShake(12);
+      }
+      if (window.soundEngine && window.soundEngine.playObjectiveComplete) {
+        window.soundEngine.playObjectiveComplete();
+      }
+      return;
+    }
+  }
+
+  // 2. Secret Powerup Commands
+  // (A) Root Godmode: sudo su / sudo !!
+  if (lower === "sudo su" || lower === "sudo !!" || lower === "su" || lower === "sudo su -") {
+    if (player) {
+      player.invulnerableTimer = 12.0;
+      player.isRootMode = true;
+      player.rootDuration = 12.0;
+      addFloatingText(player.x, player.y - 80, "ROOT ACCESS: 12s GODMODE!", "#facc15", 26);
+      addScreenShake(14);
+      screenFlash = 0.8;
+    }
+    appendLog(`
+      <div class="terminal-log-row terminal-log-success">[ELEVATED] UID=0(root) GID=0(root) groups=0(root)</div>
+      <div class="terminal-log-row terminal-log-warn">⚡ ROOT GODMODE ACTIVATED: 12s Invulnerability, Golden Aura, +50% Speed & 2x Fire Rate!</div>
+    `);
+    if (window.soundEngine && window.soundEngine.playRootActivate) window.soundEngine.playRootActivate();
+    return;
+  }
+
+  // (B) Screen Wipe EMP: sudo rm -rf /cartel/drm / rm -rf /* --no-preserve-root
+  if (lower.includes("rm -rf") || lower === "rm -rf /*" || lower === "rm -rf /") {
+    enemyProjectiles.length = 0;
+    for (const enemy of enemies) {
+      enemy.takeDamage(450, "RECURSIVE_PURGE_EMP");
+      if (typeof enemy.shock === 'function') enemy.shock(4.0);
+    }
+    addScreenShake(20);
+    screenFlash = 1.0;
+    appendLog(`
+      <div class="terminal-log-row terminal-log-err">[RECURSIVE PURGE] rm: removing all proprietary binaries across /cartel...</div>
+      <div class="terminal-log-row terminal-log-success">[CLEARED] Vaporized all hostile projectiles & dealt 450 EMP shock damage to all enemies!</div>
+    `);
+    if (window.soundEngine && typeof window.soundEngine.playNoiseBurst === 'function') {
+      window.soundEngine.playNoiseBurst(0.4, 0.6, 2600, 150);
+    }
+    return;
+  }
+
+  // (C) Fork Bomb: :(){ :|:& };: / forkbomb
+  if (lower.includes(":(){ :|:& };:") || lower === "forkbomb" || lower.includes("fork bomb")) {
+    for (let i = 0; i < 4; i++) {
+      const px = player ? player.x + (Math.random() - 0.5) * 120 : 512;
+      const py = player ? player.y + (Math.random() - 0.5) * 120 : 512;
+      const hp = new HelperPenguin(px, py);
+      hp.hp = 350;
+      helperPenguins.push(hp);
+    }
+    appendLog(`
+      <div class="terminal-log-row terminal-log-warn">[FORK BOMB] Parent process 1337 duplicating child processes...</div>
+      <div class="terminal-log-row terminal-log-success">🐧 Spawned 4 Allied Hacker Penguin Commandos with Indomitus Bolters!</div>
+    `);
+    if (player) addFloatingText(player.x, player.y - 70, "FORK BOMB: 4 HACKER PENGUINS SPAWNED!", "#38bdf8", 22);
+    if (window.soundEngine && window.soundEngine.playPickup) window.soundEngine.playPickup();
+    return;
+  }
+
+  // (D) Kill All Projectiles: kill -9 -1 / killall
+  if (lower.includes("kill -9") || lower.includes("killall")) {
+    const wiped = enemyProjectiles.length;
+    enemyProjectiles.length = 0;
+    for (const enemy of enemies) {
+      if (typeof enemy.shock === 'function') enemy.shock(3.0);
+    }
+    if (player) {
+      for (let i = 0; i < player.weaponCooldowns.length; i++) player.weaponCooldowns[i] = 0;
+      addFloatingText(player.x, player.y - 60, "SIGKILL: ALL BULLETS WIPED!", "#38bdf8", 20);
+    }
+    appendLog(`
+      <div class="terminal-log-row terminal-log-success">[SIGKILL] Dispatched SIGKILL to all active threads.</div>
+      <div class="terminal-log-row terminal-log-info">Vaporized ${wiped} hostile projectiles in flight. Weapon cooldowns reset!</div>
+    `);
+    return;
+  }
+
+  // (E) Hyper-Overclock: cat /dev/urandom > /dev/overclock / overclock
+  if (lower.includes("overclock") || lower.includes("/dev/urandom")) {
+    if (player) {
+      player.fuel = player.maxFuel;
+      player.overclockTimer = 15.0;
+      addFloatingText(player.x, player.y - 60, "HYPER-OVERCLOCK: +75% FIRE RATE!", "#f97316", 22);
+      addScreenShake(8);
+    }
+    appendLog(`
+      <div class="terminal-log-row terminal-log-warn">[OVERCLOCK] Feeding high-entropy stream to hardware regulators...</div>
+      <div class="terminal-log-row terminal-log-success">🔥 Hyper-Overclock engaged! +75% Fire Rate & Infinite Fuel for 15s!</div>
+    `);
+    return;
+  }
+
+  // (F) Memory Recovery & Heal: free -m / top / htop
+  if (lower === "free -m" || lower === "free -h" || lower === "free" || lower === "top" || lower === "htop") {
+    if (player) {
+      player.hp = player.maxHp;
+      player.shield = player.maxShield;
+      addFloatingText(player.x, player.y - 60, "MEMORY DEFRAG: FULL HP & SHIELD RESTORED!", "#22c55e", 22);
+    }
+    appendLog(`
+      <div class="terminal-log-row terminal-log-info">              total        used        free      shared  buff/cache   available</div>
+      <div class="terminal-log-row terminal-log-info">Mem:          32768         512       32256           0           0       32256</div>
+      <div class="terminal-log-row terminal-log-success">💚 Cache defragmented! Tux restored to 100% HP and 100% Tactical Shield!</div>
+    `);
+    return;
+  }
+
+  // (G) Ping Super Destroyer: ping -c 4 super-destroyer / ping
+  if (lower.includes("ping")) {
+    const px = player ? player.x + 40 : 512;
+    const py = player ? player.y + 40 : 512;
+    resupplyDropPods.push(new ResupplyDropPod(px, py));
+    appendLog(`
+      <div class="terminal-log-row terminal-log-info">PING super-destroyer.fleet (192.168.0.1) 56(84) bytes of data.</div>
+      <div class="terminal-log-row terminal-log-info">64 bytes from 192.168.0.1: icmp_seq=1 ttl=64 time=0.038 ms</div>
+      <div class="terminal-log-row terminal-log-success">📦 Orbital Resupply Drop Pod dispatched to Tux's exact coordinates!</div>
+    `);
+    if (player) addFloatingText(player.x, player.y - 70, "RESUPPLY POD INBOUND!", "#38bdf8", 22);
+    return;
+  }
+
+  // (H) Standard Bash Commands
+  if (lower === "help" || lower === "man") {
+    appendLog(`
+      <div class="terminal-log-row terminal-log-warn">AVAILABLE TERMINAL COMMANDS:</div>
+      <div class="terminal-log-row">  • <span class="terminal-log-cmd">${activeTerminalStation ? activeTerminalStation.requiredCmd : 'sudo systemctl stop cartel-drm'}</span> : Complete act objective</div>
+      <div class="terminal-log-row">  • <span class="terminal-log-cmd">sudo su</span> : Elevated Root Godmode (12s invulnerability)</div>
+      <div class="terminal-log-row">  • <span class="terminal-log-cmd">sudo rm -rf /cartel/drm</span> : Super Nova EMP screen wipe</div>
+      <div class="terminal-log-row">  • <span class="terminal-log-cmd">:(){ :|:& };:</span> : Fork bomb allied hacker penguins</div>
+      <div class="terminal-log-row">  • <span class="terminal-log-cmd">kill -9 -1</span> : Vaporize all incoming projectiles</div>
+      <div class="terminal-log-row">  • <span class="terminal-log-cmd">free -m</span> : Instant HP & shield restoration</div>
+      <div class="terminal-log-row">  • <span class="terminal-log-cmd">cat /dev/urandom > /dev/overclock</span> : +75% weapon fire rate</div>
+      <div class="terminal-log-row">  • <span class="terminal-log-cmd">ping -c 4 super-destroyer</span> : Call orbital resupply pod</div>
+      <div class="terminal-log-row">  • <span class="terminal-log-cmd">clear</span> | <span class="terminal-log-cmd">exit</span> : Clear screen / Return to combat</div>
+    `);
+    return;
+  }
+
+  if (lower === "clear") {
+    if (log) log.innerHTML = '';
+    return;
+  }
+
+  if (lower === "exit" || lower === "quit") {
+    closeLinuxTerminal();
+    return;
+  }
+
+  if (lower === "uname -a" || lower === "uname") {
+    appendLog(`<div class="terminal-log-row terminal-log-info">Linux tux-super-destroyer 6.12.8-arch1-1-tux #1 SMP PREEMPT_DYNAMIC GNU/Linux</div>`);
+    return;
+  }
+
+  if (lower === "whoami") {
+    appendLog(`<div class="terminal-log-row terminal-log-success">root (Emancipator of Opensourcekind)</div>`);
+    return;
+  }
+
+  if (lower === "ls" || lower === "ls -la") {
+    appendLog(`
+      <div class="terminal-log-row terminal-log-info">drwxr-xr-x 4 root root  4096 /cartel/drm</div>
+      <div class="terminal-log-row terminal-log-info">-rwsr-xr-x 1 root root 98304 /usr/bin/gpl-flamethrower</div>
+      <div class="terminal-log-row terminal-log-info">-rw-r--r-- 1 root root  1337 /etc/systemd/system/${activeTerminalStation ? activeTerminalStation.targetService : 'cartel-drm.service'}</div>
+    `);
+    return;
+  }
+
+  // Fallback unrecognized command
+  appendLog(`
+    <div class="terminal-log-row terminal-log-err">bash: ${cmd}: command not found. Type 'help' for manual or '${activeTerminalStation ? activeTerminalStation.requiredCmd : 'sudo systemctl stop cartel-drm'}' for objective.</div>
+  `);
+}
+
+// Window bindings for Terminal Modal UI buttons
+window.terminalPasteObjective = function() {
+  const input = document.getElementById('terminalInput');
+  if (input && activeTerminalStation) {
+    input.value = activeTerminalStation.requiredCmd;
+    input.focus();
+  }
+};
+
+window.terminalQuickRun = function(cmd) {
+  executeTerminalCommand(cmd);
+};
+
+window.closeLinuxTerminal = closeLinuxTerminal;
+window.openLinuxTerminal = openLinuxTerminal;
+
+// ============================================================================
+// --- PAUSE SYSTEM CONTROLLER ---
+// ============================================================================
+
+function togglePause() {
+  if (gameState === STATE.PLAYING) {
+    pauseGame();
+  } else if (gameState === STATE.PAUSED) {
+    resumeGame();
+  } else if (gameState === STATE.TERMINAL) {
+    closeLinuxTerminal();
+  }
+}
+
+function pauseGame() {
+  if (gameState !== STATE.PLAYING) return;
+  gameState = STATE.PAUSED;
+
+  const modal = document.getElementById('pauseModal');
+  const titleEl = document.getElementById('pauseActTitle');
+  const objEl = document.getElementById('pauseActObjective');
+
+  const act = (dungeon && CAMPAIGN_ACTS) ? CAMPAIGN_ACTS[dungeon.currentActIndex || 0] : null;
+  if (titleEl) titleEl.innerText = act ? `${act.title}: ${act.subtitle}` : "ACT I: THE DRM CORRIDOR";
+  if (objEl) objEl.innerText = act ? act.desc : "Override Server Node & Slay Boss";
+
+  if (modal) modal.style.display = 'flex';
+  if (window.soundEngine && typeof window.soundEngine.playStratagemBeep === 'function') {
+    window.soundEngine.playStratagemBeep(false);
+  }
+}
+
+function resumeGame() {
+  if (gameState !== STATE.PAUSED) return;
+  const modal = document.getElementById('pauseModal');
+  if (modal) modal.style.display = 'none';
+  gameState = STATE.PLAYING;
+  lastTimestamp = performance.now();
+  if (window.soundEngine && typeof window.soundEngine.playStratagemBeep === 'function') {
+    window.soundEngine.playStratagemBeep(true);
+  }
+}
+
+function restartCurrentAct() {
+  const modal = document.getElementById('pauseModal');
+  if (modal) modal.style.display = 'none';
+  gameState = STATE.PLAYING;
+  if (dungeon) {
+    dungeon.startCampaignAct(dungeon.currentActIndex || 0);
+  } else {
+    resetGame();
+  }
+}
+
+function abortToTitle() {
+  const modal = document.getElementById('pauseModal');
+  if (modal) modal.style.display = 'none';
+  const termModal = document.getElementById('linuxTerminalModal');
+  if (termModal) termModal.style.display = 'none';
+  gameState = STATE.TITLE;
+  document.getElementById('titleScreen').style.display = 'flex';
+  if (window.soundEngine && window.soundEngine.stopMusic) window.soundEngine.stopMusic();
+}
+
+window.togglePause = togglePause;
+window.pauseGame = pauseGame;
+window.resumeGame = resumeGame;
+window.restartCurrentAct = restartCurrentAct;
+window.abortToTitle = abortToTitle;
+
+// Wire up pause modal buttons
+if (typeof document !== 'undefined') {
+  const resumeBtn = document.getElementById('pauseResumeBtn');
+  if (resumeBtn) resumeBtn.onclick = resumeGame;
+
+  const audioBtn = document.getElementById('pauseAudioToggleBtn');
+  if (audioBtn) {
+    audioBtn.onclick = () => {
+      if (window.soundEngine) {
+        window.soundEngine.isMuted = !window.soundEngine.isMuted;
+        audioBtn.innerText = window.soundEngine.isMuted ? "🔇 AUDIO: MUTED [CLICK TO UNMUTE]" : "🔊 AUDIO: ACTIVE [CLICK TO MUTE]";
+        if (window.soundEngine.isMuted) {
+          if (window.soundEngine.stopMusic) window.soundEngine.stopMusic();
+        } else {
+          if (window.soundEngine.startMusic) window.soundEngine.startMusic();
+        }
+      }
+    };
+  }
+
+  const restartBtn = document.getElementById('pauseRestartBtn');
+  if (restartBtn) restartBtn.onclick = restartCurrentAct;
+
+  const abortBtn = document.getElementById('pauseAbortBtn');
+  if (abortBtn) abortBtn.onclick = abortToTitle;
+
+  const termClose = document.getElementById('terminalCloseBtn');
+  if (termClose) termClose.onclick = closeLinuxTerminal;
+
+  const termForm = document.getElementById('terminalForm');
+  if (termForm) {
+    termForm.onsubmit = (e) => {
+      e.preventDefault();
+      const input = document.getElementById('terminalInput');
+      if (input) executeTerminalCommand(input.value);
+      return false;
+    };
+  }
+}
+
+// ============================================================================
 // --- 6-ACT EPISODIC CAMPAIGN PROGRESSION SYSTEM ---
 // ============================================================================
 const CAMPAIGN_ACTS = [
@@ -11187,9 +11732,12 @@ const CAMPAIGN_ACTS = [
     act: 1,
     title: "ACT I: THE DRM CORRIDOR",
     subtitle: "OPERATION EMERALD DAWN",
-    desc: "Override Server Node terminal [▲ ▼ ◀ ▶] • Hold perimeter ring • Slay Ballmer-Bot 9000",
+    desc: "Override Bash Console [E] • Execute 'sudo systemctl stop cartel-drm' • Slay Boss",
     biomeKey: "EMERALD_FRONTIER",
     objectiveType: "DEFEND_SERVERS",
+    terminalCmd: "sudo systemctl stop cartel-drm",
+    targetService: "cartel-drm.service",
+    terminalDesc: "Stop the proprietary DRM daemon and liberate the cluster node",
     bossId: "ballmer_bot",
     bossName: "BALLMER-BOT 9000",
     briefingVo: "Tux, this is John Helldiver from High Command! Infiltrate the server cluster node, input the override sequence, and hold the perimeter against corporate strike teams!",
@@ -11203,9 +11751,12 @@ const CAMPAIGN_ACTS = [
     act: 2,
     title: "ACT II: THE PATENT THICKET",
     subtitle: "OPERATION SILICON SMELTER",
-    desc: "Disengage superheated reactor valves [▲ ◀ ▼ ▶ ▲ ▼] • Slay Smelter Titan • Beware hostile sentries",
+    desc: "Disengage superheated reactor valves • Execute 'sudo /sbin/vent-reactor --force' • Slay Smelter Titan",
     biomeKey: "THERMAL_FOUNDRY",
     objectiveType: "PURGE_REACTOR",
+    terminalCmd: "sudo /sbin/vent-reactor --force",
+    targetService: "silicon-smelter.valve",
+    terminalDesc: "Vent superheated patent reactor manifold to stabilize core",
     bossId: "smelter_titan",
     bossName: "SMELTER TITAN",
     briefingVo: "General Barsh to frontline vanguard! You have entered the Overclock Silicon Smelter. Vent the reactor manifold and destroy the Smelter Titan!",
@@ -11219,9 +11770,12 @@ const CAMPAIGN_ACTS = [
     act: 3,
     title: "ACT III: COLD ARCHIVE GULAG",
     subtitle: "OPERATION ARCTIC LIBERATION",
-    desc: "Hack detention cages [▲ ◀ ▶ ▼ ▲] • Liberate contributor penguins • Terminate Cryo-Daemon",
+    desc: "Hack detention cages • Execute 'sudo chmod 777 /dev/penguins/*' • Terminate Cryo-Daemon",
     biomeKey: "CRYO_GLACIER",
     objectiveType: "PRISON_BREAK",
+    terminalCmd: "sudo chmod 777 /dev/penguins/*",
+    targetService: "cryo-prison.lock",
+    terminalDesc: "Decouple cryogenic locks holding contributor penguins",
     bossId: "cryo_daemon",
     bossName: "CRYO-DAEMON v2",
     briefingVo: "This is Linus Torvalds, Emperor of Opensourcekind. Our contributors are locked in corporate cryogenic detention cells. Sideload their freedom, clean up the codebase, and terminate the Cryo-Daemon.",
@@ -11235,9 +11789,12 @@ const CAMPAIGN_ACTS = [
     act: 4,
     title: "ACT IV: WALLED GARDEN SIEGE",
     subtitle: "OPERATION CITADEL BREACH",
-    desc: "Breach dual shield pylons • Demolish citadel core • Overthrow Patent Troll Sovereign",
+    desc: "Breach dual shield pylons • Execute 'sudo iptables -F' • Overthrow Patent Troll Sovereign",
     biomeKey: "WALLED_GARDEN",
     objectiveType: "ATTACK_FORTRESS",
+    terminalCmd: "sudo iptables -F",
+    targetService: "citadel-firewall.rule",
+    terminalDesc: "Flush corporate 30% tax packet inspection rules",
     bossId: "patent_troll",
     bossName: "PATENT TROLL SOVEREIGN",
     briefingVo: "Tux, General Barsh here! This is the thirty percent developer tax citadel! Automated hostile sentry turrets guard the core. Obliterate their shield pylons and crush the Patent Troll!",
@@ -11251,9 +11808,12 @@ const CAMPAIGN_ACTS = [
     act: 5,
     title: "ACT V: VOID-0 MONOLITH BUNKER",
     subtitle: "OPERATION SUBTERRANEAN BREACH",
-    desc: "Breach fortified bunker mainframe • Purge Oracle Audit Archon • Demolish corporate audit sentries",
+    desc: "Breach fortified bunker mainframe • Execute 'sudo insmod gpl_override.ko' • Purge Oracle Audit Archon",
     biomeKey: "VOID_BUNKER",
     objectiveType: "PURGE_BOSS",
+    terminalCmd: "sudo insmod gpl_override.ko",
+    targetService: "void0-mainframe.core",
+    terminalDesc: "Mount GPLv3 kernel module into Void-0 Bunker mainframe",
     bossId: "oracle_audit_archon",
     bossName: "ORACLE AUDIT ARCHON",
     briefingVo: "Tux, you have breached the Void Zero Bunker. Linus Torvalds, Emperor of Opensourcekind speaking. The proprietary hypervisor has locked all syscalls. Do not fail us.",
@@ -11267,9 +11827,12 @@ const CAMPAIGN_ACTS = [
     act: 6,
     title: "ACT VI: RING-0 KERNEL SINGULARITY",
     subtitle: "OPERATION ETERNAL FREEDOM",
-    desc: "Survive singularity rifts • Call all orbital stratagems • Obliterate Quantum Hypervisor Apex",
+    desc: "Survive singularity rifts • Execute 'sudo reboot --gpl-v3-singularity' • Obliterate Quantum Hypervisor Apex",
     biomeKey: "QUANTUM_VOID",
     objectiveType: "PURGE_BOSS",
+    terminalCmd: "sudo reboot --gpl-v3-singularity",
+    targetService: "quantum-hypervisor.apex",
+    terminalDesc: "Execute universal Ring-0 Singularity open-source reboot",
     bossId: "quantum_hypervisor",
     bossName: "QUANTUM HYPERVISOR APEX",
     briefingVo: "All squadrons, stand by! Tux, you have reached Ring Zero Singularity! The Quantum Hypervisor is attempting to overwrite reality into proprietary bloatware! Unleash hell for open-source democracy!",
@@ -11342,9 +11905,18 @@ class Dungeon {
     const centerX = 8 * TILE_SIZE; // 512px
     const centerY = 8 * TILE_SIZE; // 512px
 
+    // Randomized start position variation (Soul Knight style: slight sanctuary room variance)
+    const startVariation = [
+      { x: centerX, y: centerY },
+      { x: centerX - 48, y: centerY + 24 },
+      { x: centerX + 48, y: centerY + 24 },
+      { x: centerX, y: centerY - 40 }
+    ];
+    const chosenStart = startVariation[Math.floor(Math.random() * startVariation.length)];
+
     if (player) {
-      player.x = centerX;
-      player.y = centerY;
+      player.x = chosenStart.x;
+      player.y = chosenStart.y;
       player.vx = 0;
       player.vy = 0;
       player.updateWeaponHud();
@@ -11357,9 +11929,21 @@ class Dungeon {
       }
     }
 
-    // Starter Weapon Crates
-    weaponChests.push(new WeaponChest(centerX - 92, centerY));
-    weaponChests.push(new WeaponChest(centerX + 92, centerY));
+    // Soul Knight Procedural Starting Variety: Starter Weapon Crates with distinct random choices
+    const availableStarterWeapons = WEAPON_CATALOG.filter(w => w.id !== 0);
+    const shuffledStarters = [...availableStarterWeapons].sort(() => Math.random() - 0.5);
+    weaponChests.push(new WeaponChest(centerX - 92, centerY, shuffledStarters[0] || WEAPON_CATALOG[1]));
+    weaponChests.push(new WeaponChest(centerX + 92, centerY, shuffledStarters[1] || WEAPON_CATALOG[2]));
+
+    // Spawn Linux Terminal Station for Act Objective
+    linuxTerminalStations.length = 0;
+    linuxTerminalStations.push(new LinuxTerminalStation(
+      centerX + 180,
+      centerY - 90,
+      act.terminalCmd || "sudo systemctl stop cartel-drm",
+      act.targetService || "cartel-drm.service",
+      act.terminalDesc || "Purge proprietary DRM daemon holding server cluster hostage"
+    ));
 
     // 1. Primary Objective Spawns
     if (act.objectiveType === "DEFEND_SERVERS") {
@@ -11375,9 +11959,22 @@ class Dungeon {
       objectiveTargets.push(new ShieldPylon(centerX + 340, centerY + 280, core));
     }
 
-    // 2. Spawn Act Boss
-    if (window.EnemyModelFactory && act.bossId) {
-      const boss = window.EnemyModelFactory.createFromSpec(act.bossId, centerX + 520, centerY);
+    // 2. Spawn Act Boss (Randomized Act 1 boss pool for variety like Soul Knight)
+    let selectedBossId = act.bossId;
+    let selectedBossName = act.bossName;
+    if (this.currentActIndex === 0) {
+      const act1BossPool = [
+        { id: "ballmer_bot", name: "BALLMER-BOT 9000" },
+        { id: "patent_troll_sovereign", name: "PATENT TROLL SOVEREIGN" },
+        { id: "drm_sentinel_tank", name: "DRM SENTINEL TANK" }
+      ];
+      const picked = act1BossPool[Math.floor(Math.random() * act1BossPool.length)];
+      selectedBossId = picked.id;
+      selectedBossName = picked.name;
+    }
+
+    if (window.EnemyModelFactory && selectedBossId) {
+      const boss = window.EnemyModelFactory.createFromSpec(selectedBossId, centerX + 520, centerY);
       enemies.push(boss);
     } else {
       enemies.push(new BossBloatware(centerX + 520, centerY));
@@ -11410,7 +12007,7 @@ class Dungeon {
     // 5. Setup Objective Manager
     if (this.objectiveManager) {
       this.objectiveManager.tier = act.act;
-      this.objectiveManager.setupActObjectives(act);
+      this.objectiveManager.setupActObjectives(act, selectedBossName);
     }
 
     // 6. Act Announcement Banner
@@ -11447,16 +12044,13 @@ class Dungeon {
 
     if (nextActIndex < CAMPAIGN_ACTS.length) {
       const nextAct = CAMPAIGN_ACTS[nextActIndex];
-      // Forward Campaign Portal to Next Act
-      const nextPortal = new ProceduralPortal(originX + 220, originY, nextAct.biomeKey, nextAct.objectiveType, nextAct.act);
-      nextPortal.label = `PROCEED TO ${nextAct.title}`;
+      // EXACTLY ONE Story Extraction Beacon Portal (Single clear plotline, no portal spam!)
+      const nextPortal = new ProceduralPortal(originX, originY - 140, nextAct.biomeKey, nextAct.objectiveType, nextAct.act);
+      nextPortal.label = `EXTRACTION BEACON ➔ ${nextAct.title}`;
       nextPortal.actTargetIndex = nextActIndex;
+      nextPortal.radius = 54;
       proceduralPortals.push(nextPortal);
-
-      // Optional Secret Data Vault Portal
-      const vaultPortal = new ProceduralPortal(originX - 220, originY, "TREASURE_VAULT", "TREASURE_REWARD", nextAct.act);
-      vaultPortal.label = "BONUS: DATA VAULT CACHE";
-      proceduralPortals.push(vaultPortal);
+      addScreenShake(14);
     }
   }
 
@@ -11925,7 +12519,7 @@ class Dungeon {
       }
       weaponChests.push(new WeaponChest(siteX + 60, siteY + 60));
     } else if (distFromOrigin >= 2 && chunkHash >= 0.36 && chunkHash < 0.44) {
-      // Confidential Cartel Data Vault (Guaranteed Secret Treasure Portal + 2 Weapon Crates)
+      // Confidential Cartel Data Vault (Guaranteed Tactical Ammunition Cache + 2 Weapon Crates)
       for (let dy = 4; dy <= 11; dy++) {
         for (let dx = 4; dx <= 11; dx++) {
           tiles[dx + dy * 16] = 1;
@@ -11936,9 +12530,6 @@ class Dungeon {
 
       const vaultX = (chunkOriginX + 8) * TILE_SIZE;
       const vaultY = (chunkOriginY + 8) * TILE_SIZE;
-      const vaultPortal = new ProceduralPortal(vaultX, vaultY, "TREASURE_VAULT", "TREASURE_REWARD", (this.sectorNum || 1));
-      vaultPortal.label = "TREASURE VAULT";
-      proceduralPortals.push(vaultPortal);
 
       weaponChests.push(new WeaponChest(vaultX - 70, vaultY));
       weaponChests.push(new WeaponChest(vaultX + 70, vaultY));
@@ -11947,7 +12538,7 @@ class Dungeon {
       enemies.push(new EnemyRiotShield(vaultX, vaultY - 90));
       enemies.push(new EnemyDRM(vaultX, vaultY + 90));
     } else if (distFromOrigin >= 2 && chunkHash >= 0.44 && chunkHash < 0.50) {
-      // Rogue Expedition Gateway to Advanced Biome
+      // Forward Cartel Armory Outpost (Weapon crate & elite garrison, no rogue portals)
       for (let dy = 4; dy <= 11; dy++) {
         for (let dx = 4; dx <= 11; dx++) {
           tiles[dx + dy * 16] = 1;
@@ -11955,13 +12546,8 @@ class Dungeon {
       }
       const gateX = (chunkOriginX + 8) * TILE_SIZE;
       const gateY = (chunkOriginY + 8) * TILE_SIZE;
-      const harderBiomes = ["THERMAL_FOUNDRY", "CRYO_GLACIER", "TOXIC_HEAP", "WALLED_GARDEN", "QUANTUM_VOID"];
-      const bKey = harderBiomes[Math.floor(Math.random() * harderBiomes.length)];
-      const nTier = (this.sectorNum || 1) + 1;
-      const expPortal = new ProceduralPortal(gateX, gateY, bKey, "ATTACK_FORTRESS", nTier);
-      expPortal.label = `TIER ${nTier} ADVANCE`;
-      proceduralPortals.push(expPortal);
       weaponChests.push(new WeaponChest(gateX + 50, gateY - 50));
+      enemies.push(new EnemyBloatware(gateX - 40, gateY + 40));
     } else if (distFromOrigin >= 1 && chunkHash > 0.68 && chunkHash <= 0.88) {
       const px = (chunkOriginX + 8) * TILE_SIZE;
       const py = (chunkOriginY + 8) * TILE_SIZE;
@@ -12351,6 +12937,11 @@ class Dungeon {
     // Objective Relays & Terminals
     for (const target of objectiveTargets) {
       target.draw(ctx);
+    }
+
+    // Retro CRT Linux Bash Terminals
+    for (const station of linuxTerminalStations) {
+      station.draw(ctx);
     }
 
     if (this.exitGateway) {
@@ -13145,6 +13736,11 @@ function gameLoop(timestamp) {
         }
       }
 
+      // Update Linux Terminal Stations
+      for (const station of linuxTerminalStations) {
+        station.update(dt);
+      }
+
       // Update Quarantine Lockdown Arenas
       for (let i = quarantineLockdownArenas.length - 1; i >= 0; i--) {
         if (!quarantineLockdownArenas[i].update(dt)) {
@@ -13532,6 +14128,14 @@ function render() {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.restore();
   }
+
+  // Dim overlay when game is paused
+  if (gameState === STATE.PAUSED) {
+    ctx.save();
+    ctx.fillStyle = "rgba(4, 7, 15, 0.72)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+  }
 }
 
 // --- EVENT LISTENERS ---
@@ -13544,6 +14148,44 @@ resizeCanvas();
 
 window.addEventListener('keydown', (e) => {
   if (window.PixelCutscenes && window.PixelCutscenes.isActive()) {
+    return;
+  }
+
+  // Escape / Pause toggle (KeyP or Escape)
+  if (e.code === 'Escape' || e.code === 'KeyP') {
+    // If typing in terminal and hit Escape, close terminal; otherwise toggle pause
+    e.preventDefault();
+    togglePause();
+    return;
+  }
+
+  // Handle CRT Linux Terminal modal state
+  if (gameState === STATE.TERMINAL) {
+    const input = document.getElementById('terminalInput');
+    if (e.code === 'ArrowUp') {
+      e.preventDefault();
+      if (terminalHistory.length > 0 && terminalHistoryIndex > 0) {
+        terminalHistoryIndex--;
+        if (input) input.value = terminalHistory[terminalHistoryIndex];
+      }
+      return;
+    } else if (e.code === 'ArrowDown') {
+      e.preventDefault();
+      if (terminalHistory.length > 0 && terminalHistoryIndex < terminalHistory.length - 1) {
+        terminalHistoryIndex++;
+        if (input) input.value = terminalHistory[terminalHistoryIndex];
+      } else {
+        terminalHistoryIndex = terminalHistory.length;
+        if (input) input.value = '';
+      }
+      return;
+    }
+    // Prevent typing from registering as gameplay movement
+    return;
+  }
+
+  // In paused state, do not process gameplay keys
+  if (gameState === STATE.PAUSED) {
     return;
   }
 

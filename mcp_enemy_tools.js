@@ -31,23 +31,23 @@
         {
           id: "chair_volley",
           name: "Explosive Chair Throw",
-          cooldown: 1.8,
+          cooldown: 2.4,
           range: 800,
           type: "bullet_burst",
-          count: 5,
-          speed: 380,
-          spread: 0.45,
-          projectile: { label: "CHAIR", color: "#b45309", damage: 24, size: 10 }
+          count: 3,
+          speed: 300,
+          spread: 0.32,
+          projectile: { label: "CHAIR", color: "#b45309", damage: 36, size: 14 }
         },
         {
           id: "developer_roar",
           name: "DEVELOPERS! Shockwave",
-          cooldown: 3.5,
+          cooldown: 4.2,
           range: 600,
           type: "spiral_danmaku",
-          count: 14,
-          speed: 260,
-          projectile: { label: "DEVS!", color: "#0ea5e9", damage: 18, size: 8 }
+          count: 6,
+          speed: 210,
+          projectile: { label: "DEVS!", color: "#0ea5e9", damage: 30, size: 12 }
         }
       ],
       dialogue: {
@@ -94,22 +94,22 @@
         {
           id: "cease_and_desist",
           name: "Cease & Desist Barrage",
-          cooldown: 1.4,
+          cooldown: 2.5,
           range: 750,
           type: "bullet_burst",
-          count: 8,
-          speed: 320,
-          spread: 0.55,
-          projectile: { label: "INJUNCTION", color: "#fbbf24", damage: 22, size: 9 }
+          count: 3,
+          speed: 280,
+          spread: 0.35,
+          projectile: { label: "INJUNCTION", color: "#fbbf24", damage: 34, size: 13 }
         },
         {
           id: "litigation_cage",
           name: "Subpoena Laser Cages",
-          cooldown: 4.2,
+          cooldown: 5.0,
           range: 900,
           type: "mortar_cluster",
-          count: 4,
-          projectile: { label: "CAGE", color: "#a855f7", damage: 35, size: 55 }
+          count: 2,
+          projectile: { label: "CAGE", color: "#a855f7", damage: 40, size: 55 }
         }
       ],
       dialogue: {
@@ -156,23 +156,23 @@
         {
           id: "core_audit_laser",
           name: "Core Multiplier Laser",
-          cooldown: 1.2,
+          cooldown: 2.8,
           range: 850,
           type: "spiral_danmaku",
-          count: 12,
-          speed: 310,
-          projectile: { label: "$$$/CORE", color: "#ef4444", damage: 26, size: 8 }
+          count: 5,
+          speed: 230,
+          projectile: { label: "$$$/CORE", color: "#ef4444", damage: 38, size: 14 }
         },
         {
           id: "unannounced_audit",
           name: "Unannounced License Audit",
-          cooldown: 4.0,
+          cooldown: 4.8,
           range: 650,
           type: "bullet_burst",
-          count: 10,
-          speed: 400,
-          spread: 0.6,
-          projectile: { label: "AUDIT NOTICE", color: "#f97316", damage: 32, size: 10 }
+          count: 3,
+          speed: 310,
+          spread: 0.38,
+          projectile: { label: "AUDIT NOTICE", color: "#f97316", damage: 45, size: 15 }
         }
       ],
       dialogue: {
@@ -465,23 +465,23 @@
         {
           id: "molten_slag_sweep",
           name: "Molten Slag Firestorm",
-          cooldown: 1.2,
+          cooldown: 2.4,
           range: 850,
           type: "bullet_burst",
-          count: 9,
-          speed: 380,
-          spread: 0.55,
-          projectile: { label: "MOLTEN_SLAG", color: "#f97316", damage: 24, size: 9 }
+          count: 3,
+          speed: 300,
+          spread: 0.35,
+          projectile: { label: "MOLTEN_SLAG", color: "#f97316", damage: 38, size: 14 }
         },
         {
           id: "core_vent_eruption",
           name: "Overclocked Steam Eruption",
-          cooldown: 3.6,
+          cooldown: 4.8,
           range: 750,
           type: "spiral_danmaku",
-          count: 14,
-          speed: 310,
-          projectile: { label: "STEAM_BURST", color: "#fdba74", damage: 20, size: 8 }
+          count: 6,
+          speed: 220,
+          projectile: { label: "STEAM_BURST", color: "#fdba74", damage: 28, size: 12 }
         }
       ],
       dialogue: {
@@ -528,23 +528,23 @@
         {
           id: "ice_piercer",
           name: "Zero-Kelvin Ice Javelins",
-          cooldown: 1.1,
+          cooldown: 2.2,
           range: 900,
           type: "bullet_burst",
-          count: 5,
-          speed: 460,
-          spread: 0.25,
-          projectile: { label: "FROST_JBL", color: "#38bdf8", damage: 30, size: 8 }
+          count: 2,
+          speed: 340,
+          spread: 0.22,
+          projectile: { label: "FROST_JBL", color: "#38bdf8", damage: 40, size: 14 }
         },
         {
           id: "frost_ring",
           name: "Absolute Zero Frost Wave",
-          cooldown: 3.8,
+          cooldown: 4.6,
           range: 720,
           type: "spiral_danmaku",
-          count: 16,
-          speed: 250,
-          projectile: { label: "CRYO_PULSE", color: "#e0f2fe", damage: 18, size: 9 }
+          count: 6,
+          speed: 210,
+          projectile: { label: "CRYO_PULSE", color: "#e0f2fe", damage: 30, size: 12 }
         }
       ],
       dialogue: {
@@ -716,23 +716,23 @@
         {
           id: "singularity_pull",
           name: "Gravitational Singularity Orbs",
-          cooldown: 1.25,
+          cooldown: 2.5,
           range: 920,
           type: "bullet_burst",
-          count: 6,
-          speed: 280,
-          spread: 0.45,
-          projectile: { label: "VOID_TEAR", color: "#c084fc", damage: 34, size: 10 }
+          count: 3,
+          speed: 250,
+          spread: 0.35,
+          projectile: { label: "VOID_TEAR", color: "#c084fc", damage: 45, size: 16 }
         },
         {
           id: "quantum_collapse",
           name: "Decoherence Annihilation Wave",
-          cooldown: 3.2,
+          cooldown: 5.2,
           range: 820,
           type: "spiral_danmaku",
-          count: 20,
-          speed: 310,
-          projectile: { label: "COLLAPSE", color: "#e879f9", damage: 22, size: 8 }
+          count: 8,
+          speed: 220,
+          projectile: { label: "COLLAPSE", color: "#e879f9", damage: 36, size: 14 }
         }
       ],
       dialogue: {
@@ -817,6 +817,10 @@
       this.isDead = false;
       this.corrodedTimer = 0;
       this.shockTimer = 0;
+      this.isVulnerable = false;
+      this.vulnerableTimer = 0;
+      this.vulnerableMultiplier = 2.5;
+      this.attacksUntilOverheat = 2;
 
       // Broadcast spawn voice line if configured
       if (spec.dialogue && spec.dialogue.onSpawn && spec.dialogue.onSpawn.length > 0) {
@@ -842,6 +846,22 @@
         dmg *= 1.5;
       }
 
+      // VULNERABILITY WINDOW CRITICAL MULTIPLIER (Soul Knight Boss Feel!)
+      if (this.isVulnerable) {
+        dmg *= this.vulnerableMultiplier;
+        if (typeof window.addFloatingText === 'function') {
+          window.addFloatingText(
+            this.x + (Math.random() - 0.5) * 30,
+            this.y - this.radius - 28,
+            `CRIT! ${Math.round(dmg)}`,
+            "#facc15",
+            22
+          );
+        }
+        if (typeof window.addScreenShake === 'function') window.addScreenShake(7);
+      }
+
+      const hadShield = this.shield > 0;
       // Absorb with shield first
       if (this.shield > 0) {
         if (this.shield >= dmg) {
@@ -850,6 +870,18 @@
         } else {
           dmg -= this.shield;
           this.shield = 0;
+        }
+      }
+
+      // Shield broke! Triggers immediate stagger vulnerability
+      if (hadShield && this.shield <= 0 && this.isBoss) {
+        this.isVulnerable = true;
+        this.vulnerableTimer = 3.5;
+        if (typeof window.addFloatingText === 'function') {
+          window.addFloatingText(this.x, this.y - this.radius - 20, "⚡ SHIELD SHATTERED! STAGGERED! ⚡", "#facc15", 22);
+        }
+        if (typeof window.broadcastBossStoryDialogue === 'function') {
+          window.broadcastBossStoryDialogue(this.label, "CORE DEFENSES COMPROMISED! RUNTIME EXPOSED!", "#facc15", "⚡");
         }
       }
 
@@ -933,6 +965,25 @@
         }
       }
 
+      // Vulnerability window timer
+      if (this.vulnerableTimer > 0) {
+        this.vulnerableTimer -= dt;
+        this.isVulnerable = true;
+        if (Math.random() < 0.35 && window.particles && window.SparkParticle) {
+          window.particles.push(new window.SparkParticle(
+            this.x + (Math.random() - 0.5) * this.radius,
+            this.y + (Math.random() - 0.5) * this.radius,
+            (Math.random() - 0.5) * 45, -40, "#facc15"
+          ));
+        }
+        if (this.vulnerableTimer <= 0) {
+          this.isVulnerable = false;
+          if (typeof window.addFloatingText === 'function') {
+            window.addFloatingText(this.x, this.y - this.radius - 15, "SYSTEM REBOOTED", "#38bdf8", 16);
+          }
+        }
+      }
+
       const plyr = window.player || (typeof player !== 'undefined' ? player : null);
       if (plyr) {
         const dx = plyr.x - this.x;
@@ -940,8 +991,10 @@
         const dist = Math.hypot(dx, dy);
         this.aimAngle = Math.atan2(dy, dx);
 
-        // Movement toward player (slowed by 50% if shocked)
-        const moveSpeed = this.shockTimer > 0 ? this.speed * 0.5 : this.speed;
+        // Movement toward player (slowed by 50% if shocked, or slowed by 75% if vulnerable/staggered)
+        let moveSpeed = this.shockTimer > 0 ? this.speed * 0.5 : this.speed;
+        if (this.isVulnerable) moveSpeed *= 0.25;
+
         if (moveSpeed > 0 && dist > this.radius + (plyr.radius || 24)) {
           // If within range, close in or circle
           const targetDist = this.isBoss ? 260 : 180;
@@ -957,8 +1010,8 @@
           if (window.dungeon) window.dungeon.resolveCircle(this, this.radius, 'y');
         }
 
-        // Process Attack behaviors (delayed if EMP shocked)
-        if (this.shockTimer <= 0) {
+        // Process Attack behaviors (suspended if EMP shocked or in vulnerable recovery)
+        if (this.shockTimer <= 0 && !this.isVulnerable) {
           const attacks = this.spec.attacks || [];
           for (let i = 0; i < attacks.length; i++) {
             const atk = attacks[i];
@@ -1136,6 +1189,20 @@
           window.spawnReinforcementSquad(this.x, this.y, atk.count || 3);
         }
       }
+
+      // Boss exhaustion / overheat rhythm (Soul Knight combat pacing)
+      if (this.isBoss) {
+        this.attacksUntilOverheat--;
+        if (this.attacksUntilOverheat <= 0) {
+          this.attacksUntilOverheat = 2;
+          this.vulnerableTimer = 3.2;
+          this.isVulnerable = true;
+          if (typeof window.addFloatingText === 'function') {
+            window.addFloatingText(this.x, this.y - this.radius - 20, "⚡ OVERHEATED! VULNERABLE WINDOW! ⚡", "#facc15", 22);
+          }
+          if (typeof window.addScreenShake === 'function') window.addScreenShake(6);
+        }
+      }
     }
 
     draw(ctx) {
@@ -1165,6 +1232,25 @@
         const pulse = Math.sin(Date.now() * 0.01) * 5;
         ctx.arc(0, 0, this.radius + 10 + pulse, 0, Math.PI * 2);
         ctx.stroke();
+      }
+
+      // Glowing Golden Weakpoint / Vulnerability Aura
+      if (this.isVulnerable) {
+        ctx.save();
+        ctx.strokeStyle = "rgba(250, 204, 21, 0.9)";
+        ctx.lineWidth = 3.5;
+        ctx.setLineDash([8, 6]);
+        const rot = Date.now() * 0.005;
+        ctx.beginPath();
+        ctx.arc(0, 0, this.radius + 14, rot, rot + Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = "#facc15";
+        ctx.font = "bold 11px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText("⚡ VULNERABLE [CRIT 2.5X] ⚡", 0, -this.radius - 22);
+        ctx.restore();
       }
 
       // =========================================================================

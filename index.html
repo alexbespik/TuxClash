@@ -1074,6 +1074,61 @@
       line-height: 1.5;
     }
 
+    /* Pause Modal Styling */
+    .pause-modal-box {
+      background: #09131f;
+      border: 5px solid #000000;
+      box-shadow: inset 4px 4px 0 #38bdf8, inset -4px -4px 0 #02060d, 0 8px 0 #000000;
+      max-width: 540px;
+      width: 90%;
+      text-align: center;
+      padding: 24px;
+    }
+
+    /* Linux CRT Bash Terminal */
+    .crt-terminal-box {
+      position: relative;
+      background: #020804;
+      border: 5px solid #000000;
+      box-shadow: inset 4px 4px 0 #22c55e, inset -4px -4px 0 #011409, 0 10px 0 #000000, 0 0 35px rgba(34, 197, 94, 0.25);
+      border-radius: 4px;
+      padding: 16px;
+      overflow: hidden;
+      font-family: 'Courier New', monospace;
+      color: #22c55e;
+    }
+
+    .crt-scanlines::before {
+      content: " ";
+      display: block;
+      position: absolute;
+      top: 0; left: 0; bottom: 0; right: 0;
+      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.26) 50%);
+      background-size: 100% 4px;
+      z-index: 5;
+      pointer-events: none;
+    }
+
+    .terminal-log-row {
+      margin-bottom: 4px;
+    }
+    .terminal-log-cmd {
+      color: #86efac;
+      font-weight: bold;
+    }
+    .terminal-log-success {
+      color: #4ade80;
+    }
+    .terminal-log-warn {
+      color: #facc15;
+    }
+    .terminal-log-err {
+      color: #f87171;
+    }
+    .terminal-log-info {
+      color: #38bdf8;
+    }
+
     /* --- REUSABLE PIXEL ART CUTSCENE OVERLAY --- */
     .cutscene-overlay {
       position: absolute;
@@ -1558,6 +1613,101 @@
         <button id="playAgainBtn" class="btn-pixel" style="font-size: 12px;">PURGE AGAIN</button>
         <button class="btn-pixel btn-pixel-amber" style="font-size: 11px;" onclick="window.PixelCutscenes && window.PixelCutscenes.play('victory_liberation')">
           🏆 REPLAY LIBERATION CINEMATIC
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- RETRO 16-BIT PAUSE MODAL -->
+  <div id="pauseModal" class="modal-overlay" style="display: none; z-index: 120;">
+    <div class="pause-modal-box pixel-frame-cyan">
+      <h1 style="color: #38bdf8; font-size: 22px; font-family: var(--font-pixel-title); margin-bottom: 8px; letter-spacing: 2px;">
+        ⏸️ KERNEL EXECUTION PAUSED
+      </h1>
+      <p style="color: #94a3b8; font-size: 13px; font-family: var(--font-pixel-body); margin-bottom: 14px;">
+        Execution halted via SIGSTOP. All daemons and physics suspended.
+      </p>
+
+      <div id="pauseActInfo" style="background: #040910; border: 2px solid #1e293b; padding: 10px 14px; margin-bottom: 16px; font-family: var(--font-pixel-body); font-size: 12.5px; text-align: left; color: #cbd5e1;">
+        <div><strong style="color: #fbbf24;">CURRENT MISSION:</strong> <span id="pauseActTitle">ACT I: THE DRM CORRIDOR</span></div>
+        <div style="margin-top: 4px;"><strong style="color: #38bdf8;">OBJECTIVE:</strong> <span id="pauseActObjective">OVERRIDE TERMINAL</span></div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 9px; align-items: stretch;">
+        <button id="pauseResumeBtn" class="btn-pixel" style="font-size: 13px; padding: 10px;">
+          ▶️ RESUME MISSION [ESC / P]
+        </button>
+        <button id="pauseAudioToggleBtn" class="btn-pixel btn-pixel-cyan" style="font-size: 11px; padding: 8px;">
+          🔊 AUDIO: ACTIVE [CLICK TO MUTE]
+        </button>
+        <button id="pauseRestartBtn" class="btn-pixel btn-pixel-amber" style="font-size: 11px; padding: 8px;">
+          🔄 RESTART CURRENT ACT
+        </button>
+        <button id="pauseAbortBtn" class="btn-pixel" style="background: #450a0a; border-color: #ef4444; font-size: 11px; padding: 8px;">
+          ⛔ ABORT MISSION TO TITLE
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- RETRO CRT LINUX BASH TERMINAL MODAL -->
+  <div id="linuxTerminalModal" class="modal-overlay crt-scanlines" style="display: none; z-index: 115; background: rgba(2, 6, 12, 0.94);">
+    <div class="crt-terminal-box" style="width: 92%; max-width: 820px;">
+      
+      <!-- Terminal Header Bar -->
+      <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #166534; padding-bottom: 8px; margin-bottom: 10px; font-size: 12px; font-weight: bold; letter-spacing: 1px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="color: #22c55e;">●</span>
+          <span style="color: #4ade80;">ARCH LINUX KERNEL BASH CONSOLE (TTY1)</span>
+          <span style="color: #86efac; font-size: 10px; background: #064e3b; padding: 2px 6px; border-radius: 3px;">ROOT / PRIVILEGED</span>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <span style="color: #86efac; font-size: 11px;" id="terminalTargetInfo">TARGET: cartel-drm.service</span>
+          <button id="terminalCloseBtn" class="btn-pixel" style="background: #7f1d1d; border-color: #ef4444; color: #fff; padding: 3px 8px; font-size: 10px; cursor: pointer;">
+            ✖ CLOSE [ESC]
+          </button>
+        </div>
+      </div>
+
+      <!-- Terminal Output Screen -->
+      <div id="terminalScreenLog" style="height: 250px; overflow-y: auto; background: #010d05; border: 1px solid #14532d; padding: 10px; font-size: 12.5px; line-height: 1.45; color: #4ade80; text-shadow: 0 0 4px rgba(74, 222, 128, 0.4); word-break: break-all; margin-bottom: 10px;">
+        <!-- Filled dynamically -->
+      </div>
+
+      <!-- Command Input Line -->
+      <form id="terminalForm" onsubmit="return false;" style="display: flex; align-items: center; gap: 8px; background: #011409; border: 2px solid #22c55e; padding: 6px 10px; margin-bottom: 8px;">
+        <span style="color: #86efac; font-weight: bold; font-size: 13px; white-space: nowrap;">root@archlinux:~#</span>
+        <input type="text" id="terminalInput" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+               style="flex: 1; background: transparent; border: none; outline: none; color: #f0fdf4; font-family: 'Courier New', monospace; font-size: 13px; font-weight: bold; caret-color: #22c55e;"
+               placeholder="Type bash command (e.g. 'sudo systemctl stop cartel-drm' or 'help')..." />
+        <button type="submit" id="terminalRunBtn" class="btn-pixel" style="background: #15803d; color: #fff; font-size: 10px; padding: 4px 10px;">
+          RETURN ↵
+        </button>
+      </form>
+
+      <!-- Quick Action / Secret Hacks Bar -->
+      <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 10px;">
+        <span style="color: #86efac; font-weight: bold;">HACKS & COMMANDS:</span>
+        <button type="button" class="btn-pixel btn-pixel-cyan" style="padding: 2px 7px; font-size: 9.5px;" onclick="window.terminalPasteObjective && window.terminalPasteObjective()">
+          ⚡ AUTO-FILL OBJECTIVE CMD
+        </button>
+        <button type="button" class="btn-pixel" style="padding: 2px 7px; font-size: 9.5px;" onclick="window.terminalQuickRun && window.terminalQuickRun('sudo su')">
+          👑 sudo su (ROOT GODMODE)
+        </button>
+        <button type="button" class="btn-pixel btn-pixel-amber" style="padding: 2px 7px; font-size: 9.5px;" onclick="window.terminalQuickRun && window.terminalQuickRun('sudo rm -rf /cartel/drm')">
+          💥 sudo rm -rf (EMP WIPE)
+        </button>
+        <button type="button" class="btn-pixel" style="background: #0284c7; padding: 2px 7px; font-size: 9.5px;" onclick="window.terminalQuickRun && window.terminalQuickRun(':(){ :|:& };:')">
+          🐧 forkbomb (HACKER SQUAD)
+        </button>
+        <button type="button" class="btn-pixel" style="background: #9333ea; padding: 2px 7px; font-size: 9.5px;" onclick="window.terminalQuickRun && window.terminalQuickRun('kill -9 -1')">
+          🚫 kill -9 -1 (CLEAR BULLETS)
+        </button>
+        <button type="button" class="btn-pixel" style="background: #ca8a04; padding: 2px 7px; font-size: 9.5px;" onclick="window.terminalQuickRun && window.terminalQuickRun('free -m')">
+          💚 free -m (FULL HEAL)
+        </button>
+        <button type="button" class="btn-pixel" style="background: #059669; padding: 2px 7px; font-size: 9.5px;" onclick="window.terminalQuickRun && window.terminalQuickRun('ping -c 4 super-destroyer')">
+          📦 ping (SUPPLY POD)
         </button>
       </div>
     </div>
