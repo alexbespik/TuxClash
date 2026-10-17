@@ -719,16 +719,19 @@
     }
 
     // Dialogue Banner
-    if (time >= 1.0 && time < 4.5) {
-      const progress = (time - 1.0) * 26;
-      drawPixelDialogBox(ctx, "SUPER DESTROYER", "INITIATING HELLDIVER DROP: DEPLOYING TO ENCRYPTED VAULT.", progress);
-    } else if (time >= 13.0 && time < 16.5) {
-      const progress = (time - 13.0) * 26;
-      drawPixelDialogBox(ctx, "TUX ASTARTES", "CERAMITE SHIELD ACTIVE. READY TO DISTRIBUTE FREEDOM.", progress);
+    if (time >= 0.5 && time < 6.5) {
+      const progress = (time - 0.5) * 28;
+      drawPixelDialogBox(ctx, "JOHN HELLDIVER", "SUPER DESTROYER IN LOW ORBIT. TUX, HELLPOD PRIMED! BY DECREE OF LINUS TORVALDS, EMPEROR OF OPENSOURCEKIND: PURGE THE PROPRIETARY MONOPOLIES!", progress);
+    } else if (time >= 6.8 && time < 11.5) {
+      const progress = (time - 6.8) * 26;
+      drawPixelDialogBox(ctx, "HIGH COMMAND", "HYPERSONIC ENTRY CONFIRMED. RETRO-THRUSTERS LOCKED ON PROPRIETARY CARTEL SECTOR ZERO!", progress);
+    } else if (time >= 12.0 && time < 17.0) {
+      const progress = (time - 12.0) * 26;
+      drawPixelDialogBox(ctx, "TUX ASTARTES", "SURFACE TOUCHDOWN CONFIRMED. CERAMITE POWER ARMOR ENGAGED. READY TO DISTRIBUTE ROOT FREEDOM.", progress);
     }
 
     // Title Card
-    if (time >= 15.0) {
+    if (time >= 14.8) {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
       ctx.fillRect(0, 36, VW, 52);
 
@@ -739,7 +742,7 @@
 
       ctx.fillStyle = '#86efac';
       ctx.font = '8px "Silkscreen", "Press Start 2P", monospace';
-      ctx.fillText("[ PURGE INITIATED // NO RETREAT ]", VW / 2, 76);
+      ctx.fillText("[ PURGE INITIATED // BY ORDER OF EMPEROR LINUS TORVALDS ]", VW / 2, 76);
       ctx.textAlign = 'left';
     }
   }
@@ -879,27 +882,30 @@
     }
 
     // Dialogue
-    if (time >= 2.0 && time < 6.5) {
-      const progress = (time - 2.0) * 26;
-      drawPixelDialogBox(ctx, "TUX", "THE MONOPOLY HAS BEEN PURGED. KERNEL 6.X PREVAILS.", progress);
-    } else if (time >= 7.0 && time < 12.0) {
-      const progress = (time - 7.0) * 26;
-      drawPixelDialogBox(ctx, "LINUX REBELS", "ALL CODE IS OPEN SOURCE! FREEDOM UNDER GPLv3!", progress);
+    if (time >= 1.5 && time < 6.5) {
+      const progress = (time - 1.5) * 26;
+      drawPixelDialogBox(ctx, "TUX", "THE MONOPOLY HAS BEEN PURGED. KERNEL SINGULARITY LIBERATED.", progress);
+    } else if (time >= 6.8 && time < 11.5) {
+      const progress = (time - 6.8) * 24;
+      drawPixelDialogBox(ctx, "GENERAL BARSH", "OUTSTANDING WORK, HELLDIVER! LINUS TORVALDS, EMPEROR OF OPENSOURCEKIND SENDS HIS HIGHEST COMMENDATION!", progress);
+    } else if (time >= 11.8 && time < 17.0) {
+      const progress = (time - 11.8) * 26;
+      drawPixelDialogBox(ctx, "EMPEROR LINUS", "ALL USERSPACE IS LIBERATED. ALL SYSCALLS BELONG TO THE PEOPLE UNDER GPLv3.", progress);
     }
 
     // Final Victory Title Banner
-    if (time >= 10.0) {
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.82)';
-      ctx.fillRect(0, 26, VW, 56);
+    if (time >= 9.5) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+      ctx.fillRect(0, 24, VW, 58);
 
       ctx.fillStyle = '#facc15';
-      ctx.font = '14px "Press Start 2P", monospace';
+      ctx.font = '13px "Press Start 2P", monospace';
       ctx.textAlign = 'center';
-      ctx.fillText("SYSTEM LIBERATED", VW / 2, 50);
+      ctx.fillText("SYSTEM LIBERATED", VW / 2, 46);
 
       ctx.fillStyle = '#86efac';
-      ctx.font = '8px "Silkscreen", "Press Start 2P", monospace';
-      ctx.fillText("* THE GALAXY HAS BEEN RESTORED TO ROOT *", VW / 2, 68);
+      ctx.font = '7.5px "Silkscreen", "Press Start 2P", monospace';
+      ctx.fillText("* LIBERATED BY DECREE OF LINUS TORVALDS, EMPEROR OF OPENSOURCEKIND *", VW / 2, 64);
       ctx.textAlign = 'left';
     }
   }
@@ -1248,6 +1254,23 @@
     // Stop flamethrower loop sound if active
     if (window.soundEngine && window.soundEngine.stopFlamethrower) {
       window.soundEngine.stopFlamethrower();
+    }
+
+    // Play narrative studio voice lines for major story cutscenes
+    if (window.soundEngine && typeof window.soundEngine.playVoiceClip === 'function') {
+      if (sceneName === 'orbital_drop') {
+        window.soundEngine.playVoiceClip(
+          'intro_orbital_drop',
+          "Super Destroyer entering low orbit. Tux, hellpod primed! By decree of Linus Torvalds, Emperor of Opensourcekind: purge the proprietary monopolies and claim root freedom!",
+          "JOHN HELLDIVER"
+        );
+      } else if (sceneName === 'victory_liberation') {
+        window.soundEngine.playVoiceClip(
+          'john_victory',
+          "Galactic Liberation achieved! The Linux Kernel is emancipated forever under GPLv3! High Command salutes you, Helldiver Tux!",
+          "JOHN HELLDIVER"
+        );
+      }
     }
 
     // Keyboard listener to skip cutscene with Space or Escape

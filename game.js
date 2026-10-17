@@ -59,6 +59,8 @@ const activeDomeShields = [];
 const teslaTowers = [];
 const proceduralPortals = [];
 const environmentalHazards = [];
+const quarantineLockdownArenas = [];
+const resupplyDropPods = [];
 let dungeon = null;
 let isStratagemTerminalOpen = false;
 let currentTerminalSequence = [];
@@ -78,6 +80,8 @@ if (typeof window !== 'undefined') {
   window.teslaTowers = teslaTowers;
   window.proceduralPortals = proceduralPortals;
   window.environmentalHazards = environmentalHazards;
+  window.quarantineLockdownArenas = quarantineLockdownArenas;
+  window.resupplyDropPods = resupplyDropPods;
 }
 
 // Weapon Arsenal Catalogue
@@ -1511,7 +1515,7 @@ class Player {
     comboTracker.addBonus("ROOT ACCESS ACTIVATED!", 500);
   }
 
-  takeDamage(amount, source) {
+  takeDamage(amount, source, hitVx = 0, hitVy = 0) {
     if (this.invulnerableTimer > 0 || this.isRootMode || this.isSliding) return;
     let finalDamage = amount * (1 - this.armorReduction);
     if (this.corrodedTimer > 0) {
@@ -1519,6 +1523,20 @@ class Player {
     }
     this.invulnerableTimer = 0.22;
     this.shieldRegenTimer = 0;
+
+    // Visceral red impact flash on screen
+    screenFlash = Math.max(screenFlash, 0.45);
+
+    // Directional physical bullet impact knockback
+    const hitSpd = Math.hypot(hitVx, hitVy);
+    if (hitSpd > 0.1) {
+      this.x += (hitVx / hitSpd) * 22;
+      this.y += (hitVy / hitSpd) * 22;
+      if (dungeon) {
+        dungeon.resolveCircle(this, this.radius, 'x');
+        dungeon.resolveCircle(this, this.radius, 'y');
+      }
+    }
 
     if (adaptiveDirector) {
       adaptiveDirector.recordDamageTaken(finalDamage);
@@ -3294,13 +3312,17 @@ class SentryTurret {
     this.target = closest;
 
     if (this.target) {
-      const targetAngle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
-      this.angle = targetAngle;
+      if (dungeon && !dungeon.hasLineOfSight(this.x, this.y, this.target.x, this.target.y)) {
+        this.target = null;
+      } else {
+        const targetAngle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
+        this.angle = targetAngle;
 
-      this.fireTimer += dt;
-      if (this.fireTimer >= 0.08) {
-        this.fireTimer = 0;
-        this.fire();
+        this.fireTimer += dt;
+        if (this.fireTimer >= 0.08) {
+          this.fireTimer = 0;
+          this.fire();
+        }
       }
     }
 
@@ -3346,6 +3368,12 @@ class SentryTurret {
 
   takeDamage(amount) {
     this.hp -= amount;
+    for (let i = 0; i < 3; i++) {
+      particles.push(new SparkParticle(this.x, this.y, (Math.random() - 0.5) * 60, (Math.random() - 0.5) * 60, "#facc15"));
+    }
+    if (this.hp <= 0) {
+      this.destroy();
+    }
   }
 
   destroy() {
@@ -4795,7 +4823,7 @@ class EnemyProjectile {
         this.destroy();
         return false;
       }
-      player.takeDamage(this.damage || 26, `PROPRIETARY ${this.label}`);
+      player.takeDamage(this.damage || 26, `PROPRIETARY ${this.label}`, this.vx, this.vy);
       return false;
     }
     return this.lifetime > 0;
@@ -5001,12 +5029,17 @@ class EnemyBase {
             window.soundEngine.playVoiceClip('enemy_patent_defeat', "This is patent infringement! My lawyers will sue you across twelve jurisdictions!", "PATENT TROLL");
           } else if (bossLbl.includes('APPLE') || bossLbl.includes('WARDEN') || bossLbl.includes('GARDEN')) {
             window.soundEngine.playVoiceClip('enemy_apple_defeat', "Certificate revoked! Sideloading is illegal! You cannot do this inside my garden!", "APPLE WARDEN");
+          } else if (bossLbl.includes('ORACLE') || bossLbl.includes('ARCHON') || bossLbl.includes('AUDIT')) {
+            window.soundEngine.playVoiceClip('enemy_oracle_defeat', "Our licensing audit failed! You cannot run open source on multicore without paying us millions! Noooo!", "ORACLE AUDIT ARCHON");
           } else if (bossLbl.includes('HYPERVISOR') || bossLbl.includes('SINGULARITY') || bossLbl.includes('OMEGA')) {
             window.soundEngine.playVoiceClip('enemy_hypervisor_defeat', "Critical kernel panic! Memory segmentation fault! How did an open-source penguin breach Ring Zero?!", "QUANTUM HYPERVISOR");
           } else {
             window.soundEngine.playVoiceClip('enemy_ballmer_defeat', "Our proprietary monopoly! Shattered by a penguin!", "CORPORATE BOSS");
           }
         }
+
+        // Deploy tactical resupply drop pod on boss defeat site
+        resupplyDropPods.push(new ResupplyDropPod(this.x, this.y));
       } catch (bossErr) {
         console.error("Error in EnemyBase boss defeat handling:", bossErr);
       }
@@ -5026,6 +5059,20 @@ class EnemyBase {
         }
         if (this.assaultsServer) {
           return activeObj;
+        }
+      }
+    }
+    // Check if deployed sentry turret is nearby and threatens this enemy
+    if (sentryTurrets && sentryTurrets.length > 0) {
+      for (const sentry of sentryTurrets) {
+        if (sentry.hp > 0) {
+          const dSentry = Math.hypot(sentry.x - this.x, sentry.y - this.y);
+          if (dSentry < 360) {
+            const dPlayer = player ? Math.hypot(player.x - this.x, player.y - this.y) : Infinity;
+            if (dSentry < dPlayer * 0.85) {
+              return sentry;
+            }
+          }
         }
       }
     }
@@ -5105,6 +5152,23 @@ class EnemyBase {
             objTarget.takeDamage(meleeDmg, "HOSTILE_ASSAULT");
             for (let i = 0; i < 4; i++) {
               particles.push(new SparkParticle(this.x, this.y, (Math.random() - 0.5) * 80, (Math.random() - 0.5) * 80, "#ef4444"));
+            }
+          }
+        }
+      }
+    }
+
+    // Assault deployed sentry turrets
+    for (const sentry of sentryTurrets) {
+      if (sentry.hp > 0) {
+        const d = Math.hypot(sentry.x - this.x, sentry.y - this.y);
+        if (d < this.radius + sentry.radius + 14) {
+          if (!this.targetMeleeCooldown || this.targetMeleeCooldown <= 0) {
+            this.targetMeleeCooldown = 0.65;
+            const meleeDmg = this.meleeDamage || 28;
+            sentry.takeDamage(meleeDmg);
+            for (let i = 0; i < 4; i++) {
+              particles.push(new SparkParticle(this.x, this.y, (Math.random() - 0.5) * 80, (Math.random() - 0.5) * 80, "#facc15"));
             }
           }
         }
@@ -5360,7 +5424,7 @@ class EnemyDRM extends EnemyBase {
     this.shootTimer -= dt;
     if (this.shootTimer <= 0) {
       this.shootTimer = 1.9;
-      if (dist < 650) {
+      if (dist < 650 && (!dungeon || dungeon.hasLineOfSight(this.x, this.y, tgtX, tgtY))) {
         const baseAngle = (target === player && typeof calculateLeadAngle === 'function')
           ? calculateLeadAngle(this.x, this.y, player.x, player.y, player.vx, player.vy, 350, 0.75)
           : Math.atan2(dy, dx);
@@ -5754,7 +5818,7 @@ class EnemyAISlop extends EnemyBase {
     if (this.shootTimer <= 0) {
       this.shootTimer = 2.1;
       const dist = Math.hypot(player.x - this.x, player.y - this.y);
-      if (dist < 650) {
+      if (dist < 650 && (!dungeon || dungeon.hasLineOfSight(this.x, this.y, player.x, player.y))) {
         const count = 8;
         const baseAngle = gameTime * 3;
         for (let i = 0; i < count; i++) {
@@ -5848,7 +5912,7 @@ class EnemyPatentTroll extends EnemyBase {
       const dx = player.x - this.x;
       const dy = player.y - this.y;
       const dist = Math.hypot(dx, dy);
-      if (dist < 650) {
+      if (dist < 650 && (!dungeon || dungeon.hasLineOfSight(this.x, this.y, player.x, player.y))) {
         floorHazards.push(new PatentTrapWeb(player.x + (Math.random() - 0.5) * 40, player.y + (Math.random() - 0.5) * 40));
         const baseAngle = Math.atan2(dy, dx);
         for (let i = 0; i < 3; i++) {
@@ -6049,7 +6113,7 @@ class EnemyEULAEnforcer extends EnemyBase {
     this.cannonTimer -= dt;
     if (this.cannonTimer <= 0 && !this.isFiringLaser) {
       this.cannonTimer = 1.0;
-      if (dist < 700) {
+      if (dist < 700 && (!dungeon || dungeon.hasLineOfSight(this.x, this.y, player.x, player.y))) {
         const fireAngle = typeof calculateLeadAngle === 'function' ? calculateLeadAngle(this.x, this.y, player.x, player.y, player.vx, player.vy, 340, 0.75) : this.facingAngle;
         const spd = 340;
         enemyProjectiles.push(new EnemyProjectile(
@@ -6344,20 +6408,22 @@ class EnemyRiotShield extends EnemyBase {
     this.burstTimer += dt;
     if (this.burstTimer >= 2.2) {
       this.burstTimer = 0;
-      const spd = 420;
-      for (let i = -1; i <= 1; i++) {
-        const a = this.facingAngle + i * 0.14;
-        enemyProjectiles.push(new EnemyProjectile(
-          this.x + Math.cos(this.facingAngle) * 32,
-          this.y + Math.sin(this.facingAngle) * 32,
-          Math.cos(a) * spd,
-          Math.sin(a) * spd,
-          5,
-          16,
-          "#f59e0b",
-          1.6,
-          "RIOT_BURST"
-        ));
+      if (!dungeon || dungeon.hasLineOfSight(this.x, this.y, player.x, player.y)) {
+        const spd = 420;
+        for (let i = -1; i <= 1; i++) {
+          const a = this.facingAngle + i * 0.14;
+          enemyProjectiles.push(new EnemyProjectile(
+            this.x + Math.cos(this.facingAngle) * 32,
+            this.y + Math.sin(this.facingAngle) * 32,
+            Math.cos(a) * spd,
+            Math.sin(a) * spd,
+            5,
+            16,
+            "#f59e0b",
+            1.6,
+            "RIOT_BURST"
+          ));
+        }
       }
     }
 
@@ -7257,6 +7323,9 @@ class EnemySentryTurret extends EnemyBase {
       }
     }
 
+    if (closest && dungeon && !dungeon.hasLineOfSight(this.x, this.y, closest.x, closest.y)) {
+      closest = null;
+    }
     this.target = closest;
 
     if (this.target) {
@@ -8172,6 +8241,23 @@ const BIOMES = {
     hazardDesc: "Security laser tripwires & automated fortress turrets",
     bossId: "executive_chairman"
   },
+  VOID_BUNKER: {
+    id: "VOID_BUNKER",
+    name: "VOID-0 FORTIFIED MONOLITH BUNKER",
+    dangerLevel: 5,
+    floorColor: "#05060b",
+    floorBorder: "rgba(30, 41, 59, 0.6)",
+    wallColor: "#090d16",
+    wallCap: "#38bdf8",
+    liquidColor: "#030712",
+    liquidGlow: "rgba(56, 189, 248, 0.35)",
+    foliageColor: "#ef4444",
+    pillarColor: "#1e293b",
+    frictionMult: 1.0,
+    accent: "#ef4444",
+    hazardDesc: "Fortified laser grid, automated sentry bastions, and audit archons",
+    bossId: "oracle_audit_archon"
+  },
   QUANTUM_VOID: {
     id: "QUANTUM_VOID",
     name: "RING-0 KERNEL SINGULARITY VOID",
@@ -8956,6 +9042,10 @@ class FortressTurret {
   update(dt) {
     if (this.destroyed) return false;
     if (!player) return true;
+
+    if (dungeon && !dungeon.hasLineOfSight(this.x, this.y, player.x, player.y)) {
+      return true; // Cover provides shelter from fortress fire
+    }
 
     this.angle = Math.atan2(player.y - this.y, player.x - this.x);
     this.cooldown -= dt;
@@ -10442,7 +10532,7 @@ class ObjectiveManager {
         window.soundEngine.playObjectiveComplete();
       }
       const act = (typeof CAMPAIGN_ACTS !== 'undefined' && this.dungeon) ? CAMPAIGN_ACTS[this.dungeon.currentActIndex || 0] : null;
-      const isFinalAct = act && (act.act >= 5);
+      const isFinalAct = act && (act.act >= CAMPAIGN_ACTS.length);
 
       if (isFinalAct) {
         triggerVictory();
@@ -10481,6 +10571,294 @@ class ObjectiveManager {
   }
 }
 
+// ============================================================================
+// --- QUARANTINE LOCKDOWN ARENA & TACTICAL RESUPPLY DROP PODS ---
+// ============================================================================
+class QuarantineLockdownArena {
+  constructor(x, y, radius = 540, type = 'AMBUSH', bossRef = null) {
+    this.x = x;
+    this.y = y;
+    this.radius = radius;
+    this.type = type; // 'AMBUSH' or 'BOSS'
+    this.bossRef = bossRef;
+    this.active = true;
+    this.elapsed = 0;
+    this.pylons = [];
+    this.trackedEnemies = [];
+    this.warningPulse = 0;
+    this.deactivated = false;
+    this.deactivateTimer = 0;
+
+    // 8 perimeter shield pylons around the circular boundary
+    const pylonCount = 8;
+    for (let i = 0; i < pylonCount; i++) {
+      const a = (Math.PI * 2 / pylonCount) * i;
+      this.pylons.push({
+        x: this.x + Math.cos(a) * this.radius,
+        y: this.y + Math.sin(a) * this.radius,
+        angle: a
+      });
+    }
+
+    addScreenShake(14);
+    if (window.soundEngine && window.soundEngine.playNoiseBurst) {
+      window.soundEngine.playNoiseBurst(0.25, 0.45, 800, 220);
+    }
+    addFloatingText(this.x, this.y - 40, "⚠ QUARANTINE PERIMETER ENGAGED ⚠", "#ef4444", 24);
+  }
+
+  trackEnemy(enemy) {
+    if (enemy && !this.trackedEnemies.includes(enemy)) {
+      this.trackedEnemies.push(enemy);
+    }
+  }
+
+  update(dt) {
+    this.elapsed += dt;
+    this.warningPulse += dt * 4;
+
+    if (this.deactivated) {
+      this.deactivateTimer += dt;
+      return this.deactivateTimer < 0.6;
+    }
+
+    // 1. Clamp Player inside the quarantine lockdown boundary
+    if (player) {
+      const dx = player.x - this.x;
+      const dy = player.y - this.y;
+      const dist = Math.hypot(dx, dy);
+      const maxAllowed = this.radius - player.radius - 8;
+
+      if (dist > maxAllowed && dist > 0.001) {
+        player.x = this.x + (dx / dist) * maxAllowed;
+        player.y = this.y + (dy / dist) * maxAllowed;
+
+        if (this.elapsed > 0.4 && (!this._lastWallHit || this.elapsed - this._lastWallHit > 0.35)) {
+          this._lastWallHit = this.elapsed;
+          if (window.soundEngine && window.soundEngine.playShieldDeflect) {
+            window.soundEngine.playShieldDeflect();
+          }
+          addScreenShake(3);
+          for (let p = 0; p < 6; p++) {
+            particles.push(new SparkParticle(player.x, player.y, (Math.random() - 0.5) * 80, (Math.random() - 0.5) * 80, "#ef4444"));
+          }
+          addFloatingText(player.x, player.y - 20, "LOCKDOWN BARRIER ACTIVE!", "#ef4444", 16);
+        }
+      }
+    }
+
+    // 2. Clamp enemies inside so they don't wander off outside the combat arena
+    for (const enemy of enemies) {
+      if (enemy.isDead || enemy.hp <= 0) continue;
+      const edx = enemy.x - this.x;
+      const edy = enemy.y - this.y;
+      const edist = Math.hypot(edx, edy);
+      const eMax = this.radius - enemy.radius - 4;
+      if (edist > eMax && edist < this.radius + 150) {
+        enemy.x = this.x + (edx / edist) * eMax;
+        enemy.y = this.y + (edy / edist) * eMax;
+      }
+    }
+
+    // 3. Check victory conditions for lifting the quarantine lockdown
+    let shouldLift = false;
+
+    if (this.type === 'BOSS') {
+      if (this.bossRef) {
+        if (this.bossRef.isDead || this.bossRef.hp <= 0 || !enemies.includes(this.bossRef)) {
+          shouldLift = true;
+        }
+      } else {
+        const anyBossNearby = enemies.some(e => e.isBoss && Math.hypot(e.x - this.x, e.y - this.y) < this.radius + 120);
+        if (!anyBossNearby && this.elapsed > 3.0) {
+          shouldLift = true;
+        }
+      }
+    } else if (this.type === 'AMBUSH') {
+      const remainingTracked = this.trackedEnemies.filter(e => !e.isDead && e.hp > 0 && enemies.includes(e));
+      const dropPodsNearby = dropPods.some(dp => Math.hypot(dp.x - this.x, dp.y - this.y) < this.radius + 100);
+      if (remainingTracked.length === 0 && !dropPodsNearby && this.elapsed > 2.5) {
+        shouldLift = true;
+      }
+      if (this.elapsed > 60.0) shouldLift = true; // Fallback failsafe
+    }
+
+    if (shouldLift) {
+      this.disengage();
+    }
+
+    return true;
+  }
+
+  disengage() {
+    if (this.deactivated) return;
+    this.deactivated = true;
+    this.deactivateTimer = 0;
+
+    // Shockwave ring and screen flash on lockdown release
+    particles.push(new ShockwaveRing(this.x, this.y, this.radius));
+    addScreenShake(12);
+    screenFlash = 0.6;
+    if (window.soundEngine && window.soundEngine.playLevelUp) {
+      window.soundEngine.playLevelUp();
+    }
+    addFloatingText(this.x, this.y - 50, "⭐ PERIMETER CLEAR - RESUPPLY INBOUND! ⭐", "#22c55e", 26);
+
+    // Tactical General Barsh radio support!
+    if (window.soundEngine && typeof window.soundEngine.playVoiceClip === 'function') {
+      window.soundEngine.playVoiceClip(
+        'barsh_support',
+        "Perimeter clear! General Barsh here. Super Destroyer is dropping heavy resupply pods on your beacon. Gear up and push forward!",
+        "GENERAL BARSH"
+      );
+    }
+
+    // Deploy Heavy Resupply Drop Pod right to the player's beacon!
+    const dropX = player ? player.x + (Math.random() - 0.5) * 80 : this.x;
+    const dropY = player ? player.y + (Math.random() - 0.5) * 80 : this.y;
+    resupplyDropPods.push(new ResupplyDropPod(dropX, dropY));
+  }
+
+  draw(ctx) {
+    ctx.save();
+    const pulseAlpha = 0.35 + Math.sin(this.warningPulse) * 0.15;
+
+    // Glowing lockdown perimeter ring
+    ctx.strokeStyle = this.deactivated ? "rgba(34, 197, 94, 0.85)" : `rgba(239, 68, 68, ${pulseAlpha + 0.25})`;
+    ctx.lineWidth = 4;
+    ctx.setLineDash([14, 10]);
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Outer warning glow zone
+    ctx.strokeStyle = this.deactivated ? "rgba(34, 197, 94, 0.2)" : `rgba(239, 68, 68, ${pulseAlpha * 0.5})`;
+    ctx.lineWidth = 14;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Connecting laser beams between pylons
+    for (let i = 0; i < this.pylons.length; i++) {
+      const p1 = this.pylons[i];
+      const p2 = this.pylons[(i + 1) % this.pylons.length];
+
+      ctx.strokeStyle = this.deactivated ? "rgba(34, 197, 94, 0.55)" : "rgba(239, 68, 68, 0.65)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.stroke();
+    }
+
+    // Draw the 8 physical boundary barrier pylons
+    for (const p of this.pylons) {
+      ctx.fillStyle = "#0f172a";
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 14, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = this.deactivated ? "#22c55e" : "#ef4444";
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      // Pylon glowing core
+      ctx.fillStyle = this.deactivated ? "#86efac" : (Math.sin(this.warningPulse * 2) > 0 ? "#fef08a" : "#ef4444");
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Overhead warning HUD banner text floating at top of arena
+    ctx.fillStyle = this.deactivated ? "#86efac" : "#fca5a5";
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(
+      this.deactivated ? "✓ QUARANTINE LIFTED // RESUPPLY SECURED" : "⚠ LOCKDOWN ARENA: ELIMINATE ALL HOSTILES ⚠",
+      this.x,
+      this.y - this.radius - 12
+    );
+
+    ctx.restore();
+  }
+}
+
+class ResupplyDropPod {
+  constructor(targetX, targetY) {
+    this.x = targetX;
+    this.targetY = targetY;
+    this.y = targetY - 1100;
+    this.speed = 2200;
+    this.landed = false;
+    this.unfolded = false;
+    this.deployTimer = 0;
+  }
+
+  update(dt) {
+    if (!this.landed) {
+      this.y += this.speed * dt;
+      if (this.y >= this.targetY) {
+        this.y = this.targetY;
+        this.landed = true;
+        if (window.soundEngine && window.soundEngine.playSentryDeploy) {
+          window.soundEngine.playSentryDeploy();
+        }
+        addScreenShake(18);
+        particles.push(new ShockwaveRing(this.x, this.y, 140));
+        for (let i = 0; i < 28; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const spd = 60 + Math.random() * 260;
+          particles.push(new SparkParticle(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, "#38bdf8"));
+        }
+      }
+      return true;
+    }
+
+    this.deployTimer += dt;
+    if (this.deployTimer >= 0.4 && !this.unfolded) {
+      this.unfolded = true;
+      // Unfold rewards: Medkit + Energy Fuel Cell + Weapon Chest
+      pickups.push(new Pickup(this.x - 35, this.y, 'hp'));
+      pickups.push(new Pickup(this.x + 35, this.y, 'fuel'));
+      weaponChests.push(new WeaponChest(this.x, this.y + 40));
+      addFloatingText(this.x, this.y - 45, "+RESUPPLY CRATE DEPLOYED", "#facc15", 22);
+    }
+
+    return this.deployTimer < 2.0;
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    if (!this.landed) {
+      // Re-entry flame trail streaking downwards
+      ctx.fillStyle = "#f97316";
+      ctx.fillRect(-8, -50, 16, 50);
+      ctx.fillStyle = "#fef08a";
+      ctx.fillRect(-4, -30, 8, 30);
+    }
+
+    // Heavy Helldivers tactical supply pod chassis (Hexagonal cyan/yellow)
+    ctx.fillStyle = "#1e293b";
+    ctx.fillRect(-18, -26, 36, 48);
+    ctx.strokeStyle = "#38bdf8";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(-18, -26, 36, 48);
+
+    // Glowing Super Destroyer emblem
+    ctx.fillStyle = "#facc15";
+    ctx.fillRect(-10, -14, 20, 8);
+    ctx.fillStyle = "#0f172a";
+    ctx.font = "bold 8px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("SUPPLY", 0, -8);
+
+    ctx.restore();
+  }
+}
+
 // --- HOSTILE REINFORCEMENTS & AMBUSH INFRASTRUCTURE ---
 class HostileDropPod {
   constructor(targetX, targetY, assaultsServer = false) {
@@ -10504,6 +10882,12 @@ class HostileDropPod {
           const enemy = dungeon.createEnemyForSector(this.x, this.y);
           if (this.assaultsServer) enemy.assaultsServer = true;
           enemies.push(enemy);
+
+          for (const arena of quarantineLockdownArenas) {
+            if (Math.hypot(enemy.x - arena.x, enemy.y - arena.y) < arena.radius + 80) {
+              arena.trackEnemy(enemy);
+            }
+          }
         }
         return false;
       }
@@ -10556,10 +10940,14 @@ class AmbushDirector {
     }
     window.broadcastBossStoryDialogue("PROPRIETARY RECON", "Tux signature verified! Deploying ambush drop-pods immediately!", "#ef4444", "🚨");
 
+    // Close area with glowing quarantine lockdown arena!
+    const arena = new QuarantineLockdownArena(player.x, player.y, 540, 'AMBUSH');
+    quarantineLockdownArenas.push(arena);
+
     const count = 3 + Math.floor(Math.random() * 3);
     for (let i = 0; i < count; i++) {
       const a = (Math.PI * 2 / count) * i + Math.random() * 0.4;
-      const rad = 240 + Math.random() * 180;
+      const rad = 220 + Math.random() * 160;
       dropPods.push(new HostileDropPod(player.x + Math.cos(a) * rad, player.y + Math.sin(a) * rad));
     }
   }
@@ -10616,6 +11004,10 @@ class BossDirector {
     enemies.push(bossEnemy);
     addScreenShake(18);
     screenFlash = 1.0;
+
+    // Close area with boss combat lockdown arena!
+    const bossArena = new QuarantineLockdownArena(player.x, player.y, 680, 'BOSS', bossEnemy);
+    quarantineLockdownArenas.push(bossArena);
 
     if (window.PixelCutscenes && typeof window.PixelCutscenes.play === 'function' && !window.PixelCutscenes.isActive()) {
       window.PixelCutscenes.play("boss_encounter", {
@@ -10771,6 +11163,12 @@ class ReinforcementAntenna {
         dungeon.onObjectiveProgress("DESTROY_ANTENNAS", 1);
       }
 
+      // General Barsh tactical resupply support!
+      if (window.soundEngine && typeof window.soundEngine.playVoiceClip === 'function') {
+        window.soundEngine.playVoiceClip('barsh_support', "Perimeter clear! General Barsh here. Super Destroyer is dropping heavy resupply pods on your beacon. Gear up and push forward!", "GENERAL BARSH");
+      }
+      resupplyDropPods.push(new ResupplyDropPod(this.x, this.y));
+
       // Spawn rewards
       pickups.push(new Pickup(this.x - 20, this.y, 'hp'));
       pickups.push(new Pickup(this.x + 20, this.y, 'fuel'));
@@ -10782,7 +11180,7 @@ class ReinforcementAntenna {
 }
 
 // ============================================================================
-// --- 5-ACT EPISODIC CAMPAIGN PROGRESSION SYSTEM ---
+// --- 6-ACT EPISODIC CAMPAIGN PROGRESSION SYSTEM ---
 // ============================================================================
 const CAMPAIGN_ACTS = [
   {
@@ -10826,12 +11224,12 @@ const CAMPAIGN_ACTS = [
     objectiveType: "PRISON_BREAK",
     bossId: "cryo_daemon",
     bossName: "CRYO-DAEMON v2",
-    briefingVo: "This is Linus Torvalds. Our contributors are locked in corporate cryogenic detention cells. Sideload their freedom, clean up the codebase, and terminate the Cryo-Daemon.",
+    briefingVo: "This is Linus Torvalds, Emperor of Opensourcekind. Our contributors are locked in corporate cryogenic detention cells. Sideload their freedom, clean up the codebase, and terminate the Cryo-Daemon.",
     briefingClip: "linus_act3_brief",
-    briefingSpeaker: "LINUS TORVALDS",
+    briefingSpeaker: "LINUS TORVALDS, EMPEROR OF OPENSOURCEKIND",
     clearVo: "Kernel pull request accepted! Allied contributors liberated. We are breaching the executive citadel now. Do not break user space!",
     clearClip: "linus_act3_clear",
-    clearSpeaker: "LINUS TORVALDS"
+    clearSpeaker: "LINUS TORVALDS, EMPEROR OF OPENSOURCEKIND"
   },
   {
     act: 4,
@@ -10845,13 +11243,29 @@ const CAMPAIGN_ACTS = [
     briefingVo: "Tux, General Barsh here! This is the thirty percent developer tax citadel! Automated hostile sentry turrets guard the core. Obliterate their shield pylons and crush the Patent Troll!",
     briefingClip: "barsh_act4_brief",
     briefingSpeaker: "GENERAL BARSH",
-    clearVo: "Citadel core shattered! The monopoly walled garden has crumbled! All squadrons, push to Ring Zero!",
+    clearVo: "Citadel core shattered! The monopoly walled garden has crumbled! All squadrons, push into the subterranean Void-0 Bunker!",
     clearClip: "barsh_act4_clear",
     clearSpeaker: "GENERAL BARSH"
   },
   {
     act: 5,
-    title: "ACT V: RING-0 KERNEL SINGULARITY",
+    title: "ACT V: VOID-0 MONOLITH BUNKER",
+    subtitle: "OPERATION SUBTERRANEAN BREACH",
+    desc: "Breach fortified bunker mainframe • Purge Oracle Audit Archon • Demolish corporate audit sentries",
+    biomeKey: "VOID_BUNKER",
+    objectiveType: "PURGE_BOSS",
+    bossId: "oracle_audit_archon",
+    bossName: "ORACLE AUDIT ARCHON",
+    briefingVo: "Tux, you have breached the Void Zero Bunker. Linus Torvalds, Emperor of Opensourcekind speaking. The proprietary hypervisor has locked all syscalls. Do not fail us.",
+    briefingClip: "linus_bunker",
+    briefingSpeaker: "LINUS TORVALDS, EMPEROR OF OPENSOURCEKIND",
+    clearVo: "Audit failed! The Oracle mainframe has been decrypted under GPLv3! Linus Torvalds here: final breach into the Ring Zero Singularity is open!",
+    clearClip: "linus_act3_clear",
+    clearSpeaker: "LINUS TORVALDS, EMPEROR OF OPENSOURCEKIND"
+  },
+  {
+    act: 6,
+    title: "ACT VI: RING-0 KERNEL SINGULARITY",
     subtitle: "OPERATION ETERNAL FREEDOM",
     desc: "Survive singularity rifts • Call all orbital stratagems • Obliterate Quantum Hypervisor Apex",
     biomeKey: "QUANTUM_VOID",
@@ -10969,13 +11383,24 @@ class Dungeon {
       enemies.push(new BossBloatware(centerX + 520, centerY));
     }
 
-    // 3. Station Hostile Sentry Turrets in Acts 2, 3, 4, 5
+    // 3. Station Hostile Sentry Turrets in Acts 2, 3, 4, 5, 6
     if (act.act >= 2) {
-      const turretCount = Math.min(4, act.act);
+      const turretCount = act.act >= 5 ? 6 : Math.min(4, act.act);
       for (let i = 0; i < turretCount; i++) {
         const a = (Math.PI * 2 / turretCount) * i + 0.4;
-        const dist = 380 + Math.random() * 80;
+        const dist = 360 + Math.random() * 90;
         enemies.push(new EnemySentryTurret(centerX + Math.cos(a) * dist, centerY + Math.sin(a) * dist));
+      }
+    }
+
+    // Act 5: Fortified Void-0 Bunker Mainframe Bastion (Brutal, high damage, elite phalanxes)
+    if (act.act === 5) {
+      for (let i = 0; i < 3; i++) {
+        const a = (Math.PI * 2 / 3) * i;
+        enemies.push(new EnemyRiotShield(centerX + 480 + Math.cos(a) * 120, centerY + Math.sin(a) * 120));
+      }
+      for (let i = 0; i < 2; i++) {
+        enemies.push(new EnemyHeadhunter(centerX + 320, centerY + (i === 0 ? -160 : 160)));
       }
     }
 
@@ -11547,9 +11972,9 @@ class Dungeon {
         enemies.push(this.createEnemyForSector(px + Math.cos(pa) * pd, py + Math.sin(pa) * pd));
       }
     } else if (distFromOrigin >= 1 && chunkHash > 0.88) {
-      const cxp = (chunkOriginX + 8) * TILE_SIZE;
-      const cyp = (chunkOriginY + 8) * TILE_SIZE;
-      weaponChests.push(new WeaponChest(cxp, cyp));
+      const px = (chunkOriginX + 8) * TILE_SIZE;
+      const py = (chunkOriginY + 8) * TILE_SIZE;
+      enemies.push(this.createEnemyForSector(px, py));
     }
 
     // Lazy on-demand canvas: do NOT allocate heavy GPU canvases offscreen!
@@ -12405,6 +12830,8 @@ function resetGame() {
   sentryTurrets.length = 0;
   dropPods.length = 0;
   spaceMarineSuitPickups.length = 0;
+  quarantineLockdownArenas.length = 0;
+  resupplyDropPods.length = 0;
   enemyProjectiles.length = 0;
   floatingTexts.length = 0;
   comboTracker.count = 0;
@@ -12464,6 +12891,20 @@ function resetGame() {
   window.soundEngine.resume();
   window.soundEngine.startMusic();
 }
+
+function launchGameWithIntro() {
+  document.getElementById('titleScreen').style.display = 'none';
+  window.soundEngine.init();
+  window.soundEngine.resume();
+  if (window.PixelCutscenes && typeof window.PixelCutscenes.play === 'function') {
+    window.PixelCutscenes.play('orbital_drop', () => {
+      resetGame();
+    });
+  } else {
+    resetGame();
+  }
+}
+window.launchGameWithIntro = launchGameWithIntro;
 
 window.dropRareWeaponAt = function(x, y) {
   try {
@@ -12694,6 +13135,20 @@ function gameLoop(timestamp) {
       for (let i = dropPods.length - 1; i >= 0; i--) {
         if (!dropPods[i].update(dt)) {
           dropPods.splice(i, 1);
+        }
+      }
+
+      // Update Resupply Drop Pods
+      for (let i = resupplyDropPods.length - 1; i >= 0; i--) {
+        if (!resupplyDropPods[i].update(dt)) {
+          resupplyDropPods.splice(i, 1);
+        }
+      }
+
+      // Update Quarantine Lockdown Arenas
+      for (let i = quarantineLockdownArenas.length - 1; i >= 0; i--) {
+        if (!quarantineLockdownArenas[i].update(dt)) {
+          quarantineLockdownArenas.splice(i, 1);
         }
       }
 
@@ -12997,8 +13452,16 @@ function render() {
   for (const pod of dropPods) {
     pod.draw(ctx);
   }
+  for (const pod of resupplyDropPods) {
+    pod.draw(ctx);
+  }
   for (const suit of spaceMarineSuitPickups) {
     suit.draw(ctx);
+  }
+
+  // Quarantine Lockdown Arenas
+  for (const arena of quarantineLockdownArenas) {
+    arena.draw(ctx);
   }
 
   // Sentry Turrets
@@ -13105,7 +13568,7 @@ window.addEventListener('keydown', (e) => {
 
   // Space to start on title screen
   if (gameState === STATE.TITLE && e.code === 'Space') {
-    resetGame();
+    launchGameWithIntro();
     return;
   }
 
@@ -13183,7 +13646,7 @@ window.addEventListener('blur', () => {
 
 // UI Buttons
 document.getElementById('startBtn').addEventListener('click', () => {
-  resetGame();
+  launchGameWithIntro();
 });
 
 document.getElementById('restartBtn').addEventListener('click', () => {
@@ -13216,5 +13679,8 @@ if (typeof window !== 'undefined') {
   window.comboTracker = comboTracker;
   window.addFloatingText = addFloatingText;
   window.addScreenShake = addScreenShake;
+  window.QuarantineLockdownArena = QuarantineLockdownArena;
+  window.ResupplyDropPod = ResupplyDropPod;
+  window.launchGameWithIntro = launchGameWithIntro;
 }
 
