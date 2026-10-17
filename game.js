@@ -9474,7 +9474,7 @@ class Dungeon {
 
         // Draw tactical distance telemetry readout inside lower radar bezel
         const distMeters = Math.max(1, Math.round(nearestDist / 14));
-        mmCtx.font = "bold 9px ui-monospace, monospace";
+        mmCtx.font = "bold 7px 'Press Start 2P', monospace";
         mmCtx.fillStyle = targetColor;
         mmCtx.textAlign = "center";
         mmCtx.fillText(`▸ ${targetLabel}: ${distMeters}m`, cx, cy + radarRadius - 6);
@@ -9760,7 +9760,13 @@ function triggerVictory() {
   window.soundEngine.stopMusic();
   window.soundEngine.setFlamethrower(false);
   document.getElementById('victoryScoreText').innerText = `All Proprietary Monopolies Purged! Score: ${comboTracker.totalScore}`;
-  document.getElementById('victoryModal').style.display = 'flex';
+  if (window.PixelCutscenes && typeof window.PixelCutscenes.play === 'function') {
+    window.PixelCutscenes.play('victory_liberation', () => {
+      document.getElementById('victoryModal').style.display = 'flex';
+    });
+  } else {
+    document.getElementById('victoryModal').style.display = 'flex';
+  }
 }
 
 function addScreenShake(amount) {
@@ -9893,6 +9899,12 @@ function handleStratagemDirectionalInput(code) {
 
 // --- MAIN LOOP ---
 function gameLoop(timestamp) {
+  if (window.PixelCutscenes && window.PixelCutscenes.isActive()) {
+    lastTimestamp = timestamp;
+    requestAnimationFrame(gameLoop);
+    return;
+  }
+
   if (!lastTimestamp) lastTimestamp = timestamp;
   let dt = (timestamp - lastTimestamp) / 1000;
   lastTimestamp = timestamp;
@@ -10272,7 +10284,7 @@ function render() {
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.fillStyle = ft.color;
-    ctx.font = `bold ${ft.size}px monospace`;
+    ctx.font = `bold ${Math.max(8, Math.round(ft.size * 0.85))}px 'Press Start 2P', 'Silkscreen', monospace`;
     ctx.textAlign = "center";
     ctx.fillText(ft.text, ft.x, ft.y);
     ctx.restore();
@@ -10298,6 +10310,10 @@ window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
 window.addEventListener('keydown', (e) => {
+  if (window.PixelCutscenes && window.PixelCutscenes.isActive()) {
+    return;
+  }
+
   // Arrow keys are STRICTLY & EXCLUSIVELY for Stratagem input! Never move Tux with arrows.
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
     e.preventDefault();
@@ -10359,6 +10375,10 @@ window.addEventListener('mousemove', (e) => {
 });
 
 window.addEventListener('mousedown', (e) => {
+  if (window.PixelCutscenes && window.PixelCutscenes.isActive()) {
+    return;
+  }
+
   if (e.button === 0) {
     mouse.down = true;
     if (gameState === STATE.PLAYING && player && player.holdingStratagem !== null) {
