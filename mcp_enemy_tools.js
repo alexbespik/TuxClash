@@ -2442,12 +2442,20 @@
     msgEl.innerText = `"${message}"`;
     if (iconEl) iconEl.innerText = icon;
 
+    const bossBar = document.getElementById('bossBarContainer');
+    if (bossBar && bossBar.style.display !== 'none') {
+      banner.style.top = '72px';
+    } else {
+      banner.style.top = '16px';
+    }
+
     banner.style.display = 'flex';
     banner.style.borderColor = color;
 
     if (window.soundEngine) {
       if (typeof window.soundEngine.speakRobot === 'function') {
-        window.soundEngine.speakRobot(message, speaker, 0.28, 1.05);
+        const priority = (window.VoiceManager && window.VoiceManager.PRIORITY) ? window.VoiceManager.PRIORITY.BOSS_INTRO : 3;
+        window.soundEngine.speakRobot(message, speaker, 0.28, 1.05, priority);
       } else if (typeof window.soundEngine.playRadioTransmission === 'function') {
         window.soundEngine.playRadioTransmission();
       }

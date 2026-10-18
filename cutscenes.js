@@ -1273,6 +1273,16 @@
       }
     }
 
+    // Clear immediate threat projectiles within 250px of player
+    if (window.player && window.enemyProjectiles && Array.isArray(window.enemyProjectiles)) {
+      for (let i = window.enemyProjectiles.length - 1; i >= 0; i--) {
+        const p = window.enemyProjectiles[i];
+        if (p && Math.hypot(p.x - window.player.x, p.y - window.player.y) < 250) {
+          window.enemyProjectiles.splice(i, 1);
+        }
+      }
+    }
+
     // Keyboard listener to skip cutscene with Space or Escape
     window.addEventListener('keydown', handleCutsceneKey);
 
@@ -1309,6 +1319,19 @@
 
     if (overlayEl) {
       overlayEl.style.display = 'none';
+    }
+
+    // Safety check on return from cutscene: clear nearby enemy projectiles and grant player 2.0s i-frames
+    if (window.player) {
+      window.player.invulnerableTimer = Math.max(window.player.invulnerableTimer || 0, 2.0);
+      if (window.enemyProjectiles && Array.isArray(window.enemyProjectiles)) {
+        for (let i = window.enemyProjectiles.length - 1; i >= 0; i--) {
+          const p = window.enemyProjectiles[i];
+          if (p && Math.hypot(p.x - window.player.x, p.y - window.player.y) < 250) {
+            window.enemyProjectiles.splice(i, 1);
+          }
+        }
+      }
     }
 
     const cb = onCompleteCallback;

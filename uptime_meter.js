@@ -83,6 +83,16 @@
       this.uptime = Math.min(100, this.uptime + amount);
 
       if (this.uptime >= 100 && !this.oomActive) {
+        this.checkOOMTrigger();
+      }
+    }
+
+    checkOOMTrigger() {
+      if (this.oomActive || this.uptime < 100) return;
+      const p = window.player;
+      if (!p) return;
+      const hasNearbyHostile = window.enemies && window.enemies.some(e => !e.isDead && e.hp > 0 && Math.hypot(e.x - p.x, e.y - p.y) < 350);
+      if (hasNearbyHostile) {
         this.triggerOOMKiller();
       }
     }
@@ -109,6 +119,11 @@
     update(dt) {
       const p = window.player;
       if (!p || p.isDead) return;
+
+      // Hold OOM-Killer proc until hostiles enter 350px range
+      if (this.uptime >= 100 && !this.oomActive) {
+        this.checkOOMTrigger();
+      }
 
       // Tier 1 Buff (>= 25% Uptime): nice -n -20 (+10% Move Speed)
       if (this.uptime >= 25 || this.oomActive) {

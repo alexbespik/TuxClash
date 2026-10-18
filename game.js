@@ -4,6 +4,32 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
+// Bulletproof Canvas API monkeypatches: eliminate DOMException: IndexSizeError on negative/NaN radius
+(function() {
+  if (typeof CanvasRenderingContext2D !== 'undefined') {
+    const origArc = CanvasRenderingContext2D.prototype.arc;
+    CanvasRenderingContext2D.prototype.arc = function(x, y, radius, startAngle, endAngle, counterclockwise) {
+      const safeX = Number.isFinite(x) ? x : 0;
+      const safeY = Number.isFinite(y) ? y : 0;
+      const safeRadius = (Number.isFinite(radius) && radius >= 0.001) ? radius : 0.001;
+      const safeStart = Number.isFinite(startAngle) ? startAngle : 0;
+      const safeEnd = Number.isFinite(endAngle) ? endAngle : Math.PI * 2;
+      return origArc.call(this, safeX, safeY, safeRadius, safeStart, safeEnd, counterclockwise);
+    };
+
+    const origCreateRadialGradient = CanvasRenderingContext2D.prototype.createRadialGradient;
+    CanvasRenderingContext2D.prototype.createRadialGradient = function(x0, y0, r0, x1, y1, r1) {
+      const safeX0 = Number.isFinite(x0) ? x0 : 0;
+      const safeY0 = Number.isFinite(y0) ? y0 : 0;
+      const safeR0 = (Number.isFinite(r0) && r0 >= 0.001) ? r0 : 0.001;
+      const safeX1 = Number.isFinite(x1) ? x1 : 0;
+      const safeY1 = Number.isFinite(y1) ? y1 : 0;
+      const safeR1 = (Number.isFinite(r1) && r1 >= 0.001) ? r1 : 0.001;
+      return origCreateRadialGradient.call(this, safeX0, safeY0, safeR0, safeX1, safeY1, safeR1);
+    };
+  }
+})();
+
 // --- GAME STATE ---
 const STATE = {
   TITLE: 0,
@@ -198,7 +224,7 @@ class Player {
     // Upgrades / Stats
     this.level = 1;
     this.xp = 0;
-    this.xpNeeded = 100;
+    this.xpNeeded = 350;
     this.flameDamageMult = 1.0;
     this.flameRangeMult = 1.0;
     this.flameSpread = 0.38;
@@ -4953,29 +4979,37 @@ class ShockwaveRing {
   }
 
   draw(ctx) {
-    const alpha = this.lifetime / this.maxLifetime;
+    const alpha = Math.max(0, Math.min(1, this.lifetime / this.maxLifetime));
     ctx.save();
-    ctx.lineWidth = 8 * alpha;
+    ctx.lineWidth = Math.max(1, 8 * alpha);
     ctx.strokeStyle = `rgba(239, 68, 68, ${alpha})`;
     ctx.beginPath();
-    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.arc(this.x, this.y, Math.max(0.1, this.radius), 0, Math.PI * 2);
     ctx.stroke();
 
-    ctx.lineWidth = 3 * alpha;
+    ctx.lineWidth = Math.max(1, 3 * alpha);
     ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
     ctx.beginPath();
-    ctx.arc(this.x, this.y, this.radius - 4, 0, Math.PI * 2);
+    ctx.arc(this.x, this.y, Math.max(0.1, this.radius - 4), 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
   }
 }
 
-// --- FLOATING TEXT & COMBOS ---
+// --- FLOATING TEXT & COMBOS (WITH WORLD LABEL STACKER) ---
 const floatingTexts = [];
 function addFloatingText(x, y, text, color = "#ffffff", size = 18) {
+  // WorldLabelStacker: prevent text blob stacking by checking recent floatingTexts near (x, y)
+  let targetY = y;
+  for (let i = floatingTexts.length - 1; i >= Math.max(0, floatingTexts.length - 12); i--) {
+    const existing = floatingTexts[i];
+    if (existing && Math.abs(existing.x - x) < 65 && Math.abs(existing.y - targetY) < 18) {
+      targetY = existing.y - 18;
+    }
+  }
   floatingTexts.push({
     x,
-    y,
+    y: targetY,
     text,
     color,
     size,
@@ -7229,19 +7263,19 @@ class TelegraphedMortarHazard {
     ctx.save();
     ctx.translate(this.targetX, this.targetY);
 
-    const progress = Math.min(1, this.time / this.duration);
+    const progress = Math.max(0, Math.min(1, this.time / this.duration));
 
     ctx.strokeStyle = "rgba(239, 68, 68, 0.7)";
     ctx.lineWidth = 2;
     ctx.setLineDash([6, 6]);
     ctx.beginPath();
-    ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+    ctx.arc(0, 0, Math.max(0.1, this.radius), 0, Math.PI * 2);
     ctx.stroke();
     ctx.setLineDash([]);
 
     ctx.fillStyle = "rgba(239, 68, 68, 0.25)";
     ctx.beginPath();
-    ctx.arc(0, 0, this.radius * (1 - progress), 0, Math.PI * 2);
+    ctx.arc(0, 0, Math.max(0.1, this.radius * (1 - progress)), 0, Math.PI * 2);
     ctx.fill();
 
     ctx.restore();
@@ -10617,12 +10651,16 @@ class Room {
 
   spawnRoomWave() {
     if (this.type === "BOSS") {
-      let boss;
-      const bossType = (dungeon.sectorMajor - 1) % 4;
-      if (bossType === 0) boss = new BossBloatware(this.cx, this.cy);
-      else if (bossType === 1) boss = new BossVendorLockin(this.cx, this.cy);
-      else if (bossType === 2) boss = new BossCloudMonopoly(this.cx, this.cy);
-      else boss = new BossOmegaAI(this.cx, this.cy);
+      const hasAliveBoss = enemies.some(e => e.isBoss && !e.isDead && e.hp > 0);
+      if (hasAliveBoss) {
+        this.type = "COMBAT";
+      } else {
+        let boss;
+        const bossType = (dungeon.sectorMajor - 1) % 4;
+        if (bossType === 0) boss = new BossBloatware(this.cx, this.cy);
+        else if (bossType === 1) boss = new BossVendorLockin(this.cx, this.cy);
+        else if (bossType === 2) boss = new BossCloudMonopoly(this.cx, this.cy);
+        else boss = new BossOmegaAI(this.cx, this.cy);
 
       boss.hp *= dungeon.getDifficultyMultiplier();
       boss.maxHp = boss.hp;
@@ -10637,7 +10675,8 @@ class Room {
           bossColor: boss.color || "#ef4444"
         });
       }
-      return;
+        return;
+      }
     }
 
     const enemyCount = Math.floor(5 + dungeon.sectorNum * 1.3);
@@ -10989,6 +11028,10 @@ class ObjectiveManager {
     let changed = false;
     for (const obj of this.objectives) {
       if (obj.id === objId && !obj.done) {
+        if (obj.id === "PURGE_BOSS") {
+          const aliveBoss = enemies && enemies.some(e => e.isBoss && !e.isDead && e.hp > 0);
+          if (aliveBoss) continue; // Never mark PURGE_BOSS complete while an active boss is still alive!
+        }
         obj.current = Math.min(obj.required, obj.current + amount);
         if (obj.current >= obj.required) {
           obj.done = true;
@@ -11076,8 +11119,11 @@ class ObjectiveManager {
         screenFlash = 0.8;
       }
 
-      if (act && window.soundEngine && typeof window.soundEngine.playVoiceClip === 'function') {
-        window.soundEngine.playVoiceClip(act.clearClip, act.clearVo || "ACT OBJECTIVES ACCOMPLISHED. EXTRACTION PORTAL ONLINE.", act.clearSpeaker || "HIGH COMMAND");
+      const currentTier = (this.dungeon && this.dungeon.currentActIndex !== undefined) ? (this.dungeon.currentActIndex + 1) : this.tier;
+      const clearMsg = `Tier ${currentTier} Clear! Outstanding patriotism, Tux! Tactical extraction portal deployed.`;
+      if (window.soundEngine && typeof window.soundEngine.playVoiceClip === 'function') {
+        const priority = (window.VoiceManager && window.VoiceManager.PRIORITY) ? window.VoiceManager.PRIORITY.MISSION_CRITICAL : 2;
+        window.soundEngine.playVoiceClip(act ? act.clearClip : null, clearMsg, (act && act.clearSpeaker) || "JOHN HELLDIVER", priority);
       }
 
       if (this.dungeon && typeof this.dungeon.spawnActExtractionPortals === 'function') {
@@ -11516,7 +11562,7 @@ class BossDirector {
     const distFromSpawn = Math.hypot(player.x - 512, player.y - 512);
 
     if (distFromSpawn >= this.nextBossDist) {
-      const activeBoss = enemies.find(e => e.isBoss && !e.isDead);
+      const activeBoss = enemies.some(e => e.isBoss && !e.isDead && e.hp > 0);
       if (!activeBoss) {
         this.spawnSpeakingBoss();
         this.nextBossDist += 2600; // Next speaking boss at +2600px
@@ -11525,6 +11571,7 @@ class BossDirector {
   }
   spawnSpeakingBoss() {
     if (!player) return;
+    if (enemies.some(e => e.isBoss && !e.isDead && e.hp > 0)) return; // Boss singleton guard!
     const bossId = this.bossRoster[this.bossTiersDefeated % this.bossRoster.length];
     this.bossTiersDefeated++;
 
@@ -12663,7 +12710,7 @@ class Dungeon {
       objectiveTargets.push(new ShieldPylon(midX + 60, midY + 280, core));
     }
 
-    // 2. Spawn Act Boss in Dedicated Boss Arena Chamber (Soul Knight style: at far end of sector, NOT at spawn!)
+    // 2. Stage Act Boss in Dedicated Boss Arena Chamber (Soul Knight style: spawned when player reaches boss arena, NOT at spawn!)
     const bossX = centerX + 1150;
     const bossY = centerY;
     let selectedBossId = act.bossId;
@@ -12679,12 +12726,13 @@ class Dungeon {
       selectedBossName = picked.name;
     }
 
-    if (window.EnemyModelFactory && selectedBossId) {
-      const boss = window.EnemyModelFactory.createFromSpec(selectedBossId, bossX, bossY);
-      enemies.push(boss);
-    } else {
-      enemies.push(new BossBloatware(bossX, bossY));
-    }
+    this.pendingBoss = {
+      id: selectedBossId,
+      name: selectedBossName,
+      x: bossX,
+      y: bossY,
+      spawned: false
+    };
 
     // 3. Station Hostile Sentry Turrets guarding the Boss Arena in Acts 2, 3, 4, 5, 6 (NOT at Tux's sanctuary spawn!)
     if (act.act >= 2) {
@@ -12815,7 +12863,12 @@ class Dungeon {
     return this.objectiveManager ? this.objectiveManager.isComplete() : false;
   }
 
-  onObjectiveProgress(id, amt = 1) {
+  onObjectiveProgress(id, amt = 1, entity = null) {
+    if (id === "PURGE_BOSS") {
+      if (entity && entity.hp > 0) return;
+      const aliveBoss = enemies.some(e => e.isBoss && !e.isDead && e.hp > 0);
+      if (aliveBoss) return;
+    }
     if (this.objectiveManager) this.objectiveManager.progress(id, amt);
   }
 
@@ -12953,7 +13006,8 @@ class Dungeon {
     } else if (this.currentObjectiveType === "PRISON_BREAK") {
       objectiveTargets.push(new PrisonBreakCage(centerX + 260, centerY));
     } else if (this.currentObjectiveType === "ELITE_BOUNTY" || this.currentObjectiveType === "PURGE_BOSS" || this.currentBiome.id === "QUANTUM_VOID") {
-      if (window.EnemyModelFactory && this.currentBiome.bossId) {
+      const alreadyHasBoss = enemies.some(e => e.isBoss && !e.isDead && e.hp > 0);
+      if (!alreadyHasBoss && window.EnemyModelFactory && this.currentBiome.bossId) {
         const boss = window.EnemyModelFactory.createFromSpec(this.currentBiome.bossId, centerX + 400, centerY);
         enemies.push(boss);
 
@@ -13161,6 +13215,13 @@ class Dungeon {
         const n3 = Math.cos(tx * 0.16 + ty * 0.07) * 0.6;
         const val = (n1 + n2 + n3) / 3.1;
 
+        // 80px Cardinal Corridors (columns 7, 8 and rows 7, 8) to prevent enclosed 0x3F wall clusters
+        const isCorridor = (lx === 7 || lx === 8 || ly === 7 || ly === 8);
+        if (isCorridor && val > 0.40) {
+          tiles[lx + ly * 16] = 1; // Carve open corridor through any wall cluster
+          continue;
+        }
+
         if (val > 0.46) {
           tiles[lx + ly * 16] = 2; // Slate Wall
         } else if (val > 0.38 && Math.sin(tx * 0.8 + ty * 0.3) > 0.5) {
@@ -13182,9 +13243,12 @@ class Dungeon {
 
     if (distFromOrigin >= 2 && chunkHash < 0.28) {
       hasOutpost = true;
-      for (let dy = 4; dy <= 11; dy++) {
-        for (let dx = 4; dx <= 11; dx++) {
-          tiles[dx + dy * 16] = 1;
+      // Carve 220px open radius (approx 4 tiles) around objective site
+      for (let dy = 0; dy < 16; dy++) {
+        for (let dx = 0; dx < 16; dx++) {
+          if (Math.hypot(dx - 8, dy - 8) <= 4.2 || dx === 7 || dx === 8 || dy === 7 || dy === 8) {
+            tiles[dx + dy * 16] = 1;
+          }
         }
       }
       tiles[4 + 4 * 16] = 5;
@@ -13525,6 +13589,35 @@ class Dungeon {
   update(dt) {
     if (this.actBanner && this.actBanner.timer > 0) {
       this.actBanner.timer -= dt;
+    }
+
+    // Boss arena proximity trigger: spawn boss only when player approaches boss chamber (<720px) or when mid objectives are done
+    if (this.pendingBoss && !this.pendingBoss.spawned && player) {
+      const distToArena = Math.hypot(player.x - this.pendingBoss.x, player.y - this.pendingBoss.y);
+      const hasAliveBoss = enemies.some(e => e.isBoss && !e.isDead && e.hp > 0);
+      if (!hasAliveBoss && (distToArena < 720 || (this.objectiveManager && this.objectiveManager.objectives && this.objectiveManager.objectives.some(o => o.id !== "PURGE_BOSS" && o.done)))) {
+        this.pendingBoss.spawned = true;
+        let boss;
+        if (window.EnemyModelFactory && this.pendingBoss.id) {
+          boss = window.EnemyModelFactory.createFromSpec(this.pendingBoss.id, this.pendingBoss.x, this.pendingBoss.y);
+        } else {
+          boss = new BossBloatware(this.pendingBoss.x, this.pendingBoss.y);
+        }
+        enemies.push(boss);
+
+        // Contextual boss encounter introduction
+        if (window.PixelCutscenes && typeof window.PixelCutscenes.play === 'function' && !window.PixelCutscenes.isActive()) {
+          const spec = boss.spec || {};
+          const quotes = (spec.dialogue && spec.dialogue.onSpawn) || ["YOU WILL YIELD TO PROPRIETARY RULE!"];
+          window.PixelCutscenes.play("boss_encounter", {
+            bossName: boss.label || this.pendingBoss.name || "CORPORATE OVERLORD",
+            bossTitle: spec.title || "Apex Market Tyrant",
+            bossQuote: quotes[0],
+            bossColor: (spec.visual && spec.visual.primaryColor) || "#ef4444",
+            bossChassis: (spec.visual && spec.visual.chassis) || "monolith"
+          });
+        }
+      }
     }
 
     for (let i = objectiveTargets.length - 1; i >= 0; i--) {
@@ -14103,7 +14196,19 @@ const UPGRADES_POOL = [
 ];
 
 let availableUpgrades = [];
+let upgradeModalLockTimer = 0;
+let upgradeModalOpenTime = 0;
+
 function showUpgradeScreen() {
+  // Clear any existing firing / shooting inputs immediately
+  mouse.down = false;
+  mouse.justPressed = false;
+  mouse.rightDown = false;
+  if (keys) {
+    keys['Space'] = false;
+    keys['Enter'] = false;
+  }
+
   gameState = STATE.UPGRADE;
   const shuffled = [...UPGRADES_POOL].sort(() => 0.5 - Math.random());
   availableUpgrades = shuffled.slice(0, 3);
@@ -14111,22 +14216,63 @@ function showUpgradeScreen() {
   const container = document.getElementById('upgradeChoices');
   container.innerHTML = '';
 
+  upgradeModalLockTimer = 0.65;
+  upgradeModalOpenTime = performance.now();
+
   availableUpgrades.forEach((upg, index) => {
     const card = document.createElement('div');
     card.className = 'upgrade-card';
+    card.style.pointerEvents = 'none';
+    card.style.opacity = '0.70';
+    card.style.filter = 'grayscale(0.4)';
     card.innerHTML = `
       <div class="upgrade-num">[${index + 1}]</div>
       <div class="upgrade-title">${upg.title}</div>
       <div class="upgrade-desc">${upg.desc}</div>
     `;
-    card.onclick = () => selectUpgrade(index);
+    card.onclick = (e) => {
+      if (e) e.stopPropagation();
+      selectUpgrade(index);
+    };
     container.appendChild(card);
   });
 
-  document.getElementById('upgradeModal').style.display = 'flex';
+  // Display status readiness banner in modal
+  let lockMsgEl = document.getElementById('upgradeLockIndicator');
+  if (!lockMsgEl) {
+    lockMsgEl = document.createElement('div');
+    lockMsgEl.id = 'upgradeLockIndicator';
+    lockMsgEl.style.cssText = 'color: #facc15; font-family: monospace; font-size: 13px; text-align: center; margin-top: 10px; letter-spacing: 1px; font-weight: bold;';
+    container.parentNode.appendChild(lockMsgEl);
+  }
+  lockMsgEl.innerText = "⏳ COMPILING KERNEL SUBSYSTEMS... [0.6s]";
+  lockMsgEl.style.color = "#facc15";
+
+  const modal = document.getElementById('upgradeModal');
+  if (modal) modal.style.display = 'flex';
+
+  // Unlock after 650ms grace period: enable pointer events and clear any queued clicks
+  setTimeout(() => {
+    upgradeModalLockTimer = 0;
+    mouse.down = false;
+    mouse.justPressed = false;
+    const cards = container.querySelectorAll('.upgrade-card');
+    cards.forEach(c => {
+      c.style.pointerEvents = 'auto';
+      c.style.opacity = '1.0';
+      c.style.filter = 'none';
+    });
+    if (lockMsgEl) {
+      lockMsgEl.innerText = "⚡ KERNEL COMPILED! SELECT SUBSYSTEM [1 - 3] ⚡";
+      lockMsgEl.style.color = "#22c55e";
+    }
+  }, 650);
 }
 
 function selectUpgrade(index) {
+  if (upgradeModalLockTimer > 0 || (performance.now() - upgradeModalOpenTime < 650)) {
+    return; // Ignore accidental 1-frame clicks
+  }
   if (index >= 0 && availableUpgrades[index]) {
     try {
       availableUpgrades[index].apply();
@@ -14138,6 +14284,8 @@ function selectUpgrade(index) {
   if (modal) modal.style.display = 'none';
   gameState = STATE.PLAYING;
   lastTimestamp = performance.now();
+  mouse.down = false;
+  mouse.justPressed = false;
 }
 
 function skipUpgrade() {
@@ -14713,12 +14861,12 @@ function updateHUD() {
     suitCard.style.display = 'none';
   }
 
-  // Boss Bar in HUD
-  const currentBoss = enemies.find(e => e.isBoss);
+  // Boss Bar in HUD: only display when boss is active, alive, and engaged within proximity (<1350px)
+  const currentBoss = enemies.find(e => e.isBoss && !e.isDead && e.hp > 0 && Math.hypot(e.x - player.x, e.y - player.y) < 1350);
   const bossBar = document.getElementById('bossBarContainer');
   if (currentBoss && bossBar) {
     bossBar.style.display = 'block';
-    document.getElementById('bossName').innerText = currentBoss.label;
+    document.getElementById('bossName').innerText = currentBoss.label || currentBoss.name || "APEX OVERLORD";
     document.getElementById('bossHpText').innerText = `${Math.max(0, Math.round(currentBoss.hp))} / ${currentBoss.maxHp}`;
     document.getElementById('bossHpFill').style.width = `${Math.max(0, (currentBoss.hp / currentBoss.maxHp) * 100)}%`;
   } else if (bossBar) {
@@ -14798,133 +14946,159 @@ function updateHUD() {
 }
 
 function render() {
-  ctx.save();
+  // Force reset canvas transformation, alpha, and composite operation on EVERY frame
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1.0;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Clear Screen
-  ctx.fillStyle = "#090d16";
+  // Background clear with biome bgColor (eliminates Hall of Mirrors diagonal smear!)
+  const bgColor = (dungeon && dungeon.currentBiome && dungeon.currentBiome.bgColor) ? dungeon.currentBiome.bgColor : "#090d16";
+  ctx.fillStyle = bgColor;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // Apply Screen Shake
-  if (screenShake > 0) {
-    const shakeX = (Math.random() - 0.5) * screenShake;
-    const shakeY = (Math.random() - 0.5) * screenShake;
-    ctx.translate(shakeX, shakeY);
-  }
+  ctx.save();
+  try {
+    // Apply Screen Shake
+    if (screenShake > 0) {
+      const shakeX = (Math.random() - 0.5) * screenShake;
+      const shakeY = (Math.random() - 0.5) * screenShake;
+      ctx.translate(shakeX, shakeY);
+    }
 
-  // Camera Translation
-  ctx.translate(-camera.x, -camera.y);
+    // Camera Translation
+    ctx.translate(-camera.x, -camera.y);
 
-  // Procedural Dungeon Tiles & Interactive Entities
-  if (dungeon) {
-    dungeon.draw(ctx);
-  }
+    // Procedural Dungeon Tiles & Interactive Entities
+    if (dungeon) {
+      try { dungeon.draw(ctx); } catch (e) { console.error("dungeon.draw err:", e); }
+    }
 
-  // Floor Hazards (Patent Webs, Paywall Puddles, Mortars)
-  for (const hazard of floorHazards) {
-    hazard.draw(ctx);
-  }
+    // Floor Hazards (Patent Webs, Paywall Puddles, Mortars)
+    for (const hazard of floorHazards) {
+      try { hazard.draw(ctx); } catch (e) {}
+    }
 
-  // Scorch / Magma Trails
-  for (const p of particles) {
-    if (p instanceof ScorchTrail) p.draw(ctx);
-  }
+    // Scorch / Magma Trails
+    for (const p of particles) {
+      if (p instanceof ScorchTrail) {
+        try { p.draw(ctx); } catch (e) {}
+      }
+    }
 
-  // Pickups
-  for (const pickup of pickups) {
-    pickup.draw(ctx);
-  }
+    // Pickups
+    for (const pickup of pickups) {
+      try { pickup.draw(ctx); } catch (e) {}
+    }
 
-  // Space Marine Suit Drop Pods & Pickups
-  for (const pod of dropPods) {
-    pod.draw(ctx);
-  }
-  for (const pod of resupplyDropPods) {
-    pod.draw(ctx);
-  }
-  for (const suit of spaceMarineSuitPickups) {
-    suit.draw(ctx);
-  }
+    // Space Marine Suit Drop Pods & Pickups
+    for (const pod of dropPods) {
+      try { pod.draw(ctx); } catch (e) {}
+    }
+    for (const pod of resupplyDropPods) {
+      try { pod.draw(ctx); } catch (e) {}
+    }
+    for (const suit of spaceMarineSuitPickups) {
+      try { suit.draw(ctx); } catch (e) {}
+    }
 
-  // Quarantine Lockdown Arenas
-  for (const arena of quarantineLockdownArenas) {
-    arena.draw(ctx);
-  }
+    // Quarantine Lockdown Arenas
+    for (const arena of quarantineLockdownArenas) {
+      try { arena.draw(ctx); } catch (e) {}
+    }
 
-  // Sentry Turrets
-  for (const sentry of sentryTurrets) {
-    sentry.draw(ctx);
-  }
+    // Sentry Turrets
+    for (const sentry of sentryTurrets) {
+      try { sentry.draw(ctx); } catch (e) {}
+    }
 
-  // Helper Penguins
-  for (const hp of helperPenguins) {
-    hp.draw(ctx);
-  }
+    // Helper Penguins
+    for (const hp of helperPenguins) {
+      try { hp.draw(ctx); } catch (e) {}
+    }
 
-  // Player Tux
-  if (player) {
-    player.draw(ctx);
-  }
+    // Player Tux
+    if (player) {
+      try { player.draw(ctx); } catch (e) { console.error("player.draw err:", e); }
+    }
 
-  // Enemies
-  for (const enemy of enemies) {
-    enemy.draw(ctx);
-  }
+    // Enemies
+    for (const enemy of enemies) {
+      try { enemy.draw(ctx); } catch (e) { console.error("enemy.draw err:", e); }
+    }
 
-  // Projectiles
-  for (const proj of enemyProjectiles) {
-    proj.draw(ctx);
-  }
-  for (const proj of playerProjectiles) {
-    proj.draw(ctx);
-  }
+    // Projectiles
+    for (const proj of enemyProjectiles) {
+      try { proj.draw(ctx); } catch (e) {}
+    }
+    for (const proj of playerProjectiles) {
+      try { proj.draw(ctx); } catch (e) {}
+    }
 
-  // Melee Slash Visual Effects
-  for (const slash of meleeSlashEffects) {
-    if (slash) slash.draw(ctx);
-  }
+    // Melee Slash Visual Effects
+    for (const slash of meleeSlashEffects) {
+      if (slash) {
+        try { slash.draw(ctx); } catch (e) {}
+      }
+    }
 
-  // Orbital Strikes (500kg bomb, 380mm, laser)
-  for (const strike of orbitalStrikes) {
-    strike.draw(ctx);
-  }
+    // Orbital Strikes (500kg bomb, 380mm, laser)
+    for (const strike of orbitalStrikes) {
+      try { strike.draw(ctx); } catch (e) {}
+    }
 
-  // Flame, Spark, and Shockwave Particles
-  for (const p of particles) {
-    if (!(p instanceof ScorchTrail)) p.draw(ctx);
-  }
+    // Flame, Spark, and Shockwave Particles
+    for (const p of particles) {
+      if (!(p instanceof ScorchTrail)) {
+        try { p.draw(ctx); } catch (e) {}
+      }
+    }
 
-  // Floating Text
-  for (const ft of floatingTexts) {
-    const alpha = ft.lifetime / ft.maxLifetime;
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = ft.color;
-    const fontSize = Math.max(12, Math.round(ft.size * 1.05));
-    ctx.font = `700 ${fontSize}px "Pixelify Sans", monospace`;
-    ctx.textAlign = "center";
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "#000000";
-    ctx.strokeText(ft.text, ft.x, ft.y);
-    ctx.fillText(ft.text, ft.x, ft.y);
+    // Floating Text
+    for (const ft of floatingTexts) {
+      try {
+        const alpha = Math.max(0, Math.min(1, ft.lifetime / ft.maxLifetime));
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = ft.color;
+        const fontSize = Math.max(12, Math.round(ft.size * 1.05));
+        ctx.font = `700 ${fontSize}px "Pixelify Sans", monospace`;
+        ctx.textAlign = "center";
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "#000000";
+        ctx.strokeText(ft.text, ft.x, ft.y);
+        ctx.fillText(ft.text, ft.x, ft.y);
+        ctx.restore();
+      } catch (e) {}
+    }
+
+    // FOSS Pantheon blessings, Distro system, and Uptime lightning
+    if (window.PantheonBlessingController) {
+      try { window.PantheonBlessingController.draw(ctx); } catch (e) {}
+    }
+    if (window.DistroSystem) {
+      try { window.DistroSystem.draw(ctx); } catch (e) {}
+    }
+    if (window.UptimeMeter) {
+      try { window.UptimeMeter.draw(ctx); } catch (e) {}
+    }
+  } catch (renderWorldErr) {
+    console.error("renderWorld fatal error caught:", renderWorldErr);
+  } finally {
     ctx.restore();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1.0;
   }
-
-  // FOSS Pantheon blessings, Distro system, and Uptime lightning
-  if (window.PantheonBlessingController) window.PantheonBlessingController.draw(ctx);
-  if (window.DistroSystem) window.DistroSystem.draw(ctx);
-  if (window.UptimeMeter) window.UptimeMeter.draw(ctx);
-
-  ctx.restore();
 
   // Cinematic Campaign Act Banner
   if (dungeon && dungeon.actBanner && dungeon.actBanner.timer > 0) {
-    dungeon.drawActBanner(ctx);
+    try { dungeon.drawActBanner(ctx); } catch (e) {}
   }
 
   // Nuclear Flash Overlay from 500KG Bomb / Sector Warp
   if (screenFlash > 0) {
     ctx.save();
-    ctx.fillStyle = `rgba(255, 255, 255, ${screenFlash})`;
+    ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(1.0, screenFlash)})`;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.restore();
   }

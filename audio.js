@@ -1,6 +1,213 @@
 // Procedural Audio Engine for Tux: Root Purge
 // Uses Web Audio API to synthesize all sound effects and an adrenaline-pumping synth-metal BGM!
 
+// --- SINGLE-CHANNEL VOICE & TTS COORDINATOR (VOICE MUTEX WITH PRIORITIES) ---
+class VoiceManager {
+  static PRIORITY = {
+    BANTER: 1,
+    MISSION_CRITICAL: 2,
+    BOSS_INTRO: 3
+  };
+
+  constructor(soundEngine) {
+    this.soundEngine = soundEngine;
+    this.currentTask = null; // { id, priority, type: 'audio'|'speech', audioObj, onEnd }
+    this.queue = [];
+    this.gapMs = 400; // 0.4s inter-message gap
+    this.lastEndedTime = 0;
+    this._nextId = 1;
+  }
+
+  inferPriority(speaker, clipName, text) {
+    const s = (speaker || '').toUpperCase();
+    const c = (clipName || '').toUpperCase();
+    const t = (text || '').toUpperCase();
+
+    if (/BOSS|OVERLORD|BALLMER|PATENT|HYPERVISOR|TITAN|ARCHON|OMEGA|LEVIATHAN|GOLEM/i.test(s) || /BOSS|ENCOUNTER|DEFEAT/i.test(c)) {
+      return VoiceManager.PRIORITY.BOSS_INTRO;
+    }
+    if (/HIGH COMMAND|SUPER DESTROYER|GENERAL BARSH|LINUS|OBJECTIVE|VICTORY|CLEAR|WARP/i.test(s) || /BRIEF|CLEAR|VICTORY/i.test(c) || /OBJECTIVE|EXTRACTION/i.test(t)) {
+      return VoiceManager.PRIORITY.MISSION_CRITICAL;
+    }
+    return VoiceManager.PRIORITY.BANTER;
+  }
+
+  play(clipName, fallbackText, fallbackSpeaker = 'SUPER DESTROYER', explicitPriority = null) {
+    const priority = explicitPriority !== null ? explicitPriority : this.inferPriority(fallbackSpeaker, clipName, fallbackText);
+    const id = this._nextId++;
+    const req = { id, clipName, fallbackText, fallbackSpeaker, priority };
+
+    if (this.currentTask) {
+      // If new task has strictly higher priority than currently playing, cancel current line immediately
+      if (priority > this.currentTask.priority) {
+        this.abortCurrent();
+        this.executeTask(req);
+        return;
+      } else {
+        // Enqueue if lower or equal priority
+        if (this.queue.length >= 3) {
+          const banterIdx = this.queue.findIndex(q => q.priority <= VoiceManager.PRIORITY.BANTER);
+          if (banterIdx !== -1) this.queue.splice(banterIdx, 1);
+          else if (priority <= this.queue[this.queue.length - 1].priority) return;
+        }
+        this.queue.push(req);
+        return;
+      }
+    }
+
+    const now = performance.now();
+    const elapsed = now - this.lastEndedTime;
+    if (elapsed < this.gapMs) {
+      setTimeout(() => {
+        if (!this.currentTask) this.executeTask(req);
+        else this.queue.push(req);
+      }, this.gapMs - elapsed);
+      return;
+    }
+
+    this.executeTask(req);
+  }
+
+  abortCurrent() {
+    if (!this.currentTask) return;
+    const task = this.currentTask;
+    this.currentTask = null;
+    if (task.type === 'audio' && task.audioObj) {
+      try {
+        task.audioObj.pause();
+        task.audioObj.currentTime = 0;
+      } catch (e) {}
+    } else if (task.type === 'speech') {
+      try {
+        if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+        }
+      } catch (e) {}
+    }
+    if (task.onEnd) task.onEnd(true);
+  }
+
+  executeTask(req) {
+    if (req.clipName) {
+      this.playAudioFile(req);
+    } else if (req.fallbackText) {
+      this.playSpeechText(req);
+    }
+  }
+
+  playAudioFile(req) {
+    const spkUpper = (req.fallbackSpeaker || '').toUpperCase();
+    const isEnemy = /BALLMER|PATENT|APPLE|WARDEN|HYPERVISOR|CORPORATE|EULA|TITAN|ARCHON/i.test(spkUpper);
+
+    if (this.soundEngine) {
+      if (isEnemy) this.soundEngine.playCorporateErrorBeep();
+      else this.soundEngine.playLibertyRadioSquelch();
+      this.soundEngine.duckMusic(0.20);
+    }
+
+    let audio = this.soundEngine.voiceAudioCache.get(req.clipName);
+    if (!audio) {
+      audio = new Audio(`assets/audio/vo/${req.clipName}.mp3`);
+      audio.preload = 'auto';
+      this.soundEngine.voiceAudioCache.set(req.clipName, audio);
+    }
+
+    audio.volume = 1.0;
+    this.soundEngine.currentVoiceAudio = audio;
+
+    let finished = false;
+    const cleanup = () => {
+      if (finished) return;
+      finished = true;
+      if (this.soundEngine) this.soundEngine.restoreMusic();
+      if (this.currentTask && this.currentTask.id === req.id) {
+        this.currentTask = null;
+        this.lastEndedTime = performance.now();
+        this.processNextInQueue();
+      }
+    };
+
+    this.currentTask = {
+      id: req.id,
+      priority: req.priority,
+      type: 'audio',
+      audioObj: audio,
+      onEnd: cleanup
+    };
+
+    audio.onended = cleanup;
+    audio.onerror = () => {
+      if (finished) return;
+      finished = true;
+      if (this.currentTask && this.currentTask.id === req.id) {
+        this.currentTask = null;
+      }
+      if (req.fallbackText) {
+        this.playSpeechText(req);
+      } else {
+        cleanup();
+      }
+    };
+
+    const p = audio.play();
+    if (p !== undefined) {
+      p.catch(() => {
+        if (finished) return;
+        finished = true;
+        if (this.currentTask && this.currentTask.id === req.id) {
+          this.currentTask = null;
+        }
+        if (req.fallbackText) {
+          this.playSpeechText(req);
+        } else {
+          cleanup();
+        }
+      });
+    }
+  }
+
+  playSpeechText(req) {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      this.processNextInQueue();
+      return;
+    }
+
+    if (this.soundEngine) {
+      this.soundEngine.duckMusic(0.35);
+    }
+
+    let finished = false;
+    const cleanup = () => {
+      if (finished) return;
+      finished = true;
+      if (this.soundEngine) this.soundEngine.restoreMusic();
+      if (this.currentTask && this.currentTask.id === req.id) {
+        this.currentTask = null;
+        this.lastEndedTime = performance.now();
+        this.processNextInQueue();
+      }
+    };
+
+    this.currentTask = {
+      id: req.id,
+      priority: req.priority,
+      type: 'speech',
+      onEnd: cleanup
+    };
+
+    this.soundEngine.synthesizeSpeech(req.fallbackText, req.fallbackSpeaker, null, null, cleanup);
+  }
+
+  processNextInQueue() {
+    if (this.queue.length === 0) return;
+    const nextReq = this.queue.shift();
+    setTimeout(() => {
+      if (!this.currentTask) this.executeTask(nextReq);
+    }, this.gapMs);
+  }
+}
+window.VoiceManager = VoiceManager;
+
 class SoundEngine {
   constructor() {
     this.ctx = null;
@@ -17,6 +224,7 @@ class SoundEngine {
     this.bpm = 142; // Fast, driving adrenaline tempo
     this.currentVoiceAudio = null;
     this.voiceAudioCache = new Map();
+    this.voiceManager = new VoiceManager(this);
     this.initialized = false;
   }
 
@@ -923,79 +1131,45 @@ class SoundEngine {
     osc.stop(now + 0.15);
   }
 
-  /**
-   * Play studio-grade ElevenLabs voice audio clip from assets/audio/vo/
-   * Ducks BGM music gain while speaking, falls back to Web Speech API if audio is unavailable.
-   */
-  playVoiceClip(clipName, fallbackText, fallbackSpeaker = 'SUPER DESTROYER') {
-    if (!clipName) {
-      if (fallbackText) this.speakRobot(fallbackText, fallbackSpeaker);
-      return;
-    }
-
-    const spkUpper = (fallbackSpeaker || '').toUpperCase();
-    const isEnemy = /BALLMER|PATENT|APPLE|WARDEN|HYPERVISOR|CORPORATE|EULA/i.test(spkUpper);
-
-    if (isEnemy) {
-      this.playCorporateErrorBeep();
-    } else {
-      this.playLibertyRadioSquelch();
-    }
-
-    try {
-      if (this.currentVoiceAudio) {
-        this.currentVoiceAudio.pause();
-        this.currentVoiceAudio.currentTime = 0;
-        this.currentVoiceAudio = null;
-      }
-
-      let audio = this.voiceAudioCache.get(clipName);
-      if (!audio) {
-        audio = new Audio(`assets/audio/vo/${clipName}.mp3`);
-        audio.preload = 'auto';
-        this.voiceAudioCache.set(clipName, audio);
-      }
-
-      audio.volume = 1.0;
-      this.currentVoiceAudio = audio;
-
-      // Duck BGM music gain while voice clip is playing
-      if (this.musicGain && this.ctx) {
+  duckMusic(level = 0.20) {
+    if (this.musicGain && this.ctx) {
+      try {
         const curTime = this.ctx.currentTime;
         this.musicGain.gain.cancelScheduledValues(curTime);
-        this.musicGain.gain.linearRampToValueAtTime(0.20, curTime + 0.08);
-      }
-
-      const restoreMusic = () => {
-        if (this.musicGain && this.ctx) {
-          const curTime = this.ctx.currentTime;
-          this.musicGain.gain.cancelScheduledValues(curTime);
-          this.musicGain.gain.linearRampToValueAtTime(0.80, curTime + 0.35);
-        }
-        if (this.currentVoiceAudio === audio) {
-          this.currentVoiceAudio = null;
-        }
-      };
-
-      audio.onended = restoreMusic;
-      audio.onerror = () => {
-        restoreMusic();
-        if (fallbackText) this.speakRobot(fallbackText, fallbackSpeaker);
-      };
-
-      const playPromise = audio.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(() => {
-          restoreMusic();
-          if (fallbackText) this.speakRobot(fallbackText, fallbackSpeaker);
-        });
-      }
-    } catch (err) {
-      if (fallbackText) this.speakRobot(fallbackText, fallbackSpeaker);
+        this.musicGain.gain.linearRampToValueAtTime(level, curTime + 0.08);
+      } catch (e) {}
     }
   }
 
-  speakRobot(text, speaker = 'SUPER DESTROYER', customPitch, customRate) {
+  restoreMusic(target = 0.80) {
+    if (this.musicGain && this.ctx) {
+      try {
+        const curTime = this.ctx.currentTime;
+        this.musicGain.gain.cancelScheduledValues(curTime);
+        this.musicGain.gain.linearRampToValueAtTime(target, curTime + 0.35);
+      } catch (e) {}
+    }
+    this.currentVoiceAudio = null;
+  }
+
+  /**
+   * Play studio-grade ElevenLabs voice audio clip from assets/audio/vo/
+   * Ducks BGM music gain while speaking, falls back to Web Speech API if audio is unavailable.
+   * Managed via single-channel VoiceManager queue with priorities and 0.4s gap.
+   */
+  playVoiceClip(clipName, fallbackText, fallbackSpeaker = 'SUPER DESTROYER', priority = null) {
+    if (this.voiceManager) {
+      this.voiceManager.play(clipName, fallbackText, fallbackSpeaker, priority);
+    }
+  }
+
+  speakRobot(text, speaker = 'SUPER DESTROYER', customPitch, customRate, priority = null) {
+    if (this.voiceManager) {
+      this.voiceManager.play(null, text, speaker, priority);
+    }
+  }
+
+  synthesizeSpeech(text, speaker = 'SUPER DESTROYER', customPitch, customRate, onFinish = null) {
     const spkUpper = (speaker || '').toUpperCase();
     const isJohnHelldiver = /HELLDIVER/i.test(spkUpper);
     const isGeneralBarsh = /BARSH/i.test(spkUpper);
@@ -1013,50 +1187,42 @@ class SoundEngine {
       this.playRobotVocoderChime();
     }
 
-    // Asynchronous non-blocking dispatch: NEVER blocks 60 FPS gameplay!
     setTimeout(() => {
-      if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-      const now = performance.now();
-      if (window._lastSpeechBarkTime && now - window._lastSpeechBarkTime < 850) return;
-      window._lastSpeechBarkTime = now;
+      if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+        if (onFinish) onFinish();
+        return;
+      }
 
       try {
         const utter = new SpeechSynthesisUtterance(text);
 
         if (isJohnHelldiver) {
-          // John Helldiver: Booming, resonant, heroic patriotic baritone (NEVER WHISPER!)
-          utter.pitch = customPitch !== undefined ? customPitch : 0.95;
-          utter.rate = customRate !== undefined ? customRate : 1.02;
+          utter.pitch = (customPitch !== undefined && customPitch !== null) ? customPitch : 0.95;
+          utter.rate = (customRate !== undefined && customRate !== null) ? customRate : 1.02;
           utter.volume = 1.0;
         } else if (isGeneralBarsh) {
-          // General Barsh: Gruff, battle-hardened field marshal
-          utter.pitch = customPitch !== undefined ? customPitch : 0.85;
-          utter.rate = customRate !== undefined ? customRate : 0.98;
+          utter.pitch = (customPitch !== undefined && customPitch !== null) ? customPitch : 0.85;
+          utter.rate = (customRate !== undefined && customRate !== null) ? customRate : 0.98;
           utter.volume = 1.0;
         } else if (isLinusTorvalds) {
-          // Linus Torvalds: Sarcastic, sharp, articulate code mastermind
-          utter.pitch = customPitch !== undefined ? customPitch : 1.02;
-          utter.rate = customRate !== undefined ? customRate : 1.08;
+          utter.pitch = (customPitch !== undefined && customPitch !== null) ? customPitch : 1.02;
+          utter.rate = (customRate !== undefined && customRate !== null) ? customRate : 1.08;
           utter.volume = 1.0;
         } else if (isHighCommand) {
-          // High Command / Super Destroyer: Deep masculine military timbre
-          utter.pitch = customPitch !== undefined ? customPitch : 0.92;
-          utter.rate = customRate !== undefined ? customRate : 1.02;
+          utter.pitch = (customPitch !== undefined && customPitch !== null) ? customPitch : 0.92;
+          utter.rate = (customRate !== undefined && customRate !== null) ? customRate : 1.02;
           utter.volume = 1.0;
         } else if (isTuxSide) {
-          // Tux / Allied resistance: Resolute, heroic, battle-hardened
-          utter.pitch = customPitch !== undefined ? customPitch : 0.88;
-          utter.rate = customRate !== undefined ? customRate : 1.06;
+          utter.pitch = (customPitch !== undefined && customPitch !== null) ? customPitch : 0.88;
+          utter.rate = (customRate !== undefined && customRate !== null) ? customRate : 1.06;
           utter.volume = 0.95;
         } else if (isFemaleEnemy) {
-          // Cold, sterile, menacing corporate female DRM voice
-          utter.pitch = customPitch !== undefined ? customPitch : 1.30;
-          utter.rate = customRate !== undefined ? customRate : 1.14;
+          utter.pitch = (customPitch !== undefined && customPitch !== null) ? customPitch : 1.30;
+          utter.rate = (customRate !== undefined && customRate !== null) ? customRate : 1.14;
           utter.volume = 0.95;
         } else {
-          // Corporate male tyrant (Ballmer-bot, Patent Troll, Hypervisor) - Whining / miserable corporate tone
-          utter.pitch = customPitch !== undefined ? customPitch : 0.78;
-          utter.rate = customRate !== undefined ? customRate : 1.15;
+          utter.pitch = (customPitch !== undefined && customPitch !== null) ? customPitch : 0.78;
+          utter.rate = (customRate !== undefined && customRate !== null) ? customRate : 1.15;
           utter.volume = 0.92;
         }
 
@@ -1077,7 +1243,6 @@ class SoundEngine {
           'monica', 'paulina', 'ioana', 'laura', 'helena', 'agnes', 'alice', 'zoe', 'kendra'
         ];
 
-        // NOVELTY & WHISPER VOICES STRICTLY EXCLUDED!
         const NOVELTY_EXCLUDED = [
           'whisper', 'deranged', 'novelty', 'bad news', 'good news', 'organ', 'bells',
           'boing', 'bubbles', 'cellos', 'pipe', 'trinoids', 'zarvox', 'albert', 'ralph'
@@ -1098,7 +1263,6 @@ class SoundEngine {
         if (voices && voices.length > 0) {
           let chosen = null;
           if (isHighCommand || isTuxSide) {
-            // High Command & Tux: Strictly powerful male voices (Daniel, Alex, Tom, Oliver, Fred, David, Bruce)
             const maleNames = ['daniel', 'alex', 'tom', 'oliver', 'fred', 'david', 'mark', 'george', 'richard', 'bruce'];
             chosen = voices.find(v => {
               const n = v.name.toLowerCase();
@@ -1111,41 +1275,35 @@ class SoundEngine {
               chosen = voices.find(v => isStrictlyMale(v));
             }
           } else if (isFemaleEnemy) {
-            // Enemy corporate AI: Sterile FEMALE voices (Samantha, Victoria, Karen, etc.)
             chosen = voices.find(v => {
               const n = v.name.toLowerCase();
               return FEMALE_NAMES.some(fem => n.includes(fem));
             }) || voices.find(v => v.lang && v.lang.startsWith('en'));
           } else {
-            // Corporate male tyrant
             chosen = voices.find(v => isStrictlyMale(v)) || voices.find(v => v.lang && v.lang.startsWith('en'));
           }
           if (chosen) utter.voice = chosen;
         }
 
-        // macOS / Chromium fix: Don't call cancel() synchronously right before speak() as it hangs CoreAudio IPC
-        if (window.speechSynthesis.speaking) {
-          // If already speaking, skip new speech to prevent audio queue pileup
-          return;
-        }
+        let finished = false;
+        const done = () => {
+          if (finished) return;
+          finished = true;
+          window._isSpeakingVoiceUtter = false;
+          if (onFinish) onFinish();
+        };
 
-        utter.onend = () => {
-          window._isSpeakingVoiceUtter = false;
-        };
-        utter.onerror = () => {
-          window._isSpeakingVoiceUtter = false;
-        };
+        utter.onend = done;
+        utter.onerror = done;
 
         window._isSpeakingVoiceUtter = true;
         window.speechSynthesis.speak(utter);
 
-        // Failsafe watchdog timer: ensure flag resets even if onend never fires
-        setTimeout(() => {
-          window._isSpeakingVoiceUtter = false;
-        }, 5000);
+        // Failsafe watchdog timer: ensure flag and callback fire even if browser drops onend
+        setTimeout(done, 5000);
       } catch (err) {
-        // Silently catch so game loop is NEVER impacted
         window._isSpeakingVoiceUtter = false;
+        if (onFinish) onFinish();
       }
     }, 16);
   }
