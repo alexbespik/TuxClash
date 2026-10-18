@@ -429,20 +429,34 @@ class Player {
       }
     }
 
-    // Smart Auto-Aim & Target Acquisition (Argon's Roguelike Spec #4)
+    // Smart Auto-Aim & Target Acquisition (Argon's Roguelike Spec #4 - Optimized 60 FPS)
     this.aimScanTimer = (this.aimScanTimer || 0) - dt;
     if (this.aimScanTimer <= 0 || (this.autoAimTarget && (this.autoAimTarget.isDead || this.autoAimTarget.hp <= 0))) {
       this.aimScanTimer = 0.1; // Scan every 0.1s
-      let closestDist = 750; // AimRadius
       let closestEnemy = null;
       const enemyList = window.enemies || [];
-      for (const e of enemyList) {
+      const aimRadius = 750;
+      const candidates = [];
+
+      // Pass 1: Ultra-fast distance cull (pure distance check, zero raycasts)
+      for (let i = 0; i < enemyList.length; i++) {
+        const e = enemyList[i];
         if (!e || e.isDead || e.hp <= 0) continue;
         const d = Math.hypot(e.x - this.x, e.y - this.y);
-        if (d < closestDist) {
-          if (!dungeon || dungeon.hasLineOfSight(this.x, this.y, e.x, e.y)) {
-            closestDist = d;
-            closestEnemy = e;
+        if (d < aimRadius) {
+          candidates.push({ enemy: e, dist: d });
+        }
+      }
+
+      // Pass 2: Sort candidates and test line-of-sight starting with closest
+      if (candidates.length > 0) {
+        candidates.sort((a, b) => a.dist - b.dist);
+        const testLimit = Math.min(candidates.length, 6);
+        for (let i = 0; i < testLimit; i++) {
+          const c = candidates[i];
+          if (!dungeon || dungeon.hasLineOfSight(this.x, this.y, c.enemy.x, c.enemy.y)) {
+            closestEnemy = c.enemy;
+            break; // Closest valid LoS candidate found!
           }
         }
       }
@@ -945,6 +959,7 @@ class Player {
               particles.push(new SparkParticle(ep.x, ep.y, (Math.random() - 0.5) * 120, (Math.random() - 0.5) * 120, hasReflectBuff ? "#38bdf8" : "#4ade80"));
             }
             if (window.RoguelikeDevKit) window.RoguelikeDevKit.triggerHitstop(0.04);
+            if (window.CombatEventBus) window.CombatEventBus.emit('OnProjectileDeflected', this, ep);
             enemyProjectiles.splice(i, 1);
           }
         }
@@ -11430,19 +11445,27 @@ class HostileDropPod {
 
 class AmbushDirector {
   constructor() {
-    this.timer = 45.0;
+    this.timer = 85.0; // Ample time for Tux to configure loadouts in sanctuary
     this.lastDist = 0;
   }
   update(dt) {
     if (gameState !== STATE.PLAYING || !player) return;
     this.timer -= dt;
-    const dist = Math.hypot(player.x, player.y);
-    const distDelta = dist - this.lastDist;
+    // Calculate distance strictly from spawn sanctuary (512, 512)
+    const distFromSpawn = Math.hypot(player.x - 512, player.y - 512);
+    // Never trigger ambushes inside the sanctuary clearing (< 850px)
+    if (distFromSpawn < 850) return;
 
-    if ((this.timer <= 0 && dist > 600) || distDelta > 1900) {
+    // Do not trigger ambushes during active boss fights
+    const hasActiveBoss = enemies.some(e => e.isBoss && !e.isDead);
+    if (hasActiveBoss) return;
+
+    const distDelta = distFromSpawn - this.lastDist;
+
+    if ((this.timer <= 0 && distFromSpawn > 950) || distDelta > 2200) {
       this.triggerAmbush();
-      this.timer = 55 + Math.random() * 35;
-      this.lastDist = dist;
+      this.timer = 65 + Math.random() * 40;
+      this.lastDist = distFromSpawn;
     }
   }
   triggerAmbush() {
@@ -11472,24 +11495,31 @@ class AmbushDirector {
 class BossDirector {
   constructor() {
     this.bossTiersDefeated = 0;
-    this.nextBossDist = 1800; // First speaking boss at 1800px from spawn
+    this.nextBossDist = 2000; // First speaking boss at 2000px from spawn sanctuary
     this.bossRoster = [
-      "ballmer_bot",
-      "patent_troll_sovereign",
-      "oracle_audit_archon",
-      "crowdstrike_null_pointer",
-      "apple_garden_warden"
+      "ballmer_bot",                  // Act I: Emerald Frontier
+      "smelter_titan",                // Act II: Thermal Silicon Smelter
+      "cryo_daemon_hypervisor",       // Act III: Cold Archive Gulag
+      "patent_troll_sovereign",       // Act IV: Walled Garden Siege
+      "bloatware_behemoth",           // Act V: Win32 Bloatware Catacombs
+      "surveillance_overseer_v4",     // Act VI: Telemetry Dyson Sphere
+      "microtransaction_leviathan",   // Act VII: Cloud Billing Labyrinth
+      "general_counsel_archon",       // Act VIII: EULA Legal Megastructure
+      "firmware_flasher_supreme",     // Act IX: Silicon Foundry of the Damned
+      "kernel_panic_golem",           // Act X: Kernel Panic Badlands
+      "drm_cryptoprocessor_prime",    // Act XI: Closed-Source Citadel
+      "monolithic_kernel_lord"        // Act XII: Ring-0 Monolithic Singularity
     ];
   }
   update(dt) {
     if (gameState !== STATE.PLAYING || !player) return;
-    const dist = Math.hypot(player.x, player.y);
+    const distFromSpawn = Math.hypot(player.x - 512, player.y - 512);
 
-    if (dist >= this.nextBossDist) {
-      const activeBoss = enemies.find(e => e.isBoss);
+    if (distFromSpawn >= this.nextBossDist) {
+      const activeBoss = enemies.find(e => e.isBoss && !e.isDead);
       if (!activeBoss) {
         this.spawnSpeakingBoss();
-        this.nextBossDist += 2400; // Next speaking boss at +2400px
+        this.nextBossDist += 2600; // Next speaking boss at +2600px
       }
     }
   }
@@ -11949,6 +11979,9 @@ function executeTerminalCommand(rawCmd) {
       }
       if (window.soundEngine && window.soundEngine.playObjectiveComplete) {
         window.soundEngine.playObjectiveComplete();
+      }
+      if (window.CombatEventBus) {
+        window.CombatEventBus.emit('OnTerminalCommandSuccess', activeTerminalStation);
       }
       return;
     }
@@ -12604,6 +12637,15 @@ class Dungeon {
       act.targetService || "cartel-drm.service",
       act.terminalDesc || "Purge proprietary DRM daemon holding server cluster hostage"
     ));
+
+    // Spawn Sacred Statue of the FOSS Pantheon in Sanctuary
+    if (window.FOSSSanctuaryStatue) {
+      const pantheonIds = ['IGNUCIUS', 'TORVALDS', 'KEN_AND_DENNIS', 'SUZANNE'];
+      const chosenPantheon = pantheonIds[actIndex % pantheonIds.length];
+      if (!window.pantheonStatues) window.pantheonStatues = [];
+      window.pantheonStatues.length = 0;
+      window.pantheonStatues.push(new window.FOSSSanctuaryStatue(centerX - 180, centerY - 90, chosenPantheon));
+    }
 
     // 1. Midfield Primary Objective Spawns
     const midX = centerX + 420;
@@ -13556,11 +13598,18 @@ class Dungeon {
     const minCy = Math.floor(camera.y / chunkPixelSize);
     const maxCy = Math.floor((camera.y + canvas.height) / chunkPixelSize);
 
-    // Fast direct chunk rendering (zero DOM canvas allocations, 60 FPS across all realms)
+    // Hardware-accelerated GPU chunk texture blit (60 FPS across all realms)
     for (let cy = minCy; cy <= maxCy; cy++) {
       for (let cx = minCx; cx <= maxCx; cx++) {
         const chunk = this.getChunk(cx, cy);
-        this.drawChunkDirect(ctx, chunk);
+        if (!chunk.canvas) {
+          this.buildChunkCanvas(chunk);
+        }
+        if (chunk.canvas) {
+          ctx.drawImage(chunk.canvas, cx * chunkPixelSize, cy * chunkPixelSize);
+        } else {
+          this.drawChunkDirect(ctx, chunk);
+        }
       }
     }
 
@@ -13590,6 +13639,13 @@ class Dungeon {
         this.antennas.splice(i, 1);
       } else {
         ant.draw(ctx);
+      }
+    }
+
+    // Sacred Statues of the FOSS Pantheon
+    if (window.pantheonStatues) {
+      for (const st of window.pantheonStatues) {
+        st.draw(ctx);
       }
     }
 
@@ -14402,6 +14458,15 @@ function gameLoop(timestamp) {
       if (window.ambushDirector) window.ambushDirector.update(dt);
       if (window.bossDirector) window.bossDirector.update(dt);
 
+      // Update Argon's Ring-0 Crusade Roguelike Systems
+      if (window.pantheonStatues) {
+        for (const st of window.pantheonStatues) st.update(dt);
+      }
+      if (window.PantheonBlessingController) window.PantheonBlessingController.update(dt);
+      if (window.DistroSystem) window.DistroSystem.update(dt);
+      if (window.UptimeMeter) window.UptimeMeter.update(dt);
+      if (window.SynergyCompiler) window.SynergyCompiler.update(dt);
+
       // Update Stratagem cooldowns
       for (const strat of STRATAGEMS) {
         if (strat.cooldown > 0) strat.cooldown -= dt;
@@ -14843,6 +14908,11 @@ function render() {
     ctx.fillText(ft.text, ft.x, ft.y);
     ctx.restore();
   }
+
+  // FOSS Pantheon blessings, Distro system, and Uptime lightning
+  if (window.PantheonBlessingController) window.PantheonBlessingController.draw(ctx);
+  if (window.DistroSystem) window.DistroSystem.draw(ctx);
+  if (window.UptimeMeter) window.UptimeMeter.draw(ctx);
 
   ctx.restore();
 

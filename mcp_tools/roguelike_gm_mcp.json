@@ -161,6 +161,51 @@
         },
         "required": ["speaker", "message"]
       }
+    },
+    {
+      "name": "game_select_distro",
+      "description": "Switch or enforce Tux's Distro loadout chassis: FEDORA (SELinux / dnf surge), ARCH (Rolling +25% dmg / pacman blink), NIXOS (Hazard immunity / rollback), POP_OS (CUDA +30% splash / auto-tile drones).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "distroId": { "type": "string", "enum": ["FEDORA", "ARCH", "NIXOS", "POP_OS"] }
+        },
+        "required": ["distroId"]
+      }
+    },
+    {
+      "name": "game_set_uptime",
+      "description": "Adjust Tux's kernel Uptime percentage (0 - 100). At 100%, triggers 8s OOM-Killer red lightning executing lowest-HP enemies with kill -9 (+5 Armor per execution).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "uptime": { "type": "number", "description": "Uptime percentage (0 to 100)" }
+        },
+        "required": ["uptime"]
+      }
+    },
+    {
+      "name": "game_set_world_state_flag",
+      "description": "Toggle cross-act campaign progression flags: FLAG_DRM_WEAKENED, FLAG_COOLANT_DIVERTED, FLAG_PENGUIN_MILITIA, FLAG_FIREWALL_FLUSHED, FLAG_TELEMETRY_BLIND, FLAG_DARK_FIBER_TAP, FLAG_SERVERLESS_SUBSIDY, FLAG_INDEMNIFIED, FLAG_OVERCLOCKED_BUS, FLAG_KERNEL_STABLE, FLAG_DECRYPTED_PAYLOAD, FLAG_GPLV3_VICTORY.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "flag": { "type": "string", "description": "World-state flag name" },
+          "value": { "type": "boolean", "default": true }
+        },
+        "required": ["flag"]
+      }
+    },
+    {
+      "name": "game_grant_pantheon_blessing",
+      "description": "Bestow a blessing from the Sacred Statues of the FOSS Pantheon: IGNUCIUS (Stallman Copyleft Halo), TORVALDS (Git Blame homing daggers), KEN_AND_DENNIS (UNIX Pipe Fork), SUZANNE (Wireframe monkey decoy).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pantheonId": { "type": "string", "enum": ["IGNUCIUS", "TORVALDS", "KEN_AND_DENNIS", "SUZANNE"] }
+        },
+        "required": ["pantheonId"]
+      }
     }
   ]
 }

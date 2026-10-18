@@ -155,7 +155,10 @@ def main():
     server = None
     for p in range(port, port + 20):
         try:
-            server = socketserver.TCPServer(("", p), Handler)
+            class ThreadedServer(socketserver.ThreadingTCPServer):
+                daemon_threads = True
+                allow_reuse_address = True
+            server = ThreadedServer(("", p), Handler)
             port = p
             break
         except OSError:

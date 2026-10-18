@@ -149,6 +149,23 @@
           biomeName: d.currentBiome ? d.currentBiome.name : "EMERALD FRONTIER",
           activeMutation: window.realmMutation ? window.realmMutation.type : "NORMAL"
         },
+        roguelike: {
+          distro: window.DistroSystem ? {
+            id: window.DistroSystem.currentDistroId,
+            name: window.DistroSystem.getCurrentDistro().name,
+            skillReady: window.DistroSystem.skillTimer <= 0,
+            skillCooldown: window.DistroSystem.skillTimer,
+            skillActive: window.DistroSystem.skillActiveTimer > 0
+          } : null,
+          uptime: window.UptimeMeter ? {
+            percent: Math.round(window.UptimeMeter.uptime),
+            oomActive: window.UptimeMeter.oomActive,
+            oomTimer: window.UptimeMeter.oomTimer
+          } : null,
+          worldStateFlags: window.WorldStateFlags ? window.WorldStateFlags.getAll() : {},
+          activeSynergies: window.SynergyCompiler ? Array.from(window.SynergyCompiler.activeSynergies) : [],
+          pantheonBlessings: window.ModifierEngine ? Array.from(window.ModifierEngine.activeBuffs.keys()).filter(k => k.startsWith('STATUE_')) : []
+        },
         entities: {
           totalEnemies: enemyList.length,
           bossActive: !!bossEnemy,
@@ -186,10 +203,9 @@
           banner.style.display = 'flex';
           setTimeout(() => { if (banner) banner.style.display = 'none'; }, 6500);
         }
-      }
-
-      if (playAudioVo && window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
-        window.soundEngine.speakRobot(message, speaker);
+        if (playAudioVo && window.soundEngine && typeof window.soundEngine.speakRobot === 'function') {
+          window.soundEngine.speakRobot(message, speaker);
+        }
       }
 
       return { status: "success", speaker, message };
@@ -427,6 +443,62 @@
     },
 
     /**
+     * Change or enforce Tux's Distro loadout chassis (FEDORA, ARCH, NIXOS, POP_OS)
+     */
+    selectDistro(distroId) {
+      if (window.DistroSystem) {
+        window.DistroSystem.selectDistro(distroId);
+        return { status: "success", distroId };
+      }
+      return { status: "error", message: "DistroSystem not available" };
+    },
+
+    /**
+     * Manipulate Uptime meter percentage (0 - 100)
+     */
+    setUptime(percent) {
+      if (window.UptimeMeter) {
+        window.UptimeMeter.uptime = Math.max(0, Math.min(100, Number(percent)));
+        if (window.UptimeMeter.uptime >= 100) window.UptimeMeter.triggerOOMKiller();
+        return { status: "success", uptime: window.UptimeMeter.uptime };
+      }
+      return { status: "error", message: "UptimeMeter not available" };
+    },
+
+    /**
+     * Trigger OOM-Killer 8s red lightning execution phase
+     */
+    triggerOOMKiller() {
+      if (window.UptimeMeter) {
+        window.UptimeMeter.triggerOOMKiller();
+        return { status: "success", oomActive: true };
+      }
+      return { status: "error", message: "UptimeMeter not available" };
+    },
+
+    /**
+     * Set World-State Progression Flag directly
+     */
+    setWorldStateFlag(flag, value = true) {
+      if (window.WorldStateFlags) {
+        window.WorldStateFlags.set(flag, value);
+        return { status: "success", flag, value };
+      }
+      return { status: "error", message: "WorldStateFlags not available" };
+    },
+
+    /**
+     * Grant Sacred FOSS Pantheon blessing (IGNUCIUS, TORVALDS, KEN_AND_DENNIS, SUZANNE)
+     */
+    grantPantheonBlessing(pantheonId) {
+      if (window.ModifierEngine && window.PANTHEON_DEFINITIONS && window.PANTHEON_DEFINITIONS[pantheonId]) {
+        window.ModifierEngine.addBuff(`STATUE_${pantheonId}`, 999999, { pantheonId });
+        return { status: "success", pantheonId };
+      }
+      return { status: "error", message: "Invalid pantheonId" };
+    },
+
+    /**
      * Parse and execute an arbitrary Game Master action object or JSON string
      */
     executeDirective(directive) {
@@ -540,6 +612,21 @@
 
         case "get_state":
           return this.getState();
+
+        case "select_distro":
+          return this.selectDistro(directive.distro || directive.distroId);
+
+        case "set_uptime":
+          return this.setUptime(directive.uptime !== undefined ? directive.uptime : directive.percent);
+
+        case "trigger_oom_killer":
+          return this.triggerOOMKiller();
+
+        case "set_world_state_flag":
+          return this.setWorldStateFlag(directive.flag, directive.value !== false);
+
+        case "grant_pantheon_blessing":
+          return this.grantPantheonBlessing(directive.pantheonId || directive.statueId);
 
         default:
           return this.injectComms("GAME MASTER", directive.message || JSON.stringify(directive), "#38bdf8", "🤖");

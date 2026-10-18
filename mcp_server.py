@@ -171,6 +171,39 @@ def handle_tool_call(tool_name, arguments):
         res = http_post("/api/directive", directive)
         return json.dumps(res, indent=2)
 
+    elif tool_name == "game_select_distro":
+        directive = {
+            "action": "select_distro",
+            "distroId": arguments.get("distroId")
+        }
+        res = http_post("/api/directive", directive)
+        return json.dumps(res, indent=2)
+
+    elif tool_name == "game_set_uptime":
+        directive = {
+            "action": "set_uptime",
+            "uptime": arguments.get("uptime")
+        }
+        res = http_post("/api/directive", directive)
+        return json.dumps(res, indent=2)
+
+    elif tool_name == "game_set_world_state_flag":
+        directive = {
+            "action": "set_world_state_flag",
+            "flag": arguments.get("flag"),
+            "value": arguments.get("value", True)
+        }
+        res = http_post("/api/directive", directive)
+        return json.dumps(res, indent=2)
+
+    elif tool_name == "game_grant_pantheon_blessing":
+        directive = {
+            "action": "grant_pantheon_blessing",
+            "pantheonId": arguments.get("pantheonId")
+        }
+        res = http_post("/api/directive", directive)
+        return json.dumps(res, indent=2)
+
     return f"Unknown tool: {tool_name}"
 
 def send_json_rpc(response_dict):

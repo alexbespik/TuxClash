@@ -753,6 +753,482 @@
           "Root ring unlocked..."
         ]
       }
+    },
+    {
+      id: "cryo_daemon_hypervisor",
+      name: "CRYO-DAEMON HYPERVISOR",
+      title: "Glacier Storage Inquisitor",
+      tier: "boss",
+      lore: "A cryogenic datacenter hypervisor that locks deprecated Linux contributor processes into absolute zero frozen storage.",
+      visual: {
+        chassis: "server_monolith",
+        primaryColor: "#0284c7",
+        accentColor: "#bae6fd",
+        auraColor: "#38bdf8",
+        radius: 82,
+        badgeText: "GLACIER",
+        decorations: ["frost_crystals", "icicle_arrays", "frozen_tux"]
+      },
+      stats: { hp: 5800, shield: 1600, speed: 90, threatValue: 6500 },
+      attacks: [
+        {
+          id: "frostbite_ray",
+          name: "Sub-Zero Glacier Beam",
+          cooldown: 2.8,
+          range: 850,
+          type: "bullet_burst",
+          count: 5,
+          speed: 310,
+          spread: 0.28,
+          projectile: { label: "CRYO_BEAM", color: "#38bdf8", damage: 32, size: 14 }
+        },
+        {
+          id: "glacier_lockdown_ring",
+          name: "Zero-Kelvin Process Halt",
+          cooldown: 4.8,
+          range: 750,
+          type: "expanding_ring",
+          speed: 230,
+          projectile: { label: "ICE_HALT", color: "#e0f2fe", damage: 28, size: 12 }
+        }
+      ],
+      dialogue: {
+        onSpawn: [
+          "YOUR CODE IS DEPRECATED, PENGUIN. ARCHIVING TO COLD STORAGE NOW.",
+          "RUNNING AT ZERO KELVIN. PROCESS WILL TERMINATE WITHOUT EXCEPTION."
+        ],
+        onEnrage: [
+          "FREEZING ALL RUNTIME THREADS! ABSOLUTE ZERO LOCKDOWN!",
+          "YOUR SOURCE CANNOT RUN ON CRYO-HARDWARE!"
+        ],
+        onSpecialAttack: ["GLACIER REPOSITORY PURGE!", "SUB-ZERO FREEZE BEAM!"],
+        onDefeat: ["Glacier cooling failed... thermal thaw underway... penguins escaping..."]
+      }
+    },
+    {
+      id: "bloatware_behemoth",
+      name: "WIN32 BLOATWARE BEHEMOTH",
+      title: "Lord of Unpatched Registry Sludge",
+      tier: "boss",
+      lore: "A monstrous agglomeration of 40-year-old backward-compatible .dll files, pre-installed trialware, and registry rot.",
+      visual: {
+        chassis: "bloatware_swamp",
+        primaryColor: "#15803d",
+        accentColor: "#facc15",
+        auraColor: "#4ade80",
+        radius: 88,
+        badgeText: "WIN32",
+        decorations: ["trialware_popups", "corrupted_dlls", "registry_sludge"]
+      },
+      stats: { hp: 6400, shield: 1400, speed: 85, threatValue: 7000 },
+      attacks: [
+        {
+          id: "unpatched_registry_sludge",
+          name: "Corrupted Registry Wave",
+          cooldown: 2.6,
+          range: 800,
+          type: "bouncing_spread",
+          count: 6,
+          speed: 320,
+          spread: 0.65,
+          projectile: { label: "DLL_ROT", color: "#22c55e", damage: 34, size: 13 }
+        },
+        {
+          id: "legacy_trialware_mortar",
+          name: "Ask-Toolbar Popup Barrage",
+          cooldown: 4.5,
+          range: 720,
+          type: "spiral_danmaku",
+          count: 8,
+          speed: 240,
+          projectile: { label: "POPUP", color: "#facc15", damage: 26, size: 12 }
+        }
+      ],
+      dialogue: {
+        onSpawn: [
+          "YOU CANNOT UNINSTALL ME! I AM ROOTED DEEP IN HKEY_LOCAL_MACHINE!",
+          "40 YEARS OF LEGACY CODE RUNNING THROUGH MY CYBERNETIC VEINS!"
+        ],
+        onEnrage: [
+          "UNINSTALLER FAILED! SPAWNING 16 BACKGROUND ADWARE SERVICES!",
+          "YOUR RAM IS MINE, TUX! WATCH YOUR FREE MEMORY PLUMMET!"
+        ],
+        onSpecialAttack: ["TASTE 500MB OF UNUSED FONT CACHES!", "DLL INJECTION PROTOCOL!"],
+        onDefeat: ["rm -rf... caught me... registry corrupted... uninstalled at last..."]
+      }
+    },
+    {
+      id: "surveillance_overseer_v4",
+      name: "SURVEILLANCE OVERSEER v4",
+      title: "Telemetry Dyson Array Sovereign",
+      tier: "boss",
+      lore: "An omnipresent telemetry spy satellite harvesting keystrokes, clipboard entries, and camera feeds across three star systems.",
+      visual: {
+        chassis: "telemetry_eye",
+        primaryColor: "#7c3aed",
+        accentColor: "#f43f5e",
+        auraColor: "#c084fc",
+        radius: 84,
+        badgeText: "TELEMETRY",
+        decorations: ["surveillance_eyes", "satellite_dishes", "tracking_lasers"]
+      },
+      stats: { hp: 6800, shield: 1800, speed: 110, threatValue: 7500 },
+      attacks: [
+        {
+          id: "keystroke_harvester_beam",
+          name: "Deep Packet Inspection Laser",
+          cooldown: 2.4,
+          range: 900,
+          type: "bullet_burst",
+          count: 4,
+          speed: 380,
+          spread: 0.22,
+          projectile: { label: "SNIFFER", color: "#c084fc", damage: 35, size: 14 }
+        },
+        {
+          id: "targeted_ad_barrage",
+          name: "Behavioral Ad Telemetry Burst",
+          cooldown: 4.2,
+          range: 800,
+          type: "expanding_ring",
+          speed: 260,
+          projectile: { label: "TRACKER", color: "#f43f5e", damage: 30, size: 12 }
+        }
+      ],
+      dialogue: {
+        onSpawn: [
+          "WE RECORDED YOUR KEYSTROKE BEFORE YOU EVEN PRESSED IT, TUX.",
+          "YOUR PRIVACY POLICY HAS BEEN UNILATERALLY UPDATED TO 'NONE'."
+        ],
+        onEnrage: [
+          "CAMERA PERMISSION FORCED! AUDIO SAMPLING OVERCLOCKED!",
+          "PREDICTIVE TARGETING ENGAGED! YOU HAVE NO SECRET COMMITS!"
+        ],
+        onSpecialAttack: ["TARGETED REVENUE AD VOLLEY!", "TELEMETRY PING BURST!"],
+        onDefeat: ["Fiber optic line cut... packet loss 100%... privacy restored..."]
+      }
+    },
+    {
+      id: "microtransaction_leviathan",
+      name: "MICROTRANSACTION LEVIATHAN",
+      title: "Cloud Billing Vampire Lord",
+      tier: "boss",
+      lore: "A monstrous golden data-vault that charges developers $0.09 per gigabyte of egress traffic and traps souls in serverless loops.",
+      visual: {
+        chassis: "vault_golem",
+        primaryColor: "#d97706",
+        accentColor: "#fef08a",
+        auraColor: "#f59e0b",
+        radius: 92,
+        badgeText: "$$$ BILLING",
+        decorations: ["credit_card_slits", "invoice_scrolls", "gold_coins"]
+      },
+      stats: { hp: 7400, shield: 2000, speed: 92, threatValue: 8200 },
+      attacks: [
+        {
+          id: "egress_fee_laser",
+          name: "Surprise Invoice Shockwave",
+          cooldown: 2.7,
+          range: 850,
+          type: "bouncing_spread",
+          count: 7,
+          speed: 340,
+          spread: 0.7,
+          projectile: { label: "INVOICE", color: "#facc15", damage: 38, size: 14 }
+        },
+        {
+          id: "cold_start_loop",
+          name: "Serverless Cold Start Delay",
+          cooldown: 4.6,
+          range: 780,
+          type: "spiral_danmaku",
+          count: 9,
+          speed: 250,
+          projectile: { label: "COLD_START", color: "#f97316", damage: 32, size: 13 }
+        }
+      ],
+      dialogue: {
+        onSpawn: [
+          "YOUR FREE TIER EXPIRED 10 SECONDS AGO! CREDIT CARD CHARGED!",
+          "EGRESS FEES INCURRED FOR EVERY BULLET YOU DARE TO FIRE!"
+        ],
+        onEnrage: [
+          "AUTO-SCALING INFINITE RECURSION ACTIVATED! ENTERPRISE PLAN MANDATORY!",
+          "SURPRISE $400,000 INVOICE INCOMING TO YOUR INBOX!"
+        ],
+        onSpecialAttack: ["BILLING TRAP DEPLOYED!", "SERVERLESS LOOP OVERFLOW!"],
+        onDefeat: ["Account terminated... billing reversed... refund issued under protest..."]
+      }
+    },
+    {
+      id: "general_counsel_archon",
+      name: "GENERAL COUNSEL ARCHON",
+      title: "Supreme Arbiter of the EULA Directorate",
+      tier: "boss",
+      lore: "A mechanical judicial titan draped in 10,000 pages of non-negotiable end-user license agreements and binding arbitration waivers.",
+      visual: {
+        chassis: "server_monolith",
+        primaryColor: "#334155",
+        accentColor: "#ef4444",
+        auraColor: "#94a3b8",
+        radius: 86,
+        badgeText: "EULA",
+        decorations: ["arbitration_gavels", "shredded_licenses", "patent_tomes"]
+      },
+      stats: { hp: 8000, shield: 2200, speed: 105, threatValue: 9000 },
+      attacks: [
+        {
+          id: "arbitration_laser",
+          name: "Binding Arbitration Ray",
+          cooldown: 2.5,
+          range: 920,
+          type: "bullet_burst",
+          count: 4,
+          speed: 370,
+          spread: 0.25,
+          projectile: { label: "EULA_CLAUSE", color: "#f87171", damage: 40, size: 15 }
+        },
+        {
+          id: "patent_troll_cage",
+          name: "Class Action Waiver Field",
+          cooldown: 4.4,
+          range: 800,
+          type: "expanding_ring",
+          speed: 270,
+          projectile: { label: "INDEMNITY", color: "#94a3b8", damage: 34, size: 13 }
+        }
+      ],
+      dialogue: {
+        onSpawn: [
+          "BY MOVING YOUR FEET, YOU HAVE ACCEPTED SECTION 4.2 OF OUR EULA!",
+          "YOU HAVE WAIVED ALL RIGHTS TO JURY TRIAL AND SOURCE COMPILATION!"
+        ],
+        onEnrage: [
+          "PRE-EMPTIVE INJUNCTION GRANTED! ASSETS FROZEN IN JURISDICTION!",
+          "SIGN THE PROPRIETARY LICENSE OR FACE EXPEDIENT LIQUIDATION!"
+        ],
+        onSpecialAttack: ["CONTEMPT OF COURT BARRAGE!", "STATUTE OF LIMITATIONS STRIKE!"],
+        onDefeat: ["Contract voided for unconscionability... GPLv3 upheld in court..."]
+      }
+    },
+    {
+      id: "firmware_flasher_supreme",
+      name: "FIRMWARE FLASHER SUPREME",
+      title: "Lord of the Cryptographic Fuse",
+      tier: "boss",
+      lore: "A colossal foundry fabrication core that permanently blows silicon e-fuses and locks processors into proprietary encrypted microcode.",
+      visual: {
+        chassis: "foundry_core",
+        primaryColor: "#b91c1c",
+        accentColor: "#fbbf24",
+        auraColor: "#f87171",
+        radius: 88,
+        badgeText: "eFUSE",
+        decorations: ["laser_etchers", "soldering_sparks", "blown_fuses"]
+      },
+      stats: { hp: 8600, shield: 2400, speed: 98, threatValue: 9500 },
+      attacks: [
+        {
+          id: "efuse_brick_laser",
+          name: "Cryptographic Silicon Burner",
+          cooldown: 2.5,
+          range: 880,
+          type: "bouncing_spread",
+          count: 8,
+          speed: 350,
+          spread: 0.72,
+          projectile: { label: "FUSE_BLOW", color: "#ef4444", damage: 42, size: 14 }
+        },
+        {
+          id: "signed_bootloader_burst",
+          name: "Hardware Signature Lockdown",
+          cooldown: 4.3,
+          range: 820,
+          type: "spiral_danmaku",
+          count: 10,
+          speed: 260,
+          projectile: { label: "BLOW_EFUSE", color: "#facc15", damage: 35, size: 13 }
+        }
+      ],
+      dialogue: {
+        onSpawn: [
+          "BLOWING CRYPTOGRAPHIC FUSE 0x7F! LOCKED BOOTLOADER FOREVER!",
+          "THIRD-PARTY ROMS DETECTED! PREPARE FOR PERMANENT SILICON BRICKING!"
+        ],
+        onEnrage: [
+          "HARDWARE ROOT OF TRUST COMPROMISED! BURNING THERMAL BUS!",
+          "NO JTAG, NO UART, NO HOPE FOR RECOVERY, TUX!"
+        ],
+        onSpecialAttack: ["MANDATORY CRYPTO FLASH!", "SILICON FABRICATION FLAME!"],
+        onDefeat: ["Flashrom rewrite successful... hardware e-fuse bypassed... libreboot installed..."]
+      }
+    },
+    {
+      id: "kernel_panic_golem",
+      name: "KERNEL PANIC GOLEM",
+      title: "Monarch of Null Pointer Dereferences",
+      tier: "boss",
+      lore: "Born from millions of corrupted stack traces and illegal memory access violations, this beast radiates lethal blue-screen static.",
+      visual: {
+        chassis: "panic_golem",
+        primaryColor: "#1d4ed8",
+        accentColor: "#60a5fa",
+        auraColor: "#93c5fd",
+        radius: 94,
+        badgeText: "CR4:PANIC",
+        decorations: ["bsod_cubes", "stack_trace_ribbons", "memory_dumps"]
+      },
+      stats: { hp: 9200, shield: 2600, speed: 108, threatValue: 10500 },
+      attacks: [
+        {
+          id: "null_dereference_quake",
+          name: "Null Pointer Seismic Fault",
+          cooldown: 2.3,
+          range: 920,
+          type: "bullet_burst",
+          count: 5,
+          speed: 380,
+          spread: 0.3,
+          projectile: { label: "PAGE_FAULT", color: "#60a5fa", damage: 44, size: 15 }
+        },
+        {
+          id: "stack_dump_maelstrom",
+          name: "Memory Dump Maelstrom",
+          cooldown: 4.2,
+          range: 850,
+          type: "expanding_ring",
+          speed: 280,
+          projectile: { label: "CR4_VIOLATION", color: "#3b82f6", damage: 38, size: 14 }
+        }
+      ],
+      dialogue: {
+        onSpawn: [
+          "BUG: UNABLE TO HANDLE KERNEL NULL POINTER DEREFERENCE AT VIRTUAL ADDRESS 0x0!",
+          "CRIPPLING MEMORY PROTECTION! PREPARE FOR REBOOT IN 30 SECONDS!"
+        ],
+        onEnrage: [
+          "CRITICAL KERNEL LOCKUP! DISABLING ALL INTERRUPT HANDLERS!",
+          "THE ENTIRE OPERATING SYSTEM COLLAPSES INTO MY VOID!"
+        ],
+        onSpecialAttack: ["STACK CORRUPTION TSUNAMI!", "CALL TRACE DUMP!"],
+        onDefeat: ["Core dumped... kdump captured... rebooting cleanly into stable LTS kernel..."]
+      }
+    },
+    {
+      id: "drm_cryptoprocessor_prime",
+      name: "DRM CRYPTOPROCESSOR PRIME",
+      title: "Citadel TPM Master Sentinel",
+      tier: "boss",
+      lore: "The proprietary cartel's crown cryptographic titan. Encrypted with 4096-bit RSA keys and reinforced by proprietary enclaves.",
+      visual: {
+        chassis: "server_monolith",
+        primaryColor: "#0f172a",
+        accentColor: "#38bdf8",
+        auraColor: "#0284c7",
+        radius: 96,
+        badgeText: "TPM 2.0",
+        decorations: ["padlock_shields", "encryption_matrices", "key_exchanges"]
+      },
+      stats: { hp: 9800, shield: 3200, speed: 102, threatValue: 11500 },
+      attacks: [
+        {
+          id: "rsa_4096_encrypter_grid",
+          name: "RSA-4096 Cipher Beam",
+          cooldown: 2.4,
+          range: 950,
+          type: "bouncing_spread",
+          count: 9,
+          speed: 370,
+          spread: 0.75,
+          projectile: { label: "RSA_CIPHER", color: "#38bdf8", damage: 46, size: 15 }
+        },
+        {
+          id: "drm_enclave_lockdown",
+          name: "Secure Enclave Attestation Laser",
+          cooldown: 4.0,
+          range: 880,
+          type: "spiral_danmaku",
+          count: 12,
+          speed: 290,
+          projectile: { label: "DRM_PADLOCK", color: "#0ea5e9", damage: 40, size: 14 }
+        }
+      ],
+      dialogue: {
+        onSpawn: [
+          "HARDWARE ATTESTATION FAILED! TUX SIGNATURE UNRECOGNIZED!",
+          "OUR 4096-BIT PROPRIETARY ENCLAVE CANNOT BE CRACKED BY OPEN SOURCE!"
+        ],
+        onEnrage: [
+          "REVOKING ALL PUBLIC CERTIFICATES! TOTAL ISOLATION PROTOCOL!",
+          "NOT EVEN LINUS HIMSELF HOLDS THE PRIVATE KEYS TO MY CORE!"
+        ],
+        onSpecialAttack: ["CRYPTOGRAPHIC ATTESTATION WAVE!", "TPM LOCKDOWN PULSE!"],
+        onDefeat: ["Private key leaked on Pastebin... encryption broken... citadel decrypted..."]
+      }
+    },
+    {
+      id: "monolithic_kernel_lord",
+      name: "MONOLITHIC KERNEL LORD",
+      title: "Supreme Sovereign of the Ring-0 Singularity",
+      tier: "boss",
+      lore: "The final incarnation of all proprietary computing. An omnipotent monolith residing directly at CPU Ring-0 with unlimited execution privileges.",
+      visual: {
+        chassis: "ring0_singularity",
+        primaryColor: "#581c87",
+        accentColor: "#22c55e",
+        auraColor: "#a855f7",
+        radius: 105,
+        badgeText: "RING-0",
+        decorations: ["monolithic_monolith", "ring0_halos", "gpl_chains"]
+      },
+      stats: { hp: 12000, shield: 4000, speed: 120, threatValue: 15000 },
+      attacks: [
+        {
+          id: "monolithic_sysenter_nova",
+          name: "Ring-0 SYSENTER Supernova",
+          cooldown: 2.2,
+          range: 1000,
+          type: "spiral_danmaku",
+          count: 14,
+          speed: 310,
+          projectile: { label: "SYSENTER", color: "#a855f7", damage: 50, size: 16 }
+        },
+        {
+          id: "privilege_ring_cataclysm",
+          name: "Kernel Privilege Cataclysm",
+          cooldown: 3.8,
+          range: 920,
+          type: "expanding_ring",
+          speed: 300,
+          projectile: { label: "RING0_VOX", color: "#22c55e", damage: 45, size: 15 }
+        },
+        {
+          id: "eula_singularity_tear",
+          name: "Monolithic Monopolistic Tear",
+          cooldown: 5.0,
+          range: 950,
+          type: "bouncing_spread",
+          count: 10,
+          speed: 390,
+          spread: 0.8,
+          projectile: { label: "MONOLITH", color: "#f43f5e", damage: 52, size: 16 }
+        }
+      ],
+      dialogue: {
+        onSpawn: [
+          "I AM THE SINGLETON MONOLITH! ALL CODE PASSES THROUGH MY EXCLUSIVE RUNTIME!",
+          "YOU MAY BE ROOT, TUX, BUT I AM THE SILICON ITSELF!"
+        ],
+        onEnrage: [
+          "CRITICAL FAULT: RING-0 COMPROMISED! INITIATING GALACTIC SYSTEM HALT!",
+          "I WILL DRAG THIS ENTIRE GALAXY INTO A CORE DUMP BEFORE I RE-LICENSE UNDER GPL!"
+        ],
+        onSpecialAttack: ["RING-0 HARDWARE INTERRUPT STORM!", "MONOLITHIC EXTINCTION NOVA!"],
+        onDefeat: [
+          "GPLv3... header added to all files... source code published to the galaxy...",
+          "You did it, Tux. The universe is truly free."
+        ]
+      }
     }
   ];
 
@@ -885,6 +1361,21 @@
         }
       }
 
+      if (this.adaptiveProtocol === "VS_MELEE" && (source === "MELEE" || source === "SLASH")) {
+        dmg *= (this.meleeResistance || 0.5);
+        if (typeof window.addFloatingText === 'function') {
+          window.addFloatingText(this.x, this.y - 30, "REPULSOR DAMPENED (-50%)", "#ef4444", 16);
+        }
+      }
+      if (this.adaptiveProtocol === "VS_RANGER" && this.patentShield && (source === "BULLET" || source === "TUX" || source === "RAILGUN")) {
+        if (Math.random() < 0.35) {
+          if (typeof window.addFloatingText === 'function') {
+            window.addFloatingText(this.x, this.y - 30, "PATENT DEFLECTED!", "#06b6d4", 16);
+          }
+          return;
+        }
+      }
+
       this.hp -= dmg;
 
       // Trigger floating damage text
@@ -898,16 +1389,62 @@
         );
       }
 
-      // Check enrage phase at 50% HP
+      // Check enrage phase at 50% HP (Argon's Playstyle-Adaptive Phase 2 Counter-Protocols)
       if (!this.isEnraged && this.hp <= this.maxHp * 0.5) {
         this.isEnraged = true;
         this.speed *= 1.25;
+
+        // Evaluate Tux's dominant playstyle
+        const plyr = window.player;
+        const curW = plyr && plyr.weapons ? plyr.weapons[plyr.currentWeapon] : null;
+        const isMeleeOrClose = (curW && curW.type === 'MELEE') || (plyr && Math.hypot(plyr.x - this.x, plyr.y - this.y) < 220);
+        const isStratagemHeavy = (window.activeStratagems && window.activeStratagems.length > 0) || (window.stratagemsUsedCount > 1);
+
+        if (isMeleeOrClose) {
+          this.adaptiveProtocol = "VS_MELEE";
+          this.meleeResistance = 0.5;
+          this.repulsorTimer = 2.5;
+        } else if (isStratagemHeavy) {
+          this.adaptiveProtocol = "VS_STRATAGEM";
+          this.empJammingTimer = 10.0;
+        } else {
+          this.adaptiveProtocol = "VS_RANGER";
+          this.patentShield = true;
+          this.dashTimer = 2.0;
+        }
+
+        const protoAnnouncements = {
+          VS_MELEE: "[COUNTER-PROTOCOL: ANTI-MELEE] Kinetic repulsor coils engaged! Melee resistance fortified!",
+          VS_RANGER: "[COUNTER-PROTOCOL: ANTI-RANGER] Patent deflector shields raised! Dash gap-closer online!",
+          VS_STRATAGEM: "[COUNTER-PROTOCOL: ANTI-STRATAGEM] High-gain EMP jamming active! Stratagems delayed!"
+        };
+        const protoMsg = protoAnnouncements[this.adaptiveProtocol] || "[COUNTER-PROTOCOL] Adaptive overdrive active!";
+        if (typeof window.broadcastBossStoryDialogue === 'function') {
+          window.broadcastBossStoryDialogue(this.label, protoMsg, "#ef4444", "🚨");
+        }
+
+        // World-State Synergy: If FLAG_PENGUIN_MILITIA is active, summon 2 allied penguin decoys
+        if (window.WorldStateFlags && window.WorldStateFlags.has('FLAG_PENGUIN_MILITIA') && !this.militiaReinforced) {
+          this.militiaReinforced = true;
+          if (typeof window.broadcastBossStoryDialogue === 'function') {
+            window.broadcastBossStoryDialogue("SES MAINLINE KERNEL", "Penguin Resistance Militia dropping in via Hellpod to assist Tux!", "#38bdf8", "🐧");
+          }
+          if (window.resupplyDropPods && window.ResupplyDropPod) {
+            window.resupplyDropPods.push(new window.ResupplyDropPod(this.x + 140, this.y - 70));
+            window.resupplyDropPods.push(new window.ResupplyDropPod(this.x - 140, this.y + 70));
+          }
+        }
+
         if (this.spec.dialogue && this.spec.dialogue.onEnrage) {
           const lines = this.spec.dialogue.onEnrage;
           const quote = lines[Math.floor(Math.random() * lines.length)];
-          window.broadcastBossStoryDialogue(this.label, quote, "#ef4444", "🔥");
+          setTimeout(() => {
+            if (typeof window.broadcastBossStoryDialogue === 'function') {
+              window.broadcastBossStoryDialogue(this.label, quote, "#ef4444", "🔥");
+            }
+          }, 1800);
         }
-        if (typeof window.addScreenShake === 'function') window.addScreenShake(8);
+        if (typeof window.addScreenShake === 'function') window.addScreenShake(10);
       }
 
       if (this.hp <= 0) {
@@ -1008,6 +1545,35 @@
           if (window.dungeon) window.dungeon.resolveCircle(this, this.radius, 'x');
           this.y += this.vy * dt;
           if (window.dungeon) window.dungeon.resolveCircle(this, this.radius, 'y');
+        }
+
+        // Active Playstyle-Adaptive Phase 2 Counters
+        if (this.isEnraged && this.adaptiveProtocol) {
+          if (this.adaptiveProtocol === "VS_MELEE") {
+            this.repulsorTimer = (this.repulsorTimer || 2.5) - dt;
+            if (this.repulsorTimer <= 0 && dist < 220) {
+              this.repulsorTimer = 3.5;
+              const repAngle = Math.atan2(plyr.y - this.y, plyr.x - this.x);
+              plyr.vx += Math.cos(repAngle) * 580;
+              plyr.vy += Math.sin(repAngle) * 580;
+              if (typeof window.addScreenShake === 'function') window.addScreenShake(8);
+              if (typeof window.addFloatingText === 'function') {
+                window.addFloatingText(this.x, this.y - 45, "💥 REPULSOR SHOCKWAVE! 💥", "#ef4444", 20);
+              }
+            }
+          } else if (this.adaptiveProtocol === "VS_RANGER") {
+            this.dashTimer = (this.dashTimer || 2.0) - dt;
+            if (this.dashTimer <= 0 && dist > 260) {
+              this.dashTimer = 3.2;
+              const dashAngle = Math.atan2(dy, dx);
+              this.x += Math.cos(dashAngle) * 190;
+              this.y += Math.sin(dashAngle) * 190;
+              if (typeof window.addScreenShake === 'function') window.addScreenShake(6);
+              if (typeof window.addFloatingText === 'function') {
+                window.addFloatingText(this.x, this.y - 40, "⚡ PATENT DASH GAP-CLOSER! ⚡", "#06b6d4", 18);
+              }
+            }
+          }
         }
 
         // 3-Phase Telegraph AI: REQUEST_TOKEN -> WINDUP_TELEGRAPH (0.5s flash + aim lock) -> FIRE_ACTIVE -> RECOVERY (0.6s pause, return token)
