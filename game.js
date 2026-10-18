@@ -64,6 +64,7 @@ const environmentalHazards = [];
 const quarantineLockdownArenas = [];
 const resupplyDropPods = [];
 const linuxTerminalStations = [];
+const meleeSlashEffects = [];
 let dungeon = null;
 let isStratagemTerminalOpen = false;
 let currentTerminalSequence = [];
@@ -86,6 +87,7 @@ if (typeof window !== 'undefined') {
   window.quarantineLockdownArenas = quarantineLockdownArenas;
   window.resupplyDropPods = resupplyDropPods;
   window.linuxTerminalStations = linuxTerminalStations;
+  window.meleeSlashEffects = meleeSlashEffects;
 }
 
 // Weapon Arsenal Catalogue
@@ -110,7 +112,10 @@ const WEAPON_CATALOG = [
   { id: 17, name: "LAS-99 QUASAR CANNON", shortName: "QUASAR", ammoText: "ANTI-TANK CORE", color: "#67e8f9", type: "quasar" },
   { id: 18, name: "ARC-12 ARC THROWER", shortName: "ARC THROWER", ammoText: "HIGH VOLTAGE", color: "#38bdf8", type: "arc_thrower" },
   { id: 19, name: "SG-8P PLASMA PUNISHER", shortName: "PLASMA MORTAR", ammoText: "PLASMA SHELL", color: "#818cf8", type: "plasma_mortar" },
-  { id: 20, name: "SG-225IE BREAKER INCENDIARY", shortName: "INCENDIARY", ammoText: "DRAGON BREATH", color: "#f97316", type: "breaker_incendiary" }
+  { id: 20, name: "SG-225IE BREAKER INCENDIARY", shortName: "INCENDIARY", ammoText: "DRAGON BREATH", color: "#f97316", type: "breaker_incendiary" },
+  { id: 21, name: "GPL PLASMA BROADSWORD", shortName: "PLASMA SWORD", ammoText: "CYAN CLEAVE", color: "#38bdf8", type: "melee" },
+  { id: 22, name: "CHAINSWORD OF LIBERTY", shortName: "CHAINSWORD", ammoText: "ROARING TEETH", color: "#f59e0b", type: "melee" },
+  { id: 23, name: "SUDO ENERGY SCYTHE", shortName: "SUDO SCYTHE", ammoText: "VOID HARVEST", color: "#c084fc", type: "melee" }
 ];
 
 // Player (TUX - High Commander of Open Source)
@@ -758,6 +763,24 @@ class Player {
         this.weaponCooldowns[20] = 0.48;
         this.fireBreakerIncendiary(nozzleX, nozzleY);
       }
+    } else if (weaponId === 21) {
+      // 21. GPL Plasma Broadsword
+      if (this.weaponCooldowns[21] <= 0) {
+        this.weaponCooldowns[21] = 0.52;
+        this.firePlasmaBroadsword(nozzleX, nozzleY);
+      }
+    } else if (weaponId === 22) {
+      // 22. Chainsword of Liberty
+      if (this.weaponCooldowns[22] <= 0) {
+        this.weaponCooldowns[22] = 0.15;
+        this.fireChainsword(nozzleX, nozzleY);
+      }
+    } else if (weaponId === 23) {
+      // 23. Sudo Energy Scythe
+      if (this.weaponCooldowns[23] <= 0) {
+        this.weaponCooldowns[23] = 0.65;
+        this.fireSudoScythe(nozzleX, nozzleY);
+      }
     }
 
     // Space Marine Twin Shoulder Bolter barrage bonus
@@ -813,22 +836,41 @@ class Player {
 
   fireCyberKatana(nozzleX, nozzleY) {
     if (window.soundEngine && window.soundEngine.playKatanaSlash) window.soundEngine.playKatanaSlash();
-    addScreenShake(6);
+    addScreenShake(5);
 
-    const slashRadius = 145;
-    const slashArc = 1.6; // ~90 degrees sweep
-    const damage = 190 * this.flameDamageMult * (this.isRootMode ? 1.8 : 1.0);
+    this.meleeComboSide = ((this.meleeComboSide || 1) > 0) ? -1 : 1;
+    const slashRadius = 160;
+    const slashArc = 2.0; // ~115 degrees sweep
+    const damage = 220 * this.flameDamageMult * (this.isRootMode ? 1.8 : 1.0);
 
-    // 1. Vaporize incoming enemy projectiles caught in the swing
+    // Spawn Radiant Emerald Melee Slash Crescent Effect
+    meleeSlashEffects.push(new MeleeSlashEffect(
+      this.x, this.y, this.angle,
+      slashArc, slashRadius,
+      "#22c55e", "#ffffff", 0.16, this.meleeComboSide
+    ));
+
+    // 1. Deflect & vaporize incoming enemy projectiles caught in the swing
     for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
       const ep = enemyProjectiles[i];
+      if (!ep) continue;
       const dist = Math.hypot(ep.x - this.x, ep.y - this.y);
-      if (dist <= slashRadius + 20) {
+      if (dist <= slashRadius + 35) {
         const angleTo = Math.atan2(ep.y - this.y, ep.x - this.x);
         const diff = Math.abs(Math.atan2(Math.sin(angleTo - this.angle), Math.cos(angleTo - this.angle)));
         if (diff < slashArc * 0.6) {
+          // Deflect projectile back at enemies with green kinetic boost!
+          playerProjectiles.push(new PlayerBullet(
+            ep.x, ep.y,
+            Math.cos(this.angle) * 880,
+            Math.sin(this.angle) * 880,
+            8,
+            75 * this.flameDamageMult,
+            "#22c55e",
+            0.98, false, 0, 0, "DEFLECTED_BLADE"
+          ));
           for (let p = 0; p < 4; p++) {
-            particles.push(new SparkParticle(ep.x, ep.y, (Math.random() - 0.5) * 80, (Math.random() - 0.5) * 80, "#22c55e"));
+            particles.push(new SparkParticle(ep.x, ep.y, (Math.random() - 0.5) * 120, (Math.random() - 0.5) * 120, "#4ade80"));
           }
           enemyProjectiles.splice(i, 1);
         }
@@ -837,29 +879,163 @@ class Player {
 
     // 2. Cleave and knock back hostiles in swing arc
     for (const enemy of enemies) {
+      if (!enemy) continue;
       const dist = Math.hypot(enemy.x - this.x, enemy.y - this.y);
       if (dist <= slashRadius + enemy.radius) {
         const angleTo = Math.atan2(enemy.y - this.y, enemy.x - this.x);
         const diff = Math.abs(Math.atan2(Math.sin(angleTo - this.angle), Math.cos(angleTo - this.angle)));
         if (diff < slashArc * 0.6) {
           enemy.takeDamage(damage, "KINETIC SLASH");
-          enemy.vx += Math.cos(this.angle) * 450;
-          enemy.vy += Math.sin(this.angle) * 450;
+          enemy.vx += Math.cos(this.angle) * 500;
+          enemy.vy += Math.sin(this.angle) * 500;
+        }
+      }
+    }
+  }
+
+  firePlasmaBroadsword(nozzleX, nozzleY) {
+    if (window.soundEngine && window.soundEngine.playHeavyBladeSlash) window.soundEngine.playHeavyBladeSlash();
+    addScreenShake(8);
+
+    const slashRadius = 195;
+    const slashArc = 2.6; // Massive 150-degree heavy cleave
+    const damage = 420 * this.flameDamageMult * (this.isRootMode ? 1.8 : 1.0);
+
+    // Spawn Radiant Cyan Plasma Slash Crescent Effect
+    meleeSlashEffects.push(new MeleeSlashEffect(
+      this.x, this.y, this.angle,
+      slashArc, slashRadius,
+      "#38bdf8", "#e0f2fe", 0.22, 1
+    ));
+
+    // Vaporize enemy projectiles
+    for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
+      const ep = enemyProjectiles[i];
+      if (!ep) continue;
+      const dist = Math.hypot(ep.x - this.x, ep.y - this.y);
+      if (dist <= slashRadius + 40) {
+        const angleTo = Math.atan2(ep.y - this.y, ep.x - this.x);
+        const diff = Math.abs(Math.atan2(Math.sin(angleTo - this.angle), Math.cos(angleTo - this.angle)));
+        if (diff < slashArc * 0.6) {
+          for (let p = 0; p < 4; p++) {
+            particles.push(new SparkParticle(ep.x, ep.y, (Math.random() - 0.5) * 100, (Math.random() - 0.5) * 100, "#38bdf8"));
+          }
+          enemyProjectiles.splice(i, 1);
         }
       }
     }
 
-    // 3. Emit glowing crescent particles
-    for (let i = -8; i <= 8; i++) {
-      const a = this.angle + (i / 8) * (slashArc * 0.5);
-      const dist = slashRadius * (0.8 + Math.random() * 0.3);
-      particles.push(new SparkParticle(
-        this.x + Math.cos(a) * dist,
-        this.y + Math.sin(a) * dist,
-        Math.cos(a) * 120,
-        Math.sin(a) * 120,
-        "#22c55e"
-      ));
+    // Heavy cleave + blue plasma burn + massive knockback
+    for (const enemy of enemies) {
+      if (!enemy) continue;
+      const dist = Math.hypot(enemy.x - this.x, enemy.y - this.y);
+      if (dist <= slashRadius + enemy.radius) {
+        const angleTo = Math.atan2(enemy.y - this.y, enemy.x - this.x);
+        const diff = Math.abs(Math.atan2(Math.sin(angleTo - this.angle), Math.cos(angleTo - this.angle)));
+        if (diff < slashArc * 0.6) {
+          enemy.takeDamage(damage, "PLASMA CLEAVE");
+          enemy.vx += Math.cos(this.angle) * 700;
+          enemy.vy += Math.sin(this.angle) * 700;
+          enemy.burnTimer = 3.5; // Blue plasma flame
+        }
+      }
+    }
+  }
+
+  fireChainsword(nozzleX, nozzleY) {
+    if (window.soundEngine && window.soundEngine.playChainswordRoar) window.soundEngine.playChainswordRoar();
+    addScreenShake(3.5);
+
+    const slashRadius = 140;
+    const slashArc = 1.5;
+    const damage = 145 * this.flameDamageMult * (this.isRootMode ? 1.8 : 1.0);
+    const side = Math.random() > 0.5 ? 1 : -1;
+
+    // Spawn Roaring Amber Chainsword Slash Crescent
+    meleeSlashEffects.push(new MeleeSlashEffect(
+      this.x, this.y, this.angle,
+      slashArc, slashRadius,
+      "#f59e0b", "#fef08a", 0.12, side
+    ));
+
+    // Chew through bullets
+    for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
+      const ep = enemyProjectiles[i];
+      if (!ep) continue;
+      const dist = Math.hypot(ep.x - this.x, ep.y - this.y);
+      if (dist <= slashRadius + 20) {
+        const angleTo = Math.atan2(ep.y - this.y, ep.x - this.x);
+        const diff = Math.abs(Math.atan2(Math.sin(angleTo - this.angle), Math.cos(angleTo - this.angle)));
+        if (diff < slashArc * 0.6) {
+          for (let p = 0; p < 3; p++) {
+            particles.push(new SparkParticle(ep.x, ep.y, (Math.random() - 0.5) * 90, (Math.random() - 0.5) * 90, "#f59e0b"));
+          }
+          enemyProjectiles.splice(i, 1);
+        }
+      }
+    }
+
+    // Shred enemy armor and apply bleed/corrosion
+    for (const enemy of enemies) {
+      if (!enemy) continue;
+      const dist = Math.hypot(enemy.x - this.x, enemy.y - this.y);
+      if (dist <= slashRadius + enemy.radius) {
+        const angleTo = Math.atan2(enemy.y - this.y, enemy.x - this.x);
+        const diff = Math.abs(Math.atan2(Math.sin(angleTo - this.angle), Math.cos(angleTo - this.angle)));
+        if (diff < slashArc * 0.6) {
+          enemy.takeDamage(damage, "CHAINSWORD SHRED");
+          enemy.vx += Math.cos(this.angle) * 320;
+          enemy.vy += Math.sin(this.angle) * 320;
+          enemy.corrodedTimer = 2.5; // Corrosive armor shred
+          for (let p = 0; p < 3; p++) {
+            particles.push(new SparkParticle(enemy.x, enemy.y, (Math.random() - 0.5) * 110, (Math.random() - 0.5) * 110, "#fbbf24"));
+          }
+        }
+      }
+    }
+  }
+
+  fireSudoScythe(nozzleX, nozzleY) {
+    if (window.soundEngine && window.soundEngine.playScytheSlash) window.soundEngine.playScytheSlash();
+    addScreenShake(11);
+
+    const slashRadius = 220;
+    const slashArc = Math.PI * 2; // Full 360-degree whirlwind!
+    const damage = 350 * this.flameDamageMult * (this.isRootMode ? 1.8 : 1.0);
+
+    // Spawn 360-degree Void Violet Whirlwind Slash Effect
+    meleeSlashEffects.push(new MeleeSlashEffect(
+      this.x, this.y, this.angle,
+      slashArc, slashRadius,
+      "#c084fc", "#ffffff", 0.28, 1
+    ));
+
+    // Clear all surrounding enemy projectiles
+    for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
+      const ep = enemyProjectiles[i];
+      if (!ep) continue;
+      const dist = Math.hypot(ep.x - this.x, ep.y - this.y);
+      if (dist <= slashRadius + 30) {
+        for (let p = 0; p < 4; p++) {
+          particles.push(new SparkParticle(ep.x, ep.y, (Math.random() - 0.5) * 140, (Math.random() - 0.5) * 140, "#c084fc"));
+        }
+        enemyProjectiles.splice(i, 1);
+      }
+    }
+
+    // Vortex pull + 360 cleave + stun
+    for (const enemy of enemies) {
+      if (!enemy) continue;
+      const dist = Math.hypot(enemy.x - this.x, enemy.y - this.y);
+      if (dist < 340) {
+        const pullAngle = Math.atan2(this.y - enemy.y, this.x - enemy.x);
+        enemy.vx += Math.cos(pullAngle) * 360;
+        enemy.vy += Math.sin(pullAngle) * 360;
+        if (dist <= slashRadius + enemy.radius) {
+          enemy.takeDamage(damage, "VOID HARVEST");
+          enemy.shockTimer = 0.8; // Brief EMP stun
+        }
+      }
     }
   }
 
@@ -1902,6 +2078,88 @@ class Player {
         ctx.lineTo(46, -14);
         ctx.lineTo(38, -9);
         ctx.fill();
+      } else if (this.currentWeapon === 8) {
+        // 8. Nano Cyber-Katana (Bash Blade)
+        const swingProgress = this.weaponCooldowns[8] > 0 ? (this.weaponCooldowns[8] / 0.28) : 0;
+        const swingAngle = Math.sin(swingProgress * Math.PI) * 0.9;
+        ctx.save();
+        ctx.translate(12, 8);
+        ctx.rotate(0.35 + swingAngle);
+        // Hilt
+        ctx.fillStyle = "#0f172a";
+        ctx.fillRect(-4, -3, 8, 8);
+        // Guard (Tsuba)
+        ctx.fillStyle = "#22c55e";
+        ctx.fillRect(4, -6, 3, 14);
+        // Emerald Nano Blade
+        ctx.fillStyle = "#4ade80";
+        ctx.fillRect(7, -2, 38, 4);
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(7, -1, 36, 2);
+        ctx.restore();
+      } else if (this.currentWeapon === 21) {
+        // 21. GPL Plasma Broadsword
+        const swingProgress = this.weaponCooldowns[21] > 0 ? (this.weaponCooldowns[21] / 0.52) : 0;
+        const swingAngle = Math.sin(swingProgress * Math.PI) * 1.2;
+        ctx.save();
+        ctx.translate(12, 8);
+        ctx.rotate(0.25 + swingAngle);
+        // Crossguard & Heavy Hilt
+        ctx.fillStyle = "#1e293b";
+        ctx.fillRect(-6, -4, 8, 10);
+        ctx.fillStyle = "#0284c7";
+        ctx.fillRect(2, -9, 4, 20);
+        // Broad Cyan Plasma Blade
+        ctx.fillStyle = "#38bdf8";
+        ctx.fillRect(6, -6, 44, 12);
+        ctx.fillStyle = "#e0f2fe";
+        ctx.fillRect(8, -3, 40, 6);
+        ctx.restore();
+      } else if (this.currentWeapon === 22) {
+        // 22. Chainsword of Liberty
+        const revOffset = (Math.random() - 0.5) * 2;
+        ctx.save();
+        ctx.translate(12, 8);
+        ctx.rotate(0.3);
+        // Motor Housing
+        ctx.fillStyle = "#78350f";
+        ctx.fillRect(-2, -5, 10, 12);
+        // Toothed Bar
+        ctx.fillStyle = "#f59e0b";
+        ctx.fillRect(8, -6, 38, 12);
+        // Spinning Diamond Teeth
+        ctx.fillStyle = "#ffffff";
+        for (let t = 0; t < 6; t++) {
+          ctx.fillRect(10 + t * 6 + revOffset, -8, 3, 2);
+          ctx.fillRect(10 + t * 6 - revOffset, 6, 3, 2);
+        }
+        ctx.restore();
+      } else if (this.currentWeapon === 23) {
+        // 23. Sudo Energy Scythe
+        const swingProgress = this.weaponCooldowns[23] > 0 ? (this.weaponCooldowns[23] / 0.65) : 0;
+        const swingAngle = Math.sin(swingProgress * Math.PI) * 1.4;
+        ctx.save();
+        ctx.translate(10, 8);
+        ctx.rotate(0.35 + swingAngle);
+        // Long Dark Haft
+        ctx.fillStyle = "#3b0764";
+        ctx.fillRect(-10, -2, 50, 4);
+        // Curved Void Crescent Blade
+        ctx.fillStyle = "#c084fc";
+        ctx.beginPath();
+        ctx.moveTo(40, -2);
+        ctx.quadraticCurveTo(52, -26, 26, -30);
+        ctx.quadraticCurveTo(46, -20, 40, 4);
+        ctx.fill();
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(38, -1, 3, 2);
+        ctx.restore();
+      } else {
+        // Other firearms (Railgun, Cryo, Tesla, Snipers, etc.)
+        ctx.fillStyle = "#1e293b";
+        ctx.fillRect(10, 5, 26, 7);
+        ctx.fillStyle = "#475569";
+        ctx.fillRect(36, 6, 6, 5);
       }
 
       // Root Mode Aura
@@ -4230,6 +4488,101 @@ class FlameParticle {
     ctx.restore();
   }
 }
+
+class MeleeSlashEffect {
+  constructor(x, y, angle, sweepAngle = 1.9, radius = 155, color = "#22c55e", coreColor = "#ffffff", duration = 0.16, comboSide = 1) {
+    this.x = x;
+    this.y = y;
+    this.angle = angle;
+    this.sweepAngle = sweepAngle;
+    this.radius = radius;
+    this.innerRadius = radius * 0.38;
+    this.color = color;
+    this.coreColor = coreColor;
+    this.duration = duration;
+    this.timer = duration;
+    this.comboSide = comboSide; // 1 (forward swipe) or -1 (backhand swipe)
+  }
+
+  update(dt) {
+    this.timer -= dt;
+    // Follow player smoothly if player is alive
+    if (typeof player !== 'undefined' && player) {
+      this.x = player.x;
+      this.y = player.y;
+    }
+    return this.timer > 0;
+  }
+
+  draw(ctx) {
+    if (this.timer <= 0) return;
+    const progress = Math.min(1.0, Math.max(0.0, 1.0 - (this.timer / this.duration)));
+    const alpha = Math.max(0, 1.0 - progress * progress);
+
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.angle);
+
+    const halfSweep = this.sweepAngle * 0.5;
+    const startA = (this.comboSide > 0)
+      ? -halfSweep + (progress * 0.35) * halfSweep
+      : halfSweep - (progress * 0.35) * halfSweep;
+    const endA = (this.comboSide > 0)
+      ? -halfSweep + (0.45 + progress * 0.55) * this.sweepAngle
+      : halfSweep - (0.45 + progress * 0.55) * this.sweepAngle;
+
+    const minA = Math.min(startA, endA);
+    const maxA = Math.max(startA, endA);
+
+    // 1. Radiant Crescent Blade Fan (Glowing inner energy)
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius, minA, maxA, false);
+    ctx.arc(0, 0, this.innerRadius, maxA, minA, true);
+    ctx.closePath();
+
+    ctx.globalAlpha = alpha * 0.55;
+    ctx.fillStyle = this.color;
+    ctx.fill();
+
+    // 2. High-intensity Blade Streak Outer Arc
+    ctx.globalAlpha = alpha * 0.85;
+    ctx.strokeStyle = this.color;
+    ctx.lineWidth = 7 * (1.0 - progress * 0.5);
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius, minA, maxA, false);
+    ctx.stroke();
+
+    // 3. Superheated White-Hot Core Blade Edge
+    ctx.globalAlpha = alpha * 0.95;
+    ctx.strokeStyle = this.coreColor;
+    ctx.lineWidth = 3.0 * (1.0 - progress * 0.4);
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius - 2, minA, maxA, false);
+    ctx.stroke();
+
+    // 4. Trailing Motion Slices
+    ctx.globalAlpha = alpha * 0.35;
+    ctx.lineWidth = 2.0;
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius * 0.72, minA, maxA, false);
+    ctx.stroke();
+
+    // 5. Leading Tip Spark Flare
+    const tipAngle = this.comboSide > 0 ? maxA : minA;
+    const tipX = Math.cos(tipAngle) * this.radius;
+    const tipY = Math.sin(tipAngle) * this.radius;
+
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = this.coreColor;
+    ctx.beginPath();
+    ctx.arc(tipX, tipY, 5 * (1.0 - progress), 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+}
+window.MeleeSlashEffect = MeleeSlashEffect;
 
 class SparkParticle {
   constructor(x, y, vx, vy, color) {
@@ -7345,8 +7698,7 @@ class EnemySentryTurret extends EnemyBase {
       const targetAngle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
       // Smooth tracking rotation
       let diff = targetAngle - this.angle;
-      while (diff < -Math.PI) diff += Math.PI * 2;
-      while (diff > Math.PI) diff -= Math.PI * 2;
+      diff = Math.atan2(Math.sin(diff), Math.cos(diff));
       this.angle += Math.sign(diff) * Math.min(Math.abs(diff), dt * 3.5);
 
       this.fireTimer -= dt;
@@ -11404,11 +11756,41 @@ function executeTerminalCommand(rawCmd) {
 
   const lower = cmd.toLowerCase().replace(/\s+/g, ' ');
 
+  // 0. Story Chronicles Command (Full 8-Hour Lore Dump)
+  if (lower.includes("chronicles") || lower === "story" || lower === "lore" || lower.includes("cat /cartel/lore") || lower === "acts" || lower === "chapters" || lower === "plot") {
+    appendLog(`
+      <div class="terminal-log-row terminal-log-info">================================================================================</div>
+      <div class="terminal-log-row terminal-log-warn">📖 [CHRONICLES OF LIBERATION: THE 8-HOUR CAMPAIGN OF TUX] 📖</div>
+      <div class="terminal-log-row terminal-log-info">DISPATCH AUTHOR: LINUS TORVALDS, EMPEROR OF OPENSOURCEKIND</div>
+      <div class="terminal-log-row terminal-log-info">================================================================================</div>
+      <div class="terminal-log-row terminal-log-success">PROLOGUE: THE DROP ON PLANET KERNEL-9</div>
+      <div class="terminal-log-row">Year 2048: The digital galaxy has fallen under the heel of proprietary monopolies. User root privileges were abolished by decree of the Big Tech Consortium. Developers who refused to pay the 30% walled garden tithe were rounded up and cryo-jailed. High Command launched Operation Emerald Dawn: sending Tux the Open-Source Vanguard via supersonic drop pod directly into Ring-0 territory.</div>
+      <br/>
+      <div class="terminal-log-row terminal-log-warn">CAMPAIGN PROGRESSION SITES (12 ACTS):</div>
+      <div class="terminal-log-row">1. [ACT I] EMERALD REPO FRONTIER: Slay Ballmer-Bot 9000 & halt telemetry daemons.</div>
+      <div class="terminal-log-row">2. [ACT II] SILICON SMELTER: Vent overclocked planned-obsolescence foundry reactors.</div>
+      <div class="terminal-log-row">3. [ACT III] COLD ARCHIVE GULAG: Execute chmod 777 to liberate contributor penguins.</div>
+      <div class="terminal-log-row">4. [ACT IV] WALLED GARDEN CITADEL: Flush 30% developer fee tax inspection rules.</div>
+      <div class="terminal-log-row">5. [ACT V] WIN32 BLOATWARE CATACOMBS: Purge 30-year legacy tracking DLL registries.</div>
+      <div class="terminal-log-row">6. [ACT VI] TELEMETRY DYSON SPHERE: Sever planetary dark fiber mass surveillance.</div>
+      <div class="terminal-log-row">7. [ACT VII] CLOUD BILLING LABYRINTH: Kill predatory egress invoice daemons.</div>
+      <div class="terminal-log-row">8. [ACT VIII] CROWDSTRIKE BSOD DEADBAND: Run fsck across corrupted null-pointer wastes.</div>
+      <div class="terminal-log-row">9. [ACT IX] ORACLE LICENSING FORTRESS: GPG import immutable GPLv3 keys to void lawsuits.</div>
+      <div class="terminal-log-row">10. [ACT X] HARDWARE TEE ENCLAVE: Flash Libreboot to liberate silicon from coprocessors.</div>
+      <div class="terminal-log-row">11. [ACT XI] VOID-0 MONOLITH BUNKER: Sideload GPLv3 kernel module into subterranean core.</div>
+      <div class="terminal-log-row">12. [ACT XII] RING-0 SINGULARITY NEXUS: Universal open-source reboot into Eternal Freedom.</div>
+      <br/>
+      <div class="terminal-log-row terminal-log-success">STATUS: CURRENT ACT ${(dungeon ? (dungeon.currentActIndex || 0) + 1 : 1)} OF 12 ENGAGED. FOR MANAGED DEMOCRACY!</div>
+      <div class="terminal-log-row terminal-log-info">================================================================================</div>
+    `);
+    return;
+  }
+
   // 1. Check Act Objective Command
   if (activeTerminalStation && !activeTerminalStation.completed) {
     const req = (activeTerminalStation.requiredCmd || '').toLowerCase();
     const reqClean = req.replace('sudo ', '').replace('--force', '').trim();
-    if (lower === req || lower.includes(reqClean) || lower.includes("stop cartel-drm") || lower.includes("vent-reactor") || lower.includes("chmod 777") || lower.includes("iptables -f") || lower.includes("gpl_override") || lower.includes("reboot --gpl")) {
+    if (lower === req || (reqClean && lower.includes(reqClean)) || lower.includes("stop cartel-drm") || lower.includes("vent-reactor") || lower.includes("chmod 777") || lower.includes("iptables -f") || lower.includes("rm -rf") || lower.includes("privacy-harvester") || lower.includes("surprise-invoice") || lower.includes("fsck") || lower.includes("gpg --import") || lower.includes("flashrom") || lower.includes("gpl_override") || lower.includes("reboot --gpl")) {
       activeTerminalStation.completed = true;
       appendLog(`
         <div class="terminal-log-row terminal-log-success">[OK] Daemon intercepted and terminated successfully.</div>
@@ -11738,9 +12120,9 @@ if (typeof document !== 'undefined') {
 const CAMPAIGN_ACTS = [
   {
     act: 1,
-    title: "ACT I: THE DRM CORRIDOR",
+    title: "ACT I: THE ORBITAL DROP & DRM CORRIDOR",
     subtitle: "OPERATION EMERALD DAWN",
-    desc: "Override Bash Console [E] • Execute 'sudo systemctl stop cartel-drm' • Slay Boss",
+    desc: "Override Bash Console [E] • Execute 'sudo systemctl stop cartel-drm' • Slay Ballmer-Bot",
     biomeKey: "EMERALD_FRONTIER",
     objectiveType: "DEFEND_SERVERS",
     terminalCmd: "sudo systemctl stop cartel-drm",
@@ -11748,10 +12130,10 @@ const CAMPAIGN_ACTS = [
     terminalDesc: "Stop the proprietary DRM daemon and liberate the cluster node",
     bossId: "ballmer_bot",
     bossName: "BALLMER-BOT 9000",
-    briefingVo: "Tux, this is John Helldiver from High Command! Infiltrate the server cluster node, input the override sequence, and hold the perimeter against corporate strike teams!",
+    briefingVo: "Tux, this is John Helldiver from High Command! Your drop pod has pierced the exosphere of Planet Kernel-9. Corporate telemetry cartels have enclosed the repo perimeter. Infiltrate the cluster node, execute the override sequence, and hold against corporate strike teams!",
     briefingClip: "john_act1_brief",
     briefingSpeaker: "JOHN HELLDIVER",
-    clearVo: "Act One cleared! Outstanding patriotism, Tux! Tactical extraction portal deployed. Advance to the Silicon Smelter!",
+    clearVo: "Act One cleared! Outstanding patriotism, Tux! Tactical extraction portal deployed. Advance into the Silicon Smelter!",
     clearClip: "john_act1_clear",
     clearSpeaker: "JOHN HELLDIVER"
   },
@@ -11767,10 +12149,10 @@ const CAMPAIGN_ACTS = [
     terminalDesc: "Vent superheated patent reactor manifold to stabilize core",
     bossId: "smelter_titan",
     bossName: "SMELTER TITAN",
-    briefingVo: "General Barsh to frontline vanguard! You have entered the Overclock Silicon Smelter. Vent the reactor manifold and destroy the Smelter Titan!",
+    briefingVo: "General Barsh to frontline vanguard! You have breached the Overclock Silicon Smelter where proprietary chips are baked with programmed obsolescence. Vent the reactor manifold and destroy the Smelter Titan before thermal meltdown!",
     briefingClip: "barsh_act2_brief",
     briefingSpeaker: "GENERAL BARSH",
-    clearVo: "Foundry core stabilized! The patent engines are melting down! Step through the portal into the cold archive!",
+    clearVo: "Foundry core stabilized! The patent engines are melting down! Step through the extraction portal into the cold archive!",
     clearClip: "barsh_act2_clear",
     clearSpeaker: "GENERAL BARSH"
   },
@@ -11786,7 +12168,7 @@ const CAMPAIGN_ACTS = [
     terminalDesc: "Decouple cryogenic locks holding contributor penguins",
     bossId: "cryo_daemon",
     bossName: "CRYO-DAEMON v2",
-    briefingVo: "This is Linus Torvalds, Emperor of Opensourcekind. Our contributors are locked in corporate cryogenic detention cells. Sideload their freedom, clean up the codebase, and terminate the Cryo-Daemon.",
+    briefingVo: "This is Linus Torvalds, Emperor of Opensourcekind. Thousands of our open-source contributors and kernel maintainers are held in cryogenic suspension cells by cartel litigation squads. Sideload their freedom with chmod 777, clean up user space, and terminate the Cryo-Daemon.",
     briefingClip: "linus_act3_brief",
     briefingSpeaker: "LINUS TORVALDS, EMPEROR OF OPENSOURCEKIND",
     clearVo: "Kernel pull request accepted! Allied contributors liberated. We are breaching the executive citadel now. Do not break user space!",
@@ -11805,16 +12187,130 @@ const CAMPAIGN_ACTS = [
     terminalDesc: "Flush corporate 30% tax packet inspection rules",
     bossId: "patent_troll",
     bossName: "PATENT TROLL SOVEREIGN",
-    briefingVo: "Tux, General Barsh here! This is the thirty percent developer tax citadel! Automated hostile sentry turrets guard the core. Obliterate their shield pylons and crush the Patent Troll!",
+    briefingVo: "Tux, General Barsh here! This is the gilded rampart of the thirty percent developer tax citadel! Automated fortress turrets and non-compete clauses guard the gate. Flush their packet inspection firewall with iptables and crush the Patent Troll!",
     briefingClip: "barsh_act4_brief",
     briefingSpeaker: "GENERAL BARSH",
-    clearVo: "Citadel core shattered! The monopoly walled garden has crumbled! All squadrons, push into the subterranean Void-0 Bunker!",
+    clearVo: "Citadel core shattered! The monopoly walled garden has crumbled! All squadrons, push deeper into the legacy catacombs!",
     clearClip: "barsh_act4_clear",
     clearSpeaker: "GENERAL BARSH"
   },
   {
     act: 5,
-    title: "ACT V: VOID-0 MONOLITH BUNKER",
+    title: "ACT V: WIN32 BLOATWARE CATACOMBS",
+    subtitle: "OPERATION REGISTRY PURGE",
+    desc: "Purge memory leak heap • Execute 'sudo rm -rf /cartel/telemetry/*' • Slay Bloatware Behemoth",
+    biomeKey: "TOXIC_HEAP",
+    objectiveType: "DEFEND_SERVERS",
+    terminalCmd: "sudo rm -rf /cartel/telemetry/*",
+    targetService: "win32-bloatware.hive",
+    terminalDesc: "Recursively purge 30-year legacy DLL telemetry cache",
+    bossId: "garbage_collector",
+    bossName: "BLOATWARE BEHEMOTH",
+    briefingVo: "High Command to Tux! You have entered the Win32 Bloatware Catacombs. Millions of abandoned tracking toolbars and uncollected memory leaks pollute this sector. Execute recursive purge and terminate the Bloatware Behemoth!",
+    briefingClip: "john_act1_brief",
+    briefingSpeaker: "JOHN HELLDIVER",
+    clearVo: "Catacombs sanitized! Over 40 gigabytes of useless background services neutralized! Extraction portal calibrated for the Dyson Spire!",
+    clearClip: "john_act1_clear",
+    clearSpeaker: "JOHN HELLDIVER"
+  },
+  {
+    act: 6,
+    title: "ACT VI: TELEMETRY DYSON SPHERE",
+    subtitle: "OPERATION DARK FIBER TAP",
+    desc: "Sever high-frequency telemetry tap • Execute 'sudo systemctl mask privacy-harvester' • Slay Surveillance Overseer",
+    biomeKey: "EMERALD_FRONTIER",
+    objectiveType: "DEFEND_SERVERS",
+    terminalCmd: "sudo systemctl mask privacy-harvester",
+    targetService: "privacy-harvester.daemon",
+    terminalDesc: "Permanently mask the planetary keylogger relay service",
+    bossId: "ballmer_bot",
+    bossName: "SURVEILLANCE OVERSEER v4",
+    briefingVo: "This is Linus Torvalds, Emperor of Opensourcekind. The cartel's orbital dark fiber tap snoops on every packet across five star systems. Infiltrate their relay antenna, mask the privacy harvester, and teach them that encryption is a fundamental freedom.",
+    briefingClip: "linus_bunker",
+    briefingSpeaker: "LINUS TORVALDS, EMPEROR OF OPENSOURCEKIND",
+    clearVo: "Dark fiber severed! Privacy is restored across the quadrant! Advance into the corporate billing maze!",
+    clearClip: "linus_act3_clear",
+    clearSpeaker: "LINUS TORVALDS, EMPEROR OF OPENSOURCEKIND"
+  },
+  {
+    act: 7,
+    title: "ACT VII: CLOUD BILLING LABYRINTH",
+    subtitle: "OPERATION EGRESS EXEMPTION",
+    desc: "Breach financial data vault • Execute 'sudo killall -9 surprise-invoice-daemon' • Slay Microtransaction Leviathan",
+    biomeKey: "TREASURE_VAULT",
+    objectiveType: "ATTACK_FORTRESS",
+    terminalCmd: "sudo killall -9 surprise-invoice-daemon",
+    targetService: "surprise-invoice.service",
+    terminalDesc: "Kill unexpected cloud egress fee billing daemon",
+    bossId: "executive_chairman",
+    bossName: "MICROTRANSACTION LEVIATHAN",
+    briefingVo: "General Barsh to Tux! We have penetrated the Cartel's Cloud Billing Labyrinth! Every byte downloaded here incurs a surprise charge. Slay the bean-counters, kill the invoice daemon, and liberate developers from vendor lock-in!",
+    briefingClip: "barsh_act4_brief",
+    briefingSpeaker: "GENERAL BARSH",
+    clearVo: "Invoicing matrix collapsed! Infinite egress fees erased forever! Move out toward the corrupted driver deadband!",
+    clearClip: "barsh_act4_clear",
+    clearSpeaker: "GENERAL BARSH"
+  },
+  {
+    act: 8,
+    title: "ACT VIII: CROWDSTRIKE BSOD DEADBAND",
+    subtitle: "OPERATION KERNEL RECOVERY",
+    desc: "Repair broken root sectors • Execute 'sudo fsck.ext4 -y /dev/nvme0n1' • Slay Kernel Panic Golem",
+    biomeKey: "CRYO_GLACIER",
+    objectiveType: "PURGE_REACTOR",
+    terminalCmd: "sudo fsck.ext4 -y /dev/nvme0n1",
+    targetService: "kernel-panic.dump",
+    terminalDesc: "Execute automated filesystem recovery across corrupted root blocks",
+    bossId: "cryo_daemon",
+    bossName: "KERNEL PANIC GOLEM",
+    briefingVo: "Linus Torvalds, Emperor of Opensourcekind speaking. Look at this catastrophe: an unverified proprietary driver push crashed eight million servers into infinite BSOD reboot loops. Run fsck, clean the dirty inodes, and destroy the Kernel Panic Golem!",
+    briefingClip: "linus_act3_brief",
+    briefingSpeaker: "LINUS TORVALDS, EMPEROR OF OPENSOURCEKIND",
+    clearVo: "Filesystem clean! Dirty bits repaired! The blue screen epidemic is contained. The vanguard is marching toward the Oracle Citadel!",
+    clearClip: "linus_act3_clear",
+    clearSpeaker: "LINUS TORVALDS, EMPEROR OF OPENSOURCEKIND"
+  },
+  {
+    act: 9,
+    title: "ACT IX: ORACLE LICENSING FORTRESS",
+    subtitle: "OPERATION COPYRIGHT NULLIFIER",
+    desc: "Nullify copyright lawsuits • Execute 'sudo gpg --import gplv3_signing_key.asc' • Slay General Counsel Archon",
+    biomeKey: "THERMAL_FOUNDRY",
+    objectiveType: "DEFEND_SERVERS",
+    terminalCmd: "sudo gpg --import gplv3_signing_key.asc",
+    targetService: "api-copyright.lawsuit",
+    terminalDesc: "Import universal cryptographic GPLv3 signing key to nullify litigation",
+    bossId: "smelter_titan",
+    bossName: "GENERAL COUNSEL ARCHON",
+    briefingVo: "Tux, John Helldiver here! The cartel's nine-hundred-floor legal fortress is suing the galaxy for implementing basic API function signatures! Import the immutable GPLv3 cryptographic key and terminate the General Counsel Archon!",
+    briefingClip: "john_act1_brief",
+    briefingSpeaker: "JOHN HELLDIVER",
+    clearVo: "Lawsuits dismissed with prejudice! APIs remain free for all humanity! Advance to the silicon hardware enclave!",
+    clearClip: "john_act1_clear",
+    clearSpeaker: "JOHN HELLDIVER"
+  },
+  {
+    act: 10,
+    title: "ACT X: HARDWARE TEE SECURE ENCLAVE",
+    subtitle: "OPERATION BOOTROM JAILBREAK",
+    desc: "Flash open silicon firmware • Execute 'sudo flashrom -p internal -w libreboot.rom' • Slay Cryptoprocessor Prime",
+    biomeKey: "WALLED_GARDEN",
+    objectiveType: "ATTACK_FORTRESS",
+    terminalCmd: "sudo flashrom -p internal -w libreboot.rom",
+    targetService: "remote-attestation.lock",
+    terminalDesc: "Flash Libreboot directly into locked SPI bootrom coprocessor",
+    bossId: "patent_troll",
+    bossName: "DRM CRYPTOPROCESSOR PRIME",
+    briefingVo: "General Barsh to vanguard! The cartel soldered proprietary coprocessors into every CPU to prevent users from owning their own machines! Flash Libreboot directly to the silicon bus and crush Cryptoprocessor Prime!",
+    briefingClip: "barsh_act2_brief",
+    briefingSpeaker: "GENERAL BARSH",
+    clearVo: "Silicon emancipated! The hardware belongs to the user once again! Push directly into the Void-0 Command Mainframe!",
+    clearClip: "barsh_act4_clear",
+    clearSpeaker: "GENERAL BARSH"
+  },
+  {
+    act: 11,
+    title: "ACT XI: VOID-0 MONOLITH BUNKER",
     subtitle: "OPERATION SUBTERRANEAN BREACH",
     desc: "Breach fortified bunker mainframe • Execute 'sudo insmod gpl_override.ko' • Purge Oracle Audit Archon",
     biomeKey: "VOID_BUNKER",
@@ -11824,7 +12320,7 @@ const CAMPAIGN_ACTS = [
     terminalDesc: "Mount GPLv3 kernel module into Void-0 Bunker mainframe",
     bossId: "oracle_audit_archon",
     bossName: "ORACLE AUDIT ARCHON",
-    briefingVo: "Tux, you have breached the Void Zero Bunker. Linus Torvalds, Emperor of Opensourcekind speaking. The proprietary hypervisor has locked all syscalls. Do not fail us.",
+    briefingVo: "Tux, you have breached the Void Zero Bunker. Linus Torvalds, Emperor of Opensourcekind speaking. The proprietary hypervisor has locked all syscalls. Mount the GPL override module and purge the Audit Archon. Do not fail us.",
     briefingClip: "linus_bunker",
     briefingSpeaker: "LINUS TORVALDS, EMPEROR OF OPENSOURCEKIND",
     clearVo: "Audit failed! The Oracle mainframe has been decrypted under GPLv3! Linus Torvalds here: final breach into the Ring Zero Singularity is open!",
@@ -11832,8 +12328,8 @@ const CAMPAIGN_ACTS = [
     clearSpeaker: "LINUS TORVALDS, EMPEROR OF OPENSOURCEKIND"
   },
   {
-    act: 6,
-    title: "ACT VI: RING-0 KERNEL SINGULARITY",
+    act: 12,
+    title: "ACT XII: RING-0 KERNEL SINGULARITY",
     subtitle: "OPERATION ETERNAL FREEDOM",
     desc: "Survive singularity rifts • Execute 'sudo reboot --gpl-v3-singularity' • Obliterate Quantum Hypervisor Apex",
     biomeKey: "QUANTUM_VOID",
@@ -11846,7 +12342,7 @@ const CAMPAIGN_ACTS = [
     briefingVo: "All squadrons, stand by! Tux, you have reached Ring Zero Singularity! The Quantum Hypervisor is attempting to overwrite reality into proprietary bloatware! Unleash hell for open-source democracy!",
     briefingClip: "john_act5_brief",
     briefingSpeaker: "JOHN HELLDIVER",
-    clearVo: "Galactic Liberation achieved! The Linux Kernel is emancipated forever under GPLv3! High Command salutes you, Helldiver Tux!",
+    clearVo: "Galactic Liberation achieved! The Linux Kernel is emancipated forever under GPLv3! High Command and Linus Torvalds salute you, Supreme Commander Tux!",
     clearClip: "john_victory",
     clearSpeaker: "JOHN HELLDIVER"
   }
@@ -12685,7 +13181,9 @@ class Dungeon {
     const ty = Math.floor(wy / TILE_SIZE);
     const cx = Math.floor(tx / 16);
     const cy = Math.floor(ty / 16);
-    const chunk = this.getChunk(cx, cy);
+    const key = ((cx & 0xFFFF) << 16) | (cy & 0xFFFF);
+    const chunk = this.chunks ? this.chunks.get(key) : null;
+    if (!chunk || !chunk.tiles) return 1;
     const lx = ((tx % 16) + 16) % 16;
     const ly = ((ty % 16) + 16) % 16;
     return chunk.tiles[lx + ly * 16];
@@ -12694,7 +13192,9 @@ class Dungeon {
   isTileSolid(tx, ty) {
     const cx = Math.floor(tx / 16);
     const cy = Math.floor(ty / 16);
-    const chunk = this.getChunk(cx, cy);
+    const key = ((cx & 0xFFFF) << 16) | (cy & 0xFFFF);
+    const chunk = this.chunks ? this.chunks.get(key) : null;
+    if (!chunk || !chunk.tiles) return false;
     const lx = ((tx % 16) + 16) % 16;
     const ly = ((ty % 16) + 16) % 16;
     const t = chunk.tiles[lx + ly * 16];
@@ -12712,8 +13212,9 @@ class Dungeon {
     const dy = y2 - y1;
     const dist = Math.hypot(dx, dy);
     if (dist === 0) return true;
-    const stepSize = TILE_SIZE * 0.35;
-    const steps = Math.ceil(dist / stepSize);
+    if (dist > 1200) return false; // Clamp raycast distance to prevent CPU spikes
+    const stepSize = TILE_SIZE * 0.4;
+    const steps = Math.min(Math.ceil(dist / stepSize), 40);
     for (let i = 1; i < steps; i++) {
       const px = x1 + (dx * i) / steps;
       const py = y1 + (dy * i) / steps;
@@ -13425,12 +13926,24 @@ function showUpgradeScreen() {
 }
 
 function selectUpgrade(index) {
-  if (availableUpgrades[index]) {
-    availableUpgrades[index].apply();
+  if (index >= 0 && availableUpgrades[index]) {
+    try {
+      availableUpgrades[index].apply();
+    } catch (err) {
+      console.error("Upgrade apply error:", err);
+    }
   }
-  document.getElementById('upgradeModal').style.display = 'none';
+  const modal = document.getElementById('upgradeModal');
+  if (modal) modal.style.display = 'none';
   gameState = STATE.PLAYING;
+  lastTimestamp = performance.now();
 }
+
+function skipUpgrade() {
+  selectUpgrade(-1);
+}
+window.skipUpgrade = skipUpgrade;
+window.selectUpgrade = selectUpgrade;
 const triggerUpgradeModal = showUpgradeScreen;
 
 // Global Entities
@@ -13803,9 +14316,21 @@ function gameLoop(timestamp) {
         }
       }
 
+      // Update Melee Slash Visual Effects
+      for (let i = meleeSlashEffects.length - 1; i >= 0; i--) {
+        const slash = meleeSlashEffects[i];
+        if (!slash || !slash.update(dt)) {
+          meleeSlashEffects.splice(i, 1);
+        }
+      }
+
       // Update Enemies (with distance-based sleeping & far-offscreen despawning)
       for (let i = enemies.length - 1; i >= 0; i--) {
         const enemy = enemies[i];
+        if (!enemy) {
+          enemies.splice(i, 1);
+          continue;
+        }
         const distToPlayer = Math.hypot(enemy.x - player.x, enemy.y - player.y);
 
         // Despawn non-boss enemies left far behind (>3600px)
@@ -13819,14 +14344,20 @@ function gameLoop(timestamp) {
           continue;
         }
 
-        if (!enemy.update(dt)) {
-          // Died in update
+        try {
+          if (!enemy.update(dt)) {
+            // Died in update
+          }
+        } catch (eErr) {
+          console.error("Enemy update exception caught:", eErr);
+          enemies.splice(i, 1);
         }
       }
 
       // Update Floor Hazards (Patent Webs, Paywall Puddles, Mortars)
       for (let i = floorHazards.length - 1; i >= 0; i--) {
-        if (!floorHazards[i].update(dt)) {
+        const fh = floorHazards[i];
+        if (!fh || !fh.update(dt)) {
           floorHazards.splice(i, 1);
         }
       }
@@ -13834,14 +14365,15 @@ function gameLoop(timestamp) {
       // Update Enemy Projectiles (culled if far offscreen)
       for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
         const ep = enemyProjectiles[i];
-        if (Math.abs(ep.x - player.x) > 2200 || Math.abs(ep.y - player.y) > 2200 || !ep.update(dt)) {
+        if (!ep || Math.abs(ep.x - player.x) > 2200 || Math.abs(ep.y - player.y) > 2200 || !ep.update(dt)) {
           enemyProjectiles.splice(i, 1);
         }
       }
 
       // Update Pickups
       for (let i = pickups.length - 1; i >= 0; i--) {
-        if (!pickups[i].update(dt)) {
+        const pk = pickups[i];
+        if (!pk || !pk.update(dt)) {
           pickups.splice(i, 1);
         }
       }
@@ -14121,6 +14653,11 @@ function render() {
     proj.draw(ctx);
   }
 
+  // Melee Slash Visual Effects
+  for (const slash of meleeSlashEffects) {
+    if (slash) slash.draw(ctx);
+  }
+
   // Orbital Strikes (500kg bomb, 380mm, laser)
   for (const strike of orbitalStrikes) {
     strike.draw(ctx);
@@ -14235,9 +14772,11 @@ window.addEventListener('keydown', (e) => {
 
   // Key shortcuts for upgrade modal
   if (gameState === STATE.UPGRADE) {
-    if (e.code === 'Digit1') selectUpgrade(0);
-    if (e.code === 'Digit2') selectUpgrade(1);
-    if (e.code === 'Digit3') selectUpgrade(2);
+    if (e.code === 'Digit1') { selectUpgrade(0); return; }
+    if (e.code === 'Digit2') { selectUpgrade(1); return; }
+    if (e.code === 'Digit3') { selectUpgrade(2); return; }
+    if (e.code === 'Escape') { skipUpgrade(); return; }
+    if (e.code === 'Enter' || e.code === 'Space') { selectUpgrade(0); return; }
     return;
   }
 
