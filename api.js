@@ -478,6 +478,66 @@
         case "set_biome":
           return this.setBiome(directive.biome, directive.objective, directive.tier);
 
+        case "command_enemy":
+          if (window.RoguelikeDevKit) {
+            return window.RoguelikeDevKit.commandEnemy(directive.enemy || directive.enemyQuery, directive.command, directive.params || directive.modifiers);
+          }
+          break;
+
+        case "command_all_enemies":
+          if (window.RoguelikeDevKit) {
+            return window.RoguelikeDevKit.commandAllEnemies(directive.command);
+          }
+          break;
+
+        case "mutate_enemy":
+          if (window.RoguelikeDevKit) {
+            return window.RoguelikeDevKit.mutateEnemy(directive.enemy || directive.enemyQuery, directive.modifiers || directive.params);
+          }
+          break;
+
+        case "force_boss_phase":
+          if (window.RoguelikeDevKit) {
+            return window.RoguelikeDevKit.forceBossPhase(directive.boss || directive.bossQuery, directive.phase);
+          }
+          break;
+
+        case "grant_buff":
+          if (window.RoguelikeDevKit) {
+            return window.RoguelikeDevKit.grantBuff(directive.buff || directive.buffId, directive.duration);
+          }
+          break;
+
+        case "give_weapon":
+          if (window.RoguelikeDevKit) {
+            return window.RoguelikeDevKit.giveWeapon(directive.weapon || directive.weaponId);
+          }
+          break;
+
+        case "set_attack_tokens":
+          if (window.RoguelikeDevKit) {
+            return window.RoguelikeDevKit.modifyAttackTokens(directive.maxTokens || 4);
+          }
+          break;
+
+        case "trigger_hitstop":
+          if (window.RoguelikeDevKit) {
+            return window.RoguelikeDevKit.triggerHitstop(directive.duration || 0.05);
+          }
+          break;
+
+        case "get_radar":
+          if (window.RoguelikeDevKit) {
+            return window.RoguelikeDevKit.getRadarMap(directive.width || 41, directive.height || 21);
+          }
+          break;
+
+        case "get_tactical_overview":
+          if (window.RoguelikeDevKit) {
+            return window.RoguelikeDevKit.getTacticalOverview();
+          }
+          break;
+
         case "get_state":
           return this.getState();
 
@@ -790,6 +850,76 @@ Analyze the live player telemetry below and respond strictly with a valid JSON o
       }
     });
   }
+
+  // Background Bridge Sync with start.py / MCP Server
+  function initMCPServerBridge() {
+    if (typeof window === 'undefined' || !window.location || !window.location.protocol.startsWith('http')) return;
+    
+    let isPolling = false;
+
+    // Directives consumer loop
+    setInterval(async () => {
+      if (isPolling) return;
+      isPolling = true;
+      try {
+        const resp = await fetch('/api/directives/pending');
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data && data.directives && data.directives.length > 0) {
+            for (const item of data.directives) {
+              try {
+                const res = GameDirectorAPI.executeDirective(item.directive);
+                await fetch('/api/result', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ id: item.id, status: 'success', result: res })
+                });
+              } catch (execErr) {
+                await fetch('/api/result', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ id: item.id, status: 'error', error: execErr.message })
+                });
+              }
+            }
+          }
+        }
+      } catch (e) {
+        // Silently skip if endpoint not ready
+      } finally {
+        isPolling = false;
+      }
+    }, 200);
+
+    // Periodic telemetry push (tactical semantic state every 600ms, radar cached/throttled)
+    let lastRadarTime = 0;
+    let cachedRadar = null;
+
+    setInterval(async () => {
+      try {
+        if (!window.player) return;
+        const now = Date.now();
+        const state = GameDirectorAPI.getState();
+        const tactical = window.RoguelikeDevKit ? window.RoguelikeDevKit.getTacticalOverview() : null;
+
+        // Generate radar map at most once every 1800ms for background telemetry to conserve main-thread CPU
+        if (now - lastRadarTime > 1800) {
+          lastRadarTime = now;
+          cachedRadar = window.RoguelikeDevKit ? window.RoguelikeDevKit.getRadarMap(41, 21) : null;
+        }
+
+        await fetch('/api/telemetry', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ state, radar: cachedRadar, tactical, timestamp: now })
+        });
+      } catch (e) {
+        // Silently skip
+      }
+    }, 600);
+  }
+
+  initMCPServerBridge();
 
   // Export to window
   window.GameDirectorAPI = GameDirectorAPI;

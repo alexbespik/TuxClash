@@ -1123,14 +1123,31 @@ class SoundEngine {
           if (chosen) utter.voice = chosen;
         }
 
+        // macOS / Chromium fix: Don't call cancel() synchronously right before speak() as it hangs CoreAudio IPC
         if (window.speechSynthesis.speaking) {
-          window.speechSynthesis.cancel();
+          // If already speaking, skip new speech to prevent audio queue pileup
+          return;
         }
+
+        utter.onend = () => {
+          window._isSpeakingVoiceUtter = false;
+        };
+        utter.onerror = () => {
+          window._isSpeakingVoiceUtter = false;
+        };
+
+        window._isSpeakingVoiceUtter = true;
         window.speechSynthesis.speak(utter);
+
+        // Failsafe watchdog timer: ensure flag resets even if onend never fires
+        setTimeout(() => {
+          window._isSpeakingVoiceUtter = false;
+        }, 5000);
       } catch (err) {
         // Silently catch so game loop is NEVER impacted
+        window._isSpeakingVoiceUtter = false;
       }
-    }, 0);
+    }, 16);
   }
 
   // --- NEW WEAPONS PROCEDURAL AUDIO: AUTOCANNON, QUASAR, ARC THROWER, PLASMA ---

@@ -92,30 +92,30 @@ if (typeof window !== 'undefined') {
 
 // Weapon Arsenal Catalogue
 const WEAPON_CATALOG = [
-  { id: 0, name: "GPL FLAMETHROWER", shortName: "GPL FLAMER", ammoText: "PYRO CONE", color: "#f97316", type: "flame" },
-  { id: 1, name: "BREAKER SHOTGUN", shortName: "BREAKER", ammoText: "BUCKSHOT", color: "#fbbf24", type: "buckshot" },
-  { id: 2, name: "INDOMITUS BOLTER", shortName: "BOLTER", ammoText: "HE ASTARTES", color: "#f59e0b", type: "bolter" },
-  { id: 3, name: "SUDO MINIGUN", shortName: "MINIGUN", ammoText: "SUDO ROTARY", color: "#38bdf8", type: "minigun" },
-  { id: 4, name: "FORKBOMB RPG", shortName: "FORKBOMB", ammoText: "CLUSTER RPG", color: "#ef4444", type: "rocket" },
-  { id: 5, name: "PLASMA RAILGUN", shortName: "RAILGUN", ammoText: "GIGAWATT SLUG", color: "#a855f7", type: "railgun" },
-  { id: 6, name: "CRYO CANNON", shortName: "CRYO CANNON", ammoText: "SUB-ZERO KERNEL", color: "#06b6d4", type: "cryo" },
-  { id: 7, name: "TESLA DAEMON CASTER", shortName: "TESLA ARC", ammoText: "CHAIN LIGHTNING", color: "#38bdf8", type: "tesla" },
-  { id: 8, name: "NANO CYBER-KATANA", shortName: "BASH BLADE", ammoText: "KINETIC SLASH", color: "#22c55e", type: "melee" },
-  { id: 9, name: "CLUSTER GRENADE LAUNCHER", shortName: "GRENADE LOB", ammoText: "BOMBLETS", color: "#f97316", type: "grenade" },
-  { id: 10, name: "TACHYON BEAM DRILL", shortName: "BEAM DRILL", ammoText: "CONTINUOUS RAY", color: "#e879f9", type: "beam" },
-  { id: 11, name: "GNU FLECHETTE SPIKER", shortName: "SPIKER", ammoText: "PNEUMATIC NAILS", color: "#cbd5e1", type: "spiker" },
-  { id: 12, name: "AMR ANTI-MATERIEL SNIPER", shortName: "AMR SNIPER", ammoText: "HEAVY AP SLUG", color: "#ef4444", type: "amr_sniper" },
-  { id: 13, name: "SINGULARITY VORTEX CANNON", shortName: "VORTEX CANNON", ammoText: "EVENT HORIZON", color: "#c084fc", type: "singularity" },
-  { id: 14, name: "KINETIC SAWBLADE LAUNCHER", shortName: "SAWBLADE DISC", ammoText: "RICOCHET DISCS", color: "#38bdf8", type: "sawblade" },
-  { id: 15, name: "CORROSIVE ACID SPRAYER", shortName: "ACID SPRAYER", ammoText: "CAUSTIC SLUDGE", color: "#22c55e", type: "acid_sprayer" },
-  { id: 16, name: "PL-1 HEAVY AUTOCANNON", shortName: "AUTOCANNON", ammoText: "20MM HE-AP", color: "#38bdf8", type: "autocannon" },
-  { id: 17, name: "LAS-99 QUASAR CANNON", shortName: "QUASAR", ammoText: "ANTI-TANK CORE", color: "#67e8f9", type: "quasar" },
-  { id: 18, name: "ARC-12 ARC THROWER", shortName: "ARC THROWER", ammoText: "HIGH VOLTAGE", color: "#38bdf8", type: "arc_thrower" },
-  { id: 19, name: "SG-8P PLASMA PUNISHER", shortName: "PLASMA MORTAR", ammoText: "PLASMA SHELL", color: "#818cf8", type: "plasma_mortar" },
-  { id: 20, name: "SG-225IE BREAKER INCENDIARY", shortName: "INCENDIARY", ammoText: "DRAGON BREATH", color: "#f97316", type: "breaker_incendiary" },
-  { id: 21, name: "GPL PLASMA BROADSWORD", shortName: "PLASMA SWORD", ammoText: "CYAN CLEAVE", color: "#38bdf8", type: "melee" },
-  { id: 22, name: "CHAINSWORD OF LIBERTY", shortName: "CHAINSWORD", ammoText: "ROARING TEETH", color: "#f59e0b", type: "melee" },
-  { id: 23, name: "SUDO ENERGY SCYTHE", shortName: "SUDO SCYTHE", ammoText: "VOID HARVEST", color: "#c084fc", type: "melee" }
+  { id: 0, name: "GPL FLAMETHROWER", shortName: "GPL FLAMER", ammoText: "PYRO CONE", color: "#f97316", type: "flame", energy_cost: 0, weapon_type: "FLAME", element_type: "FIRE" },
+  { id: 1, name: "BREAKER SHOTGUN", shortName: "BREAKER", ammoText: "BUCKSHOT", color: "#fbbf24", type: "buckshot", energy_cost: 3, weapon_type: "SHOTGUN", element_type: "NONE", projectile_count: 5 },
+  { id: 2, name: "INDOMITUS BOLTER", shortName: "BOLTER", ammoText: "HE ASTARTES", color: "#f59e0b", type: "bolter", energy_cost: 2, weapon_type: "RIFLE", element_type: "NONE" },
+  { id: 3, name: "SUDO MINIGUN", shortName: "MINIGUN", ammoText: "SUDO ROTARY", color: "#38bdf8", type: "minigun", energy_cost: 1, weapon_type: "RIFLE", element_type: "NONE" },
+  { id: 4, name: "FORKBOMB RPG", shortName: "FORKBOMB", ammoText: "CLUSTER RPG", color: "#ef4444", type: "rocket", energy_cost: 4, weapon_type: "EXPLOSIVE", element_type: "FIRE" },
+  { id: 5, name: "PLASMA RAILGUN", shortName: "RAILGUN", ammoText: "GIGAWATT SLUG", color: "#a855f7", type: "railgun", energy_cost: 4, weapon_type: "LASER", element_type: "ELECTRIC" },
+  { id: 6, name: "CRYO CANNON", shortName: "CRYO CANNON", ammoText: "SUB-ZERO KERNEL", color: "#06b6d4", type: "cryo", energy_cost: 3, weapon_type: "PISTOL", element_type: "ICE" },
+  { id: 7, name: "TESLA DAEMON CASTER", shortName: "TESLA ARC", ammoText: "CHAIN LIGHTNING", color: "#38bdf8", type: "tesla", energy_cost: 3, weapon_type: "STAFF", element_type: "ELECTRIC" },
+  { id: 8, name: "NANO CYBER-KATANA", shortName: "BASH BLADE", ammoText: "KINETIC SLASH", color: "#22c55e", type: "melee", energy_cost: 0, weapon_type: "MELEE", element_type: "NONE" },
+  { id: 9, name: "CLUSTER GRENADE LAUNCHER", shortName: "GRENADE LOB", ammoText: "BOMBLETS", color: "#f97316", type: "grenade", energy_cost: 3, weapon_type: "EXPLOSIVE", element_type: "FIRE" },
+  { id: 10, name: "TACHYON BEAM DRILL", shortName: "BEAM DRILL", ammoText: "CONTINUOUS RAY", color: "#e879f9", type: "beam", energy_cost: 1, weapon_type: "LASER", element_type: "ELECTRIC" },
+  { id: 11, name: "GNU FLECHETTE SPIKER", shortName: "SPIKER", ammoText: "PNEUMATIC NAILS", color: "#cbd5e1", type: "spiker", energy_cost: 2, weapon_type: "RIFLE", element_type: "NONE" },
+  { id: 12, name: "AMR ANTI-MATERIEL SNIPER", shortName: "AMR SNIPER", ammoText: "HEAVY AP SLUG", color: "#ef4444", type: "amr_sniper", energy_cost: 4, weapon_type: "RIFLE", element_type: "NONE" },
+  { id: 13, name: "SINGULARITY VORTEX CANNON", shortName: "VORTEX CANNON", ammoText: "EVENT HORIZON", color: "#c084fc", type: "singularity", energy_cost: 5, weapon_type: "STAFF", element_type: "NONE" },
+  { id: 14, name: "KINETIC SAWBLADE LAUNCHER", shortName: "SAWBLADE DISC", ammoText: "RICOCHET DISCS", color: "#38bdf8", type: "sawblade", energy_cost: 2, weapon_type: "THROWN", element_type: "NONE" },
+  { id: 15, name: "CORROSIVE ACID SPRAYER", shortName: "ACID SPRAYER", ammoText: "CAUSTIC SLUDGE", color: "#22c55e", type: "acid_sprayer", energy_cost: 2, weapon_type: "PISTOL", element_type: "POISON" },
+  { id: 16, name: "PL-1 HEAVY AUTOCANNON", shortName: "AUTOCANNON", ammoText: "20MM HE-AP", color: "#38bdf8", type: "autocannon", energy_cost: 3, weapon_type: "RIFLE", element_type: "NONE" },
+  { id: 17, name: "LAS-99 QUASAR CANNON", shortName: "QUASAR", ammoText: "ANTI-TANK CORE", color: "#67e8f9", type: "quasar", energy_cost: 5, weapon_type: "LASER", element_type: "ELECTRIC" },
+  { id: 18, name: "ARC-12 ARC THROWER", shortName: "ARC THROWER", ammoText: "HIGH VOLTAGE", color: "#38bdf8", type: "arc_thrower", energy_cost: 3, weapon_type: "STAFF", element_type: "ELECTRIC" },
+  { id: 19, name: "SG-8P PLASMA PUNISHER", shortName: "PLASMA MORTAR", ammoText: "PLASMA SHELL", color: "#818cf8", type: "plasma_mortar", energy_cost: 4, weapon_type: "EXPLOSIVE", element_type: "FIRE" },
+  { id: 20, name: "SG-225IE BREAKER INCENDIARY", shortName: "INCENDIARY", ammoText: "DRAGON BREATH", color: "#f97316", type: "breaker_incendiary", energy_cost: 3, weapon_type: "SHOTGUN", element_type: "FIRE", projectile_count: 5 },
+  { id: 21, name: "GPL PLASMA BROADSWORD", shortName: "PLASMA SWORD", ammoText: "CYAN CLEAVE", color: "#38bdf8", type: "melee", energy_cost: 0, weapon_type: "MELEE", element_type: "ELECTRIC" },
+  { id: 22, name: "CHAINSWORD OF LIBERTY", shortName: "CHAINSWORD", ammoText: "ROARING TEETH", color: "#f59e0b", type: "melee", energy_cost: 0, weapon_type: "MELEE", element_type: "NONE" },
+  { id: 23, name: "SUDO ENERGY SCYTHE", shortName: "SUDO SCYTHE", ammoText: "VOID HARVEST", color: "#c084fc", type: "melee", energy_cost: 0, weapon_type: "MELEE", element_type: "NONE" }
 ];
 
 // Player (TUX - High Commander of Open Source)
@@ -131,7 +131,13 @@ class Player {
     this.maxHp = 120;
     this.shield = 50;
     this.maxShield = 50;
-    this.shieldRegenDelay = 4.0;
+    this.energy = 200;
+    this.maxEnergy = 200;
+    this.time_since_last_hit = 999;
+    this.hasPaladinShield = false;
+    this.autoAimTarget = null;
+    this.aimScanTimer = 0;
+    this.shieldRegenDelay = 3.5;
     this.shieldRegenTimer = 0;
     this.baseSpeed = 340;
     this.speed = 340;
@@ -227,17 +233,23 @@ class Player {
     if (this.invulnerableTimer > 0) this.invulnerableTimer -= dt;
     if (this.suitSlamCooldown > 0) this.suitSlamCooldown -= dt;
     this.shieldRegenTimer += dt;
+    this.time_since_last_hit = (this.time_since_last_hit || 0) + dt;
 
     for (let i = 0; i < this.weaponCooldowns.length; i++) {
       if (this.weaponCooldowns[i] > 0) this.weaponCooldowns[i] -= dt;
     }
 
-    // Natural Tactical Energy Shield Regeneration (Soul Knight Style - Regenerates out of combat)
-    if (!this.isSpaceMarine && this.shieldRegenTimer >= this.shieldRegenDelay && this.shield < this.maxShield) {
-      this.shield = Math.min(this.maxShield, this.shield + 22 * dt);
+    // Natural Armor/Shield Regeneration (Argon's Roguelike Spec #2: 3.5s delay, 1 Armor every 0.5s = 2.0/s)
+    if (!this.isSpaceMarine && this.time_since_last_hit >= 3.5 && this.shield < this.maxShield) {
+      this.shield = Math.min(this.maxShield, this.shield + 2.0 * dt);
       if (Math.random() < 0.15) {
         particles.push(new SparkParticle(this.x + (Math.random() - 0.5) * 20, this.y + (Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20, -25, "#06b6d4"));
       }
+    }
+
+    // Natural Energy trickle regen (Soul Knight style: regenerates slowly up to maxEnergy when not actively firing)
+    if (!this.isFiring && this.energy < this.maxEnergy) {
+      this.energy = Math.min(this.maxEnergy, this.energy + 10.0 * dt);
     }
 
     // Space Marine Power Suit Battery Depletion
@@ -417,10 +429,38 @@ class Player {
       }
     }
 
-    // Aim angle towards mouse
+    // Smart Auto-Aim & Target Acquisition (Argon's Roguelike Spec #4)
+    this.aimScanTimer = (this.aimScanTimer || 0) - dt;
+    if (this.aimScanTimer <= 0 || (this.autoAimTarget && (this.autoAimTarget.isDead || this.autoAimTarget.hp <= 0))) {
+      this.aimScanTimer = 0.1; // Scan every 0.1s
+      let closestDist = 750; // AimRadius
+      let closestEnemy = null;
+      const enemyList = window.enemies || [];
+      for (const e of enemyList) {
+        if (!e || e.isDead || e.hp <= 0) continue;
+        const d = Math.hypot(e.x - this.x, e.y - this.y);
+        if (d < closestDist) {
+          if (!dungeon || dungeon.hasLineOfSight(this.x, this.y, e.x, e.y)) {
+            closestDist = d;
+            closestEnemy = e;
+          }
+        }
+      }
+      this.autoAimTarget = closestEnemy;
+    }
+
+    // Aim angle selection: Auto-aim rotates towards nearest LoS enemy; falls back to mouse / movement input vector
     const aimDx = mouse.worldX - this.x;
     const aimDy = mouse.worldY - this.y;
-    this.angle = Math.atan2(aimDy, aimDx);
+    const mouseDist = Math.hypot(aimDx, aimDy);
+
+    if (this.autoAimTarget && (mouse.down || mouseDist < 160 || (Math.hypot(this.vx, this.vy) > 0 && mouseDist < 250))) {
+      this.angle = Math.atan2(this.autoAimTarget.y - this.y, this.autoAimTarget.x - this.x);
+    } else if (mouseDist > 40) {
+      this.angle = Math.atan2(aimDy, aimDx);
+    } else if (Math.hypot(this.vx, this.vy) > 0) {
+      this.angle = Math.atan2(this.vy, this.vx);
+    }
 
     // Fuel Regen (for flamethrower)
     if (!this.isFiring || this.currentWeapon !== 0) {
@@ -582,10 +622,11 @@ class Player {
       }
     }
 
-    // 3. Proximity check for ProceduralPortal (< 85px)
+    // 3. Proximity check for ProceduralPortal (< 95px)
     if (typeof proceduralPortals !== 'undefined') {
       for (const portal of proceduralPortals) {
-        if (!portal.entered && Math.hypot(portal.x - this.x, portal.y - this.y) < 85) {
+        if (!portal.entered && Math.hypot(portal.x - this.x, portal.y - this.y) < 95) {
+          portal.armTimer = 0; // Immediate E interact bypasses stabilization timer
           portal.enter();
           return;
         }
@@ -618,6 +659,29 @@ class Player {
     }
   }
 
+  consumeEnergyForWeapon(curW) {
+    if (!curW || !curW.energy_cost) return true;
+    if (this.isRootMode) return true; // Infinite energy during Root Access Frenzy
+    if (this.energy < curW.energy_cost) {
+      // Soul Knight fallback: low energy fires at 50% power rather than freezing weapon
+      this.energy = 0;
+      this.lowEnergyFired = true;
+      if (window.soundEngine && window.soundEngine.playNoiseBurst) {
+        window.soundEngine.playNoiseBurst(0.04, 0.1, 1400, 200);
+      }
+      if (Math.random() < 0.15) {
+        addFloatingText(this.x, this.y - 20, "LOW ENERGY (50% DMG)", "#38bdf8", 14);
+      }
+      return true; // Still fire!
+    }
+    this.lowEnergyFired = false;
+    this.energy = Math.max(0, this.energy - curW.energy_cost);
+    if (window.CombatEventBus) {
+      window.CombatEventBus.emit('OnWeaponFire', this, curW, null);
+    }
+    return true;
+  }
+
   fireCurrentWeapon(dt) {
     // If holding a stratagem beacon, do not fire regular weapon (thrown on click)
     if (this.holdingStratagem !== null) {
@@ -629,6 +693,10 @@ class Player {
     const nozzleDist = this.isSpaceMarine ? 42 : 36;
     const nozzleX = this.x + Math.cos(this.angle) * nozzleDist;
     const nozzleY = this.y + Math.sin(this.angle) * nozzleDist;
+
+    if (weaponId !== 0 && this.weaponCooldowns[weaponId] <= 0) {
+      if (!this.consumeEnergyForWeapon(curW)) return;
+    }
 
     if (weaponId === 0) {
       // 0. GPL Flamethrower
@@ -859,20 +927,26 @@ class Player {
         const angleTo = Math.atan2(ep.y - this.y, ep.x - this.x);
         const diff = Math.abs(Math.atan2(Math.sin(angleTo - this.angle), Math.cos(angleTo - this.angle)));
         if (diff < slashArc * 0.6) {
-          // Deflect projectile back at enemies with green kinetic boost!
-          playerProjectiles.push(new PlayerBullet(
-            ep.x, ep.y,
-            Math.cos(this.angle) * 880,
-            Math.sin(this.angle) * 880,
-            8,
-            75 * this.flameDamageMult,
-            "#22c55e",
-            0.98, false, 0, 0, "DEFLECTED_BLADE"
-          ));
-          for (let p = 0; p < 4; p++) {
-            particles.push(new SparkParticle(ep.x, ep.y, (Math.random() - 0.5) * 120, (Math.random() - 0.5) * 120, "#4ade80"));
+          if (ep.is_destructible !== false) {
+            const hasReflectBuff = (window.ModifierEngine && window.ModifierEngine.hasBuff('MELEE_REFLECT'));
+            const deflectSpeed = hasReflectBuff ? 1100 : 880;
+            const deflectDmg = (hasReflectBuff ? 120 : 75) * this.flameDamageMult;
+
+            playerProjectiles.push(new PlayerBullet(
+              ep.x, ep.y,
+              Math.cos(this.angle) * deflectSpeed,
+              Math.sin(this.angle) * deflectSpeed,
+              8,
+              deflectDmg,
+              hasReflectBuff ? "#38bdf8" : "#22c55e",
+              0.98, false, 0, 0, "DEFLECTED_BLADE"
+            ));
+            for (let p = 0; p < 4; p++) {
+              particles.push(new SparkParticle(ep.x, ep.y, (Math.random() - 0.5) * 120, (Math.random() - 0.5) * 120, hasReflectBuff ? "#38bdf8" : "#4ade80"));
+            }
+            if (window.RoguelikeDevKit) window.RoguelikeDevKit.triggerHitstop(0.04);
+            enemyProjectiles.splice(i, 1);
           }
-          enemyProjectiles.splice(i, 1);
         }
       }
     }
@@ -1707,12 +1781,43 @@ class Player {
 
   takeDamage(amount, source, hitVx = 0, hitVy = 0) {
     if (this.invulnerableTimer > 0 || this.isRootMode || this.isSliding) return;
-    let finalDamage = amount * (1 - this.armorReduction);
-    if (this.corrodedTimer > 0) {
-      finalDamage *= 1.5; // Corrosive acid shreds armor!
+
+    // Statue of the Paladin 1-hit invulnerability barrier
+    if (this.hasPaladinShield) {
+      this.hasPaladinShield = false;
+      this.invulnerableTimer = 0.5;
+      if (typeof addFloatingText === 'function') addFloatingText(this.x, this.y - 30, "🛡️ PALADIN BARRIER BLOCKED HIT!", "#38bdf8", 22);
+      if (window.soundEngine && typeof window.soundEngine.playShieldDeflect === 'function') window.soundEngine.playShieldDeflect();
+      return;
     }
-    this.invulnerableTimer = 0.22;
+
+    // Trigger CombatEventBus OnDamageCalculated hook
+    const damageContext = {
+      attacker: null,
+      defender: this,
+      damage: amount,
+      source: source || "COMBAT",
+      isCrit: false,
+      cancelled: false
+    };
+    if (window.CombatEventBus) {
+      window.CombatEventBus.emit('OnDamageCalculated', null, this, damageContext);
+    }
+    if (damageContext.cancelled) return;
+
+    // Argon Spec #2: Reset timer, trigger 0.5s i-frames
+    this.time_since_last_hit = 0;
     this.shieldRegenTimer = 0;
+    this.invulnerableTimer = 0.5; // 0.5s i-frames to prevent multi-hit instadeaths
+
+    if (window.CombatEventBus) {
+      window.CombatEventBus.emit('OnDamageTaken', this, damageContext.damage, damageContext.source);
+    }
+
+    let finalDamage = damageContext.damage * (1 - this.armorReduction);
+    if (this.corrodedTimer > 0) {
+      finalDamage *= 1.5;
+    }
 
     // Visceral red impact flash on screen
     screenFlash = Math.max(screenFlash, 0.45);
@@ -1745,20 +1850,29 @@ class Player {
       return;
     }
 
-    // 2. Base Tux Tactical Shield Matrix absorbs damage before HP!
+    // 2. Base Tux Armor / Shield Matrix & Shield Gate Logic (Argon's Spec #2)
+    const hasShieldGate = (window.ModifierEngine && window.ModifierEngine.hasBuff('SHIELD_GATE_NO_OVERFLOW'));
     if (this.shield > 0) {
-      if (finalDamage <= this.shield) {
-        this.shield -= finalDamage;
-        addFloatingText(this.x, this.y - 25, `-${Math.round(finalDamage)} SHIELD`, "#06b6d4", 18);
-        window.soundEngine.playNoiseBurst(0.08, 0.25, 950, 300);
-        addScreenShake(4);
-        finalDamage = 0;
+      if (hasShieldGate) {
+        this.shield = Math.max(0, this.shield - finalDamage);
+        finalDamage = 0; // Armor absorbs 100% of the breaking hit!
+        addFloatingText(this.x, this.y - 25, "🛡️ SHIELD GATE: 0 OVERFLOW!", "#38bdf8", 18);
+        if (window.soundEngine && window.soundEngine.playShieldDeflect) window.soundEngine.playShieldDeflect();
+        addScreenShake(5);
       } else {
-        finalDamage -= this.shield;
-        this.shield = 0;
-        addFloatingText(this.x, this.y - 25, "SHIELD DEPLETED!", "#06b6d4", 20);
-        window.soundEngine.playNoiseBurst(0.14, 0.4, 1200, 250);
-        addScreenShake(7);
+        if (finalDamage <= this.shield) {
+          this.shield -= finalDamage;
+          addFloatingText(this.x, this.y - 25, `-${Math.round(finalDamage)} ARMOR`, "#06b6d4", 18);
+          window.soundEngine.playNoiseBurst(0.08, 0.25, 950, 300);
+          addScreenShake(4);
+          finalDamage = 0;
+        } else {
+          finalDamage -= this.shield;
+          this.shield = 0;
+          addFloatingText(this.x, this.y - 25, "ARMOR BROKEN!", "#06b6d4", 20);
+          window.soundEngine.playNoiseBurst(0.14, 0.4, 1200, 250);
+          addScreenShake(7);
+        }
       }
     }
 
@@ -4956,6 +5070,9 @@ class Pickup {
     } else if (this.type === 'fuel') {
       player.fuel = player.maxFuel;
       addFloatingText(this.x, this.y, "MAX FUEL / FISH SNACK!", "#38bdf8", 16);
+    } else if (this.type === 'energy') {
+      player.energy = Math.min(player.maxEnergy || 200, (player.energy || 0) + 8);
+      addFloatingText(this.x, this.y, "+8 ENERGY", "#38bdf8", 16);
     }
   }
 
@@ -4988,6 +5105,19 @@ class Pickup {
       ctx.lineTo(-17, -6 + bob);
       ctx.lineTo(-17, 6 + bob);
       ctx.fill();
+    } else if (this.type === 'energy') {
+      // Radiant Soul Knight Blue Energy Orb
+      ctx.fillStyle = "#38bdf8";
+      ctx.beginPath();
+      ctx.arc(0, bob, 9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.arc(-2, bob - 2, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#67e8f9";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
     }
 
     ctx.restore();
@@ -5369,8 +5499,26 @@ class EnemyBase {
     if (Math.random() < 0.75 || this.isBoss) {
       pickups.push(new Pickup(this.x, this.y, 'xp'));
     }
-    if (Math.random() < 0.25 || this.isBoss) {
-      pickups.push(new Pickup(this.x + 15, this.y, Math.random() < 0.5 ? 'hp' : 'fuel'));
+
+    // Energy Orb drops (+8 Energy per Argon's Spec #2)
+    if (Math.random() < 0.65 || this.isBoss) {
+      pickups.push(new Pickup(this.x + (Math.random() - 0.5) * 16, this.y + (Math.random() - 0.5) * 16, 'energy'));
+    }
+
+    // Health Pity Timer: 3.0x weight for HP drop if player HP <= 30%
+    const hpWeight = (typeof player !== 'undefined' && player && (player.hp / player.maxHp) <= 0.30) ? 0.75 : 0.25;
+    if (Math.random() < hpWeight || this.isBoss) {
+      pickups.push(new Pickup(this.x + 15, this.y, Math.random() < 0.65 ? 'hp' : 'fuel'));
+    }
+
+    // Release Attack Token
+    if (this.tokenPool) {
+      this.tokenPool.releaseToken(this);
+    } else if (window.globalAttackTokenPool) {
+      window.globalAttackTokenPool.releaseToken(this);
+    }
+    if (window.CombatEventBus) {
+      window.CombatEventBus.emit('OnEnemyKill', player, this);
     }
 
     if (typeof player !== 'undefined' && player && player.infectiousGPL) {
@@ -5671,74 +5819,48 @@ class EnemyBSOD extends EnemyBase {
 
     ctx.rotate(facing);
 
-    // Tailored Charcoal Corporate Suit Body
-    ctx.fillStyle = this.burnTimer > 0 ? "#450a0a" : ((this.chargeState === 'dash') ? "#7f1d1d" : "#1e293b");
+    // Retro Windows BSOD Error Cube (34x34px)
+    const isDashing = (this.chargeState === 'dash');
+    const isWindup = (this.chargeState === 'windup');
+    const cubeColor = this.burnTimer > 0 ? "#450a0a" : (isDashing ? "#991b1b" : (isWindup ? "#0284c7" : "#0078d7"));
+    const borderColor = isDashing ? "#ef4444" : (isWindup ? "#facc15" : "#38bdf8");
+
+    // 3D Shadow drop
+    ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
+    ctx.fillRect(-15, -13, 34, 34);
+
+    // Main Cobalt Blue Error Cube
+    ctx.fillStyle = cubeColor;
     ctx.beginPath();
-    ctx.roundRect(-16, -14, 32, 28, 4);
+    ctx.roundRect(-17, -17, 34, 34, 3);
     ctx.fill();
-    ctx.strokeStyle = (this.chargeState === 'dash') ? "#ef4444" : "#475569";
-    ctx.lineWidth = 1.5;
+
+    // High-tech CRT bevel border
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = 2.0;
     ctx.stroke();
 
-    // White Shirt V-neck collar & Red Tie
+    // CRT Scanlines across screen
+    ctx.fillStyle = "rgba(255, 255, 255, 0.09)";
+    ctx.fillRect(-15, -11, 30, 2);
+    ctx.fillRect(-15, -3, 30, 2);
+    ctx.fillRect(-15, 5, 30, 2);
+
+    // Big iconic Windows Monospace Sad Face ":("
+    ctx.font = "bold 15px monospace";
     ctx.fillStyle = "#ffffff";
-    ctx.beginPath();
-    ctx.moveTo(0, -14);
-    ctx.lineTo(6, -4);
-    ctx.lineTo(-6, -4);
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.fillStyle = "#dc2626"; // Crimson corporate tie
-    ctx.beginPath();
-    ctx.moveTo(-2, -4);
-    ctx.lineTo(2, -4);
-    ctx.lineTo(4, 8);
-    ctx.lineTo(0, 12);
-    ctx.lineTo(-4, 8);
-    ctx.closePath();
-    ctx.fill();
-
-    // Head / Face
-    ctx.fillStyle = "#fed7aa";
-    ctx.beginPath();
-    ctx.arc(0, -2, 9, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Corporate Headphone / Earpiece
-    ctx.fillStyle = "#0f172a";
-    ctx.fillRect(8, -6, 3, 8);
-
-    // Eyes / Angry eyebrows during audit dash
-    if (this.chargeState === 'dash' || this.chargeState === 'windup') {
-      ctx.fillStyle = "#ef4444";
-      ctx.fillRect(2, -4, 4, 3);
-      ctx.fillRect(-6, -4, 4, 3);
-      ctx.strokeStyle = "#991b1b";
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(-7, -6); ctx.lineTo(-1, -3);
-      ctx.moveTo(7, -6); ctx.lineTo(1, -3);
-      ctx.stroke();
-    } else {
-      ctx.fillStyle = "#0f172a";
-      ctx.fillRect(2, -3, 3, 3);
-      ctx.fillRect(-5, -3, 3, 3);
-    }
-
-    // Left hand holding Audit Clipboard with golden clip
-    ctx.fillStyle = "#78350f";
-    ctx.fillRect(14, -10, 10, 14);
-    ctx.fillStyle = "#facc15";
-    ctx.fillRect(16, -12, 6, 3);
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(15, -8, 8, 10);
-
-    // Badge label
-    ctx.font = "bold 8px monospace";
-    ctx.fillStyle = (this.chargeState === 'dash') ? "#ef4444" : "#38bdf8";
     ctx.textAlign = "center";
-    ctx.fillText(this.chargeState === 'dash' ? "AUDIT!" : "CORP_OPS", 0, 24);
+    ctx.fillText(":(", 0, 2);
+
+    // Header badge
+    ctx.font = "bold 6.5px monospace";
+    ctx.fillStyle = isDashing ? "#fef08a" : "#bae6fd";
+    ctx.fillText(isDashing ? "FATAL_PANIC" : "CRASH.SYS", 0, -10);
+
+    // Footer error code
+    ctx.font = "bold 6px monospace";
+    ctx.fillStyle = isDashing ? "#fca5a5" : "#e0f2fe";
+    ctx.fillText("PAGE_FAULT", 0, 13);
 
     ctx.restore();
 
@@ -5834,7 +5956,7 @@ class EnemyDRM extends EnemyBase {
     ctx.translate(this.x, this.y);
     ctx.rotate(this.facingAngle);
 
-    // Frontal Tactical Keycard Shield (Deflects frontal shots)
+    // Frontal Tactical Energy Shield (Deflects frontal shots)
     ctx.strokeStyle = "#38bdf8";
     ctx.lineWidth = 2.5;
     ctx.beginPath();
@@ -5848,40 +5970,54 @@ class EnemyDRM extends EnemyBase {
     ctx.closePath();
     ctx.fill();
 
-    // Black Agent Suit (Men-in-Black Enforcer)
-    ctx.fillStyle = this.burnTimer > 0 ? "#450a0a" : "#0f172a";
+    // Retro Armored DRM Security Padlock Cube (32x32px)
+    // Padlock Metal Shackle on Back
+    ctx.strokeStyle = "#94a3b8";
+    ctx.lineWidth = 3.5;
     ctx.beginPath();
-    ctx.roundRect(-16, -15, 30, 30, 4);
-    ctx.fill();
-    ctx.strokeStyle = "#334155";
-    ctx.lineWidth = 1.5;
+    ctx.arc(-8, 0, 9, -Math.PI * 0.5, Math.PI * 0.5, true);
     ctx.stroke();
 
-    // White Shirt & Slim Black Tie
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(-2, -6, 5, 12);
-    ctx.fillStyle = "#020617";
-    ctx.fillRect(-1, -4, 3, 10);
-
-    // Head with Agent Sunglasses
-    ctx.fillStyle = "#fed7aa";
+    // Padlock Cube Body (Brass / Security Gold Armor with Steel Plating)
+    ctx.fillStyle = this.burnTimer > 0 ? "#450a0a" : "#b45309";
     ctx.beginPath();
-    ctx.arc(0, 0, 9, 0, Math.PI * 2);
+    ctx.roundRect(-16, -15, 30, 30, 3);
     ctx.fill();
 
-    // Dark Sunglasses with cyan polarized glint
-    ctx.fillStyle = "#020617";
-    ctx.fillRect(1, -3, 8, 4);
-    ctx.fillStyle = "#38bdf8";
-    ctx.fillRect(3, -2, 3, 1);
+    ctx.strokeStyle = "#f59e0b";
+    ctx.lineWidth = 2;
+    ctx.stroke();
 
-    // 3-way telemetry compliance scanner blaster
-    ctx.fillStyle = "#334155";
-    ctx.fillRect(10, -5, 12, 10);
+    // Steel Core Center Plate
+    ctx.fillStyle = "#1e293b";
+    ctx.fillRect(-10, -10, 18, 20);
+
+    // Security Keyhole Glyph in Center
     ctx.fillStyle = "#38bdf8";
-    ctx.fillRect(22, -4, 3, 2);
-    ctx.fillRect(22, -1, 3, 2);
-    ctx.fillRect(22, 2, 3, 2);
+    ctx.beginPath();
+    ctx.arc(-1, -2, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-3, 0);
+    ctx.lineTo(1, 0);
+    ctx.lineTo(2, 6);
+    ctx.lineTo(-4, 6);
+    ctx.closePath();
+    ctx.fill();
+
+    // Front 3-barrel laser array on front edge
+    ctx.fillStyle = "#334155";
+    ctx.fillRect(14, -6, 6, 12);
+    ctx.fillStyle = "#38bdf8";
+    ctx.fillRect(20, -5, 3, 2);
+    ctx.fillRect(20, -1, 3, 2);
+    ctx.fillRect(20, 3, 3, 2);
+
+    // Padlock DRM Badge Label
+    ctx.font = "bold 6.5px monospace";
+    ctx.fillStyle = "#facc15";
+    ctx.textAlign = "center";
+    ctx.fillText("DRM.LOCK", -1, 13);
 
     ctx.restore();
 
@@ -8680,7 +8816,7 @@ class ProceduralPortal {
     this.spinAngle = 0;
     this.pulse = 0;
     this.entered = false;
-    this.armTimer = 1.5; // Portal stabilization timer - prevents instant telefrag when boss dies at close range
+    this.armTimer = 0.4; // Responsive stabilization timer
 
     switch (this.objectiveType) {
       case "DEFEND_SERVERS":
@@ -8743,16 +8879,15 @@ class ProceduralPortal {
       ));
     }
 
-    // Step-in trigger check (only active after portal has stabilized!)
-    if (!this.entered && this.armTimer <= 0 && player && Math.hypot(player.x - this.x, player.y - this.y) < this.radius * 0.65) {
+    // Step-in trigger check (generous collision radius: portal radius + player radius)
+    if (!this.entered && this.armTimer <= 0 && player && Math.hypot(player.x - this.x, player.y - this.y) < (this.radius + (player.radius || 20)) * 0.95) {
       this.enter();
     }
   }
 
   enter() {
     if (this.entered) return;
-    if (this.armTimer > 0) return;
-    if (dungeon && dungeon.isWarping) return;
+    if (dungeon && dungeon._actTransitionInProgress) return;
     this.entered = true;
 
     const doWarp = () => {
@@ -8768,13 +8903,14 @@ class ProceduralPortal {
         // Defer warp to microtask so current update/projectile loop terminates cleanly without array index corruption
         setTimeout(() => {
           if (dungeon) {
+            dungeon.isWarping = false; // Ensure warp proceeds without being self-blocked
             if (this.actTargetIndex !== undefined) {
               dungeon.startCampaignAct(this.actTargetIndex);
             } else {
               dungeon.warpToBiome(this.biomeKey, this.objectiveType, this.dangerRating, true);
             }
           }
-        }, 16);
+        }, 32);
       }
     };
 
@@ -12374,6 +12510,16 @@ class Dungeon {
   }
 
   startCampaignAct(actIndex = 0) {
+    if (this._actTransitionInProgress) return;
+    this._actTransitionInProgress = true;
+    this.isWarping = true;
+    setTimeout(() => {
+      if (this) {
+        this.isWarping = false;
+        this._actTransitionInProgress = false;
+      }
+    }, 800);
+
     this.currentActIndex = Math.max(0, Math.min(CAMPAIGN_ACTS.length - 1, actIndex));
     const act = CAMPAIGN_ACTS[this.currentActIndex];
 
@@ -12653,9 +12799,15 @@ class Dungeon {
   }
 
   warpToBiome(biomeKey, objectiveType, dangerRating, skipCutscene = false) {
-    if (this.isWarping) return;
+    if (this._actTransitionInProgress) return;
+    this._actTransitionInProgress = true;
     this.isWarping = true;
-    setTimeout(() => { if (this) this.isWarping = false; }, 900);
+    setTimeout(() => {
+      if (this) {
+        this.isWarping = false;
+        this._actTransitionInProgress = false;
+      }
+    }, 800);
 
     this.currentBiome = BIOMES[biomeKey] || BIOMES.EMERALD_FRONTIER;
     this.currentObjectiveType = objectiveType || "DEFEND_SERVERS";
@@ -13404,18 +13556,11 @@ class Dungeon {
     const minCy = Math.floor(camera.y / chunkPixelSize);
     const maxCy = Math.floor((camera.y + canvas.height) / chunkPixelSize);
 
-    // Only render the 4 to 6 chunks currently intersecting the camera viewport!
+    // Fast direct chunk rendering (zero DOM canvas allocations, 60 FPS across all realms)
     for (let cy = minCy; cy <= maxCy; cy++) {
       for (let cx = minCx; cx <= maxCx; cx++) {
         const chunk = this.getChunk(cx, cy);
-        if (!chunk.canvas) {
-          this.buildChunkCanvas(chunk);
-        }
-        if (chunk.canvas) {
-          ctx.drawImage(chunk.canvas, cx * chunkPixelSize, cy * chunkPixelSize);
-        } else {
-          this.drawChunkDirect(ctx, chunk);
-        }
+        this.drawChunkDirect(ctx, chunk);
       }
     }
 
@@ -14240,6 +14385,15 @@ function gameLoop(timestamp) {
 
   if (dt > 0.1) dt = 0.1;
 
+  // Hitstop frame dampening (Argon's Roguelike Feel: subtle time dilation on crits/deflections, NEVER hard 0 freeze!)
+  if (window.hitstopTimer && window.hitstopTimer > 0) {
+    window.hitstopTimer -= dt;
+    dt *= 0.25; // Smooth slow-motion rather than hard freeze lockup
+  }
+  if (window.ModifierEngine && dt > 0) {
+    window.ModifierEngine.update(dt);
+  }
+
   try {
     if (gameState === STATE.PLAYING) {
       gameTime += dt;
@@ -14339,14 +14493,20 @@ function gameLoop(timestamp) {
           continue;
         }
 
+        if (enemy.isDead || enemy.hp <= 0) {
+          enemies.splice(i, 1);
+          continue;
+        }
+
         // Far offscreen (>1600px): sleep to save raycast / collision CPU
         if (!enemy.isBoss && distToPlayer > 1600) {
           continue;
         }
 
         try {
-          if (!enemy.update(dt)) {
-            // Died in update
+          if (!enemy.update(dt) || enemy.isDead || enemy.hp <= 0) {
+            enemies.splice(i, 1);
+            continue;
           }
         } catch (eErr) {
           console.error("Enemy update exception caught:", eErr);

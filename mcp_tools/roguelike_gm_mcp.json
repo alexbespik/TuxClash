@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TuxRoguelikeDevKitMCP",
+  "description": "Unique Developer Toolset & Game Master MCP Schema for Roguelike Non-Vision Spatial Awareness and Real-Time Combat / Boss Orchestration.",
+  "tools": [
+    {
+      "name": "game_get_radar",
+      "description": "Generate an ASCII radar grid map centered on Tux the player. Allows the LLM to 'see without vision' with precise tile coordinates, walls (#), open floors (.), enemies (e), commanders (E), bosses (B), chests (C), terminals (T), portals (O), and environmental hazards (~).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "width": { "type": "integer", "description": "Width of radar grid in tiles (default 41)", "default": 41 },
+          "height": { "type": "integer", "description": "Height of radar grid in tiles (default 21)", "default": 21 }
+        }
+      }
+    },
+    {
+      "name": "game_get_tactical_overview",
+      "description": "Retrieve comprehensive non-vision tactical semantic breakdown: player health/armor/energy, weapons held, top ranked threats by Euclidean distance & LoS, active boss telemetry, and realm mutation status.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "game_command_enemy",
+      "description": "Directly command any enemy or boss by name or index. Actions: ATTACK, RETREAT, HOLD, STUN, OVERHEAT (force stagger window), KILL.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "enemy": { "type": "string", "description": "Enemy label or index (e.g. 'ballmer_bot', '0')" },
+          "command": { "type": "string", "enum": ["ATTACK", "RETREAT", "HOLD", "STUN", "OVERHEAT", "KILL"] },
+          "params": { "type": "object", "description": "Optional parameters (e.g. duration for STUN/OVERHEAT)" }
+        },
+        "required": ["enemy", "command"]
+      }
+    },
+    {
+      "name": "game_command_all_enemies",
+      "description": "Issue collective command to all living enemies in the active realm: ALL_CHARGE (rush player), ALL_RETREAT (back away), CEASE_FIRE (pause attack timers), FREEZE_ALL (shock stun horde).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "command": { "type": "string", "enum": ["ALL_CHARGE", "ALL_RETREAT", "CEASE_FIRE", "FREEZE_ALL"] }
+        },
+        "required": ["command"]
+      }
+    },
+    {
+      "name": "game_mutate_enemy",
+      "description": "Modify the runtime stats of any hostile entity (HP, maxHp, speed, shield).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "enemy": { "type": "string", "description": "Enemy label or index" },
+          "modifiers": {
+            "type": "object",
+            "properties": {
+              "hp": { "type": "number" },
+              "maxHp": { "type": "number" },
+              "speed": { "type": "number" },
+              "shield": { "type": "number" }
+            }
+          }
+        },
+        "required": ["enemy", "modifiers"]
+      }
+    },
+    {
+      "name": "game_force_boss_phase",
+      "description": "Force a boss into a specific combat phase: ENRAGE (boost speed & fire rate) or OVERHEAT/VULNERABLE (open weakpoint with 2.5x critical multiplier).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "boss": { "type": "string", "description": "Boss identifier or empty for current active boss" },
+          "phase": { "type": "string", "enum": ["ENRAGE", "OVERHEAT", "VULNERABLE"] }
+        },
+        "required": ["phase"]
+      }
+    },
+    {
+      "name": "game_warp_realm",
+      "description": "Warp player instantly to any realm or Act: EMERALD_FRONTIER, THERMAL_FOUNDRY, CRYO_GLACIER, TOXIC_HEAP, WALLED_GARDEN, QUANTUM_VOID, TREASURE_VAULT.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "biome": { "type": "string", "description": "Biome key" },
+          "objective": { "type": "string", "description": "Objective type", "default": "DEFEND_SERVERS" },
+          "tier": { "type": "integer", "description": "Danger rating tier (1 to 12)", "default": 1 }
+        },
+        "required": ["biome"]
+      }
+    },
+    {
+      "name": "game_grant_buff",
+      "description": "Grant player passive buffs: SHIELD_GATE_NO_OVERFLOW (absorbs 100% of shield breaking hit), SHOTGUN_BUFF (+2 projectiles), BOUNCE_BUFF, ELEMENTAL_CRIT_DOUBLE_DMG, MELEE_REFLECT, VAMPIRE_LIFESTEAL, STATUE_PALADIN, STATUE_BERSERKER, STATUE_ELF.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "buff": { "type": "string", "description": "Buff ID string" },
+          "duration": { "type": "number", "description": "Duration in seconds (omit for permanent during run)" }
+        },
+        "required": ["buff"]
+      }
+    },
+    {
+      "name": "game_give_weapon",
+      "description": "Equip weapon from WEAPON_CATALOG into Tux's active slot: 'BREAKER SHOTGUN', 'INDOMITUS BOLTER', 'SUDO MINIGUN', 'NANO CYBER-KATANA', 'AMR ANTI-MATERIEL SNIPER', 'SINGULARITY VORTEX CANNON', 'CHAINSWORD OF LIBERTY', etc.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "weapon": { "type": "string", "description": "Weapon name or catalog ID" }
+        },
+        "required": ["weapon"]
+      }
+    },
+    {
+      "name": "game_set_attack_tokens",
+      "description": "Dynamically adjust max attack tokens in AttackTokenPool (default 4) to control combat density and pacing.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "maxTokens": { "type": "integer", "description": "Max simultaneous attacking enemies", "default": 4 }
+        },
+        "required": ["maxTokens"]
+      }
+    },
+    {
+      "name": "game_trigger_hitstop",
+      "description": "Trigger a freeze frame hitstop for dramatic combat juice (e.g. 0.05s).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "duration": { "type": "number", "description": "Hitstop duration in seconds", "default": 0.05 }
+        }
+      }
+    },
+    {
+      "name": "game_spawn_boss",
+      "description": "Spawn a specific boss at coordinates (or near player if omitted): ballmer_bot, patent_troll_sovereign, drm_sentinel_tank, oracle_audit_archon, apple_garden_warden, quantum_hypervisor.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "bossId": { "type": "string", "description": "Boss spec ID" },
+          "x": { "type": "number", "description": "World X (optional)" },
+          "y": { "type": "number", "description": "World Y (optional)" }
+        },
+        "required": ["bossId"]
+      }
+    },
+    {
+      "name": "game_inject_comms",
+      "description": "Broadcast narrator, commander, or boss voice lines into the comms radio banner.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "speaker": { "type": "string", "description": "Speaker name (e.g. 'HIGH COMMAND', 'BALLMER-BOT')" },
+          "message": { "type": "string", "description": "Dialogue line text" },
+          "color": { "type": "string", "description": "Hex accent color (e.g. '#38bdf8')" },
+          "icon": { "type": "string", "description": "Single emoji icon" }
+        },
+        "required": ["speaker", "message"]
+      }
+    }
+  ]
+}

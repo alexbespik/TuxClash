@@ -1010,16 +1010,44 @@
           if (window.dungeon) window.dungeon.resolveCircle(this, this.radius, 'y');
         }
 
-        // Process Attack behaviors (suspended if EMP shocked or in vulnerable recovery)
+        // 3-Phase Telegraph AI: REQUEST_TOKEN -> WINDUP_TELEGRAPH (0.5s flash + aim lock) -> FIRE_ACTIVE -> RECOVERY (0.6s pause, return token)
         if (this.shockTimer <= 0 && !this.isVulnerable) {
-          const attacks = this.spec.attacks || [];
-          for (let i = 0; i < attacks.length; i++) {
-            const atk = attacks[i];
-            this.attackTimers[i] -= dt;
-            if (this.attackTimers[i] <= 0) {
-              this.attackTimers[i] = this.isEnraged ? atk.cooldown * 0.75 : atk.cooldown;
-              if (dist <= atk.range) {
-                this.executeAttack(atk, dx, dy, dist);
+          if (this.aiState === "WINDUP_TELEGRAPH") {
+            this.telegraphTimer = (this.telegraphTimer || 0.5) - dt;
+            this.vx = 0;
+            this.vy = 0;
+            if (this.telegraphTimer <= 0) {
+              this.aiState = "FIRE_ACTIVE";
+              if (this.pendingAtk) {
+                this.executeAttack(this.pendingAtk, dx, dy, dist);
+              }
+              this.aiState = "RECOVERY";
+              this.recoveryTimer = 0.6;
+            }
+          } else if (this.aiState === "RECOVERY") {
+            this.recoveryTimer = (this.recoveryTimer || 0.6) - dt;
+            if (this.recoveryTimer <= 0) {
+              this.aiState = "REPOSITION";
+              const pool = this.tokenPool || window.globalAttackTokenPool;
+              if (pool) pool.releaseToken(this);
+            }
+          } else {
+            const attacks = this.spec.attacks || [];
+            for (let i = 0; i < attacks.length; i++) {
+              const atk = attacks[i];
+              this.attackTimers[i] -= dt;
+              if (this.attackTimers[i] <= 0 && dist <= atk.range) {
+                const pool = this.tokenPool || window.globalAttackTokenPool;
+                const tokenGranted = this.isBoss || (pool ? pool.requestToken(this) : true);
+                if (tokenGranted) {
+                  this.attackTimers[i] = this.isEnraged ? atk.cooldown * 0.75 : atk.cooldown;
+                  this.aiState = "WINDUP_TELEGRAPH";
+                  this.telegraphTimer = 0.5;
+                  this.telegraphTargetX = plyr.x;
+                  this.telegraphTargetY = plyr.y;
+                  this.pendingAtk = atk;
+                  break;
+                }
               }
             }
           }
@@ -1206,6 +1234,7 @@
     }
 
     draw(ctx) {
+      if (this.isDead || this.hp <= 0) return;
       ctx.save();
       ctx.translate(this.x, this.y);
 
@@ -1677,6 +1706,27 @@
         ctx.fillRect(this.radius - 5, -this.radius - 4, 3, 3);
       }
 
+      // 3-Phase AI Telegraph Sightline Flash (0.5s telegraph before firing)
+      if (this.aiState === "WINDUP_TELEGRAPH" && this.telegraphTargetX !== undefined) {
+        ctx.save();
+        const flashPhase = (Date.now() % 150) / 150;
+        ctx.strokeStyle = flashPhase > 0.5 ? "rgba(239, 68, 68, 0.9)" : "rgba(250, 204, 21, 0.9)";
+        ctx.lineWidth = 2.5;
+        ctx.setLineDash([10, 6]);
+        const targetRelX = this.telegraphTargetX - this.x;
+        const targetRelY = this.telegraphTargetY - this.y;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(targetRelX, targetRelY);
+        ctx.stroke();
+
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.arc(targetRelX, targetRelY, 14, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+
       ctx.restore();
     }
 
@@ -1784,6 +1834,18 @@
         }
       } catch (err) {
         console.error("Error during DynamicCustomEnemy.die:", err);
+      }
+
+      // Release Attack Token if holding one
+      if (this.tokenPool) {
+        this.tokenPool.releaseToken(this);
+      } else if (window.globalAttackTokenPool) {
+        window.globalAttackTokenPool.releaseToken(this);
+      }
+
+      // Trigger CombatEventBus OnEnemyKill lifecycle hook
+      if (window.CombatEventBus) {
+        window.CombatEventBus.emit('OnEnemyKill', window.player, this);
       }
 
       // Remove from enemies array
