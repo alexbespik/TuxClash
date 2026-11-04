@@ -667,9 +667,8 @@
     init() {
       // 1. Check window.ENV
       if (window.ENV) {
-        if (window.ENV.GEMINI_API_KEY && window.ENV.GEMINI_API_KEY !== 'your_gemini_api_key_here') {
-          this.apiKey = window.ENV.GEMINI_API_KEY;
-        }
+        // The key in .env stays on the local server (start.py relays requests); the page only learns it exists.
+        this.useProxy = Boolean(window.ENV.GEMINI_PROXY);
         if (window.ENV.GEMINI_MODEL) this.model = window.ENV.GEMINI_MODEL;
         if (window.ENV.AI_DIRECTOR_PERSONA) this.persona = window.ENV.AI_DIRECTOR_PERSONA;
       }
@@ -686,7 +685,7 @@
         if (storedEnabled !== null) this.enabled = storedEnabled === 'true';
       } catch (e) {}
 
-      console.log(`🎲 [LLM Game Master] Ready! Online Key: ${this.apiKey ? 'PRESENT' : 'NONE (Autonomous Local Engine Active)'}`);
+      console.log(`🎲 [LLM Game Master] Ready! Online: ${this.apiKey ? 'YOUR KEY' : this.useProxy ? 'SERVER KEY (relayed)' : 'NONE (Autonomous Local Engine Active)'}`);
     }
 
     saveConfig(key, model, persona, enabled) {
@@ -703,12 +702,22 @@
       } catch (e) {}
     }
 
+    /** Gemini endpoint: a key the player typed goes straight to Google; the .env key goes through start.py. */
+    geminiUrl(model, key) {
+      if (key) return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
+      return `/api/gemini?model=${encodeURIComponent(model)}`;
+    }
+
+    get online() {
+      return (this.apiKey && this.apiKey.length > 10) || this.useProxy;
+    }
+
     async testConnection(testKey, testModel) {
       const key = testKey || this.apiKey;
       const model = testModel || this.model || "gemini-3.1-flash-lite";
-      if (!key) return { ok: false, error: "API Key is empty" };
+      if (!key && !this.useProxy) return { ok: false, error: "API Key is empty" };
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
+      const url = this.geminiUrl(model, key);
       const startTime = performance.now();
 
       try {
@@ -755,7 +764,7 @@
     async evaluateGameMasterCycle() {
       const telemetry = GameDirectorAPI.getState();
 
-      if (this.apiKey && this.apiKey.length > 10 && !this.isRequestPending) {
+      if (this.online && !this.isRequestPending) {
         // Online Gemini AI Game Master
         const handled = await this.queryOnlineGeminiGameMaster(telemetry);
         if (handled) return;
@@ -854,7 +863,7 @@
      */
     async queryOnlineGeminiGameMaster(tel) {
       this.isRequestPending = true;
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${encodeURIComponent(this.apiKey)}`;
+      const url = this.geminiUrl(this.model, this.apiKey);
 
       const systemPrompt = `You are the Game Master AI controlling an arcade roguelike game 'Tux: Root Purge'. Tux the Linux penguin is fighting to liberate the digital universe from proprietary corporate cartels under Emperor Linus Torvalds.
 Analyze the live player telemetry below and respond strictly with a valid JSON object (no markdown, no backticks, pure JSON):
